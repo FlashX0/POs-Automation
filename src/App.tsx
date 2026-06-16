@@ -1,0 +1,6379 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { useState, useEffect, useRef, useMemo, useCallback, ChangeEvent, FormEvent, MouseEvent } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  FileText, 
+  Sparkles,
+  Table, 
+  Folder,
+  FolderOpen, 
+  Smartphone, 
+  Settings, 
+  Upload, 
+  Download, 
+  CheckCircle, 
+  AlertCircle, 
+  Trash2, 
+  Plus, 
+  Search, 
+  Send, 
+  Bell, 
+  X, 
+  Activity, 
+  DollarSign, 
+  Calendar, 
+  User, 
+  ArrowLeft, 
+  Loader2,
+  ExternalLink,
+  ChevronRight,
+  Info,
+  FileSpreadsheet,
+  Briefcase,
+  GitCompare,
+  ArrowLeftRight,
+  Printer,
+  CircleDot,
+  Save,
+  TrendingUp,
+  BarChart2,
+  Layers,
+  PlusCircle,
+  Users,
+  Truck,
+  Database
+} from 'lucide-react';
+// @ts-ignore
+import * as XLSX from 'xlsx-js-style';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
+
+// Helper function to convert OKLCH & OKLAB color strings (used by Tailwind v4) to standard RGB/RGBA.
+// This prevents html2canvas from failing with the: "Attempting to parse an unsupported color function" error.
+function calculateRgbFromOklab(L: number, a: number, b: number, A: number): string {
+  // Oklab to LMS color space conversion
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.2914855414 * b;
+
+  const l = l_ * l_ * l_;
+  const m = m_ * m_ * m_;
+  const s = s_ * s_ * s_;
+
+  // LMS to linear sRGB conversion
+  const rLinear = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+  const gLinear = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+  const bLinear = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+
+  // Linear sRGB to standard sRGB linear companding
+  const toSRGB = (c: number) => {
+    const cClamp = Math.max(0, Math.min(1, c));
+    const res = cClamp <= 0.0031308 
+      ? 12.92 * cClamp 
+      : 1.055 * Math.pow(cClamp, 1 / 2.4) - 0.055;
+    return Math.max(0, Math.min(255, Math.round(res * 255)));
+  };
+
+  const rVal = toSRGB(rLinear);
+  const gVal = toSRGB(gLinear);
+  const bVal = toSRGB(bLinear);
+
+  if (A < 1) {
+    return `rgba(${rVal}, ${gVal}, ${bVal}, ${A})`;
+  }
+  return `rgb(${rVal}, ${gVal}, ${bVal})`;
+}
+
+function convertOklToRgb(colorStr: string): string {
+  try {
+    if (!colorStr) return colorStr;
+    
+    // Process oklch replacement inside colorStr (robust regex allowing spaces, commas, slashes, and negative values)
+    let result = colorStr.replace(/oklch\(\s*([0-9eE\-\.\%]+)[\s,]+([0-9eE\-\.\%]+)[\s,]+([0-9eE\-\.\%]+)(?:[\s,\/]+([0-9eE\-\.\%]+))?\s*\)/gi, (fullMatch, group1, group2, group3, group4) => {
+      const parseVal = (str: string, percentRef: number = 1) => {
+        if (str.endsWith('%')) {
+          return (parseFloat(str) / 100) * percentRef;
+        }
+        return parseFloat(str);
+      };
+
+      const L = parseVal(group1, 1);
+      const C = parseVal(group2, 1);
+      const H = parseVal(group3, 360);
+      const A = group4 ? parseVal(group4, 1) : 1;
+
+      const hRad = (H * Math.PI) / 180;
+      const labA = C * Math.cos(hRad);
+      const labB = C * Math.sin(hRad);
+
+      return calculateRgbFromOklab(L, labA, labB, A);
+    });
+
+    // Process oklab replacement inside colorStr (robust regex allowing spaces, commas, slashes, and negative values)
+    result = result.replace(/oklab\(\s*([0-9eE\-\.\%]+)[\s,]+([0-9eE\-\.\%]+)[\s,]+([0-9eE\-\.\%]+)(?:[\s,\/]+([0-9eE\-\.\%]+))?\s*\)/gi, (fullMatch, group1, group2, group3, group4) => {
+      const parseVal = (str: string, percentRef: number = 1) => {
+        if (str.endsWith('%')) {
+          return (parseFloat(str) / 100) * percentRef;
+        }
+        return parseFloat(str);
+      };
+
+      const L = parseVal(group1, 1);
+      const a = parseVal(group2, 1);
+      const b = parseVal(group3, 1);
+      const A = group4 ? parseVal(group4, 1) : 1;
+
+      return calculateRgbFromOklab(L, a, b, A);
+    });
+
+    return result;
+  } catch (e) {
+    console.warn("Failed converting okl color function:", colorStr, e);
+    return "rgb(0, 0, 0)";
+  }
+}
+
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
+import { ProcessedDocument, AppStats, AppNotification, LineItem } from './types';
+
+const normalizeArabic = (text: any): string => {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .toLowerCase()
+    .trim()
+    .replace(/[أإآا]/g, 'ا')
+    .replace(/[ةه]/g, 'ه')
+    .replace(/[ىي]/g, 'ى');
+};
+
+const convertEasternToWesternNumerals = (str: any): string => {
+  if (str === null || str === undefined) return '';
+  const text = String(str);
+  const easternDigits = [/٠/g, /١/g, /٢/g, /٣/g, /٤/g, /٥/g, /٦/g, /٧/g, /٨/g, /٩/g];
+  const persianDigits = [/۰/g, /۱/g, /۲/g, /۳/g, /۴/g, /۵/g, /۶/g, /۷/g, /۸/g, /۹/g];
+  let result = text;
+  for (let i = 0; i < 10; i++) {
+    result = result.replace(easternDigits[i], String(i)).replace(persianDigits[i], String(i));
+  }
+  return result;
+};
+
+const parseAdvance = (advanceStr: any, totalAmount: number) => {
+  if (!advanceStr) return null;
+  const str = String(advanceStr).trim();
+  if (!str) return null;
+  
+  let value = 0;
+  if (str.endsWith('%')) {
+    const pct = parseFloat(str.replace(/%/g, ''));
+    if (!isNaN(pct)) {
+      value = (pct / 100) * totalAmount;
+    }
+  } else {
+    // Keep only numbers and dots
+    const cleaned = str.replace(/[^0-9.]/g, '');
+    if (cleaned) {
+      value = parseFloat(cleaned);
+    }
+  }
+  
+  if (isNaN(value) || value <= 0) return null;
+  const remaining = Math.max(0, totalAmount - value);
+  return { value, remaining };
+};
+
+const sanitizeAndExtractBrands = (docs: ProcessedDocument[]): ProcessedDocument[] => {
+  if (!docs) return [];
+  
+  // 1. Dynamic brand learning: Extract all unique user-entered or existing non-empty brands from docs
+  const learnedBrandsSet = new Set<string>();
+  docs.forEach(doc => {
+    if (doc.items && Array.isArray(doc.items)) {
+      doc.items.forEach((item: any) => {
+        const b = item.brand?.trim();
+        if (b && b !== "" && b.length > 1) {
+          learnedBrandsSet.add(b);
+        }
+      });
+    }
+  });
+
+  // Sort learned brands descending by length so more specific matches run first
+  const sortedLearnedList = Array.from(learnedBrandsSet).sort((a, b) => b.length - a.length);
+  const dynamicRules = sortedLearnedList.map(b => {
+    const escaped = b.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    return {
+      pattern: new RegExp(`(?:^|[\\s\\(\\)\\[\\]\\{\\}\\,\\.\\/\\-])` + escaped + `(?:$|[\\s\\(\\)\\[\\]\\{\\}\\,\\.\\/\\-])`, 'i'),
+      canonical: b,
+      rawBrand: b
+    };
+  });
+
+  const baseBrandRules = [
+    { pattern: /(كومر\s+مصرى|كومر\s+مصري|Comer\s+Masry)/i, canonical: "كومر مصرى", rawBrand: "كومر مصرى" },
+    { pattern: /(كومر|Comer)/i, canonical: "كومر", rawBrand: "كومر" },
+    { pattern: /(ويلدون|ويلد\s+ون|ويلد-ون|Weldon|Weld-on)/i, canonical: "ويلدون", rawBrand: "ويلدون" },
+    { pattern: /(اليزية|اليزيه|أليزيه|أليزية|Elysee|Elise|Elyse|Elisie|Alizee|Alize)/i, canonical: "اليزية", rawBrand: "اليزية" },
+    { pattern: /(هوزا|هوزة|هوذا|Hosa|Howza)/i, canonical: "هوزا", rawBrand: "هوزا" },
+    { pattern: /(هوز|Hoza|Hozar)/i, canonical: "هوز", rawBrand: "هوز" },
+    { pattern: /(جوزا|جوزة|Joza)/i, canonical: "جوزا", rawBrand: "جوزا" },
+    { pattern: /(جوز|Goza)/i, canonical: "جوز", rawBrand: "جوز" },
+    { pattern: /(شيرة\s+مصرى|شيرة\s+مصري|شيره\s+مصرى|شيره\s+مصري|Chira)/i, canonical: "شيرة مصرى", rawBrand: "شيرة مصرى" },
+    { pattern: /(شيرة|شيره)/i, canonical: "شيرة", rawBrand: "شيرة" },
+    { pattern: /(الشريف|Al-Sherif|El-Sherif)/i, canonical: "الشريف", rawBrand: "الشريف" },
+    { pattern: /(سمارت\s+هوم|Smart\s+Home)/i, canonical: "سمارت هوم", rawBrand: "سمارت هوم" },
+    { pattern: /(سمارت|Smart)/i, canonical: "سمارت", rawBrand: "سمارت" },
+    { pattern: /(باننجر|بانيجر|بأننجر|Banninger|Bänninger)/i, canonical: "باننجر", rawBrand: "باننجر" },
+    { pattern: /(بايبلايف|بايب\s+لايف|Pipelife)/i, canonical: "بايبلايف", rawBrand: "بايبلايف" },
+    { pattern: /(جورج\s+فيشر|Georg\s+Fischer)/i, canonical: "جورج فيشر", rawBrand: "جورج فيشر" },
+    { pattern: /(جى\s+اف|جي\s+اف|GF)/i, canonical: "GF", rawBrand: "GF" },
+    { pattern: /(كيسان|Kisan)/i, canonical: "كيسان", rawBrand: "كيسان" },
+    { pattern: /(إيجاب|ايجاب|EGAP)/i, canonical: "إيجاب", rawBrand: "إيجاب" },
+    { pattern: /(فيجا|Viega)/i, canonical: "فيجا", rawBrand: "فيجا" },
+    { pattern: /(كوبرا|Cobra)/i, canonical: "كوبرا", rawBrand: "كوبرا" },
+    { pattern: /(أكواثيرم|أكواتيرم|Aquatherm)/i, canonical: "أكواثيرم", rawBrand: "أكواثيرم" },
+    { pattern: /(السويدى|السويدي|Elsewedy|Seweedy)/i, canonical: "السويدي", rawBrand: "السويدي" },
+    { pattern: /(الفنار|Alfanar)/i, canonical: "الفنار", rawBrand: "الفنار" },
+    { pattern: /(روكا|Roca)/i, canonical: "روكا", rawBrand: "روكا" },
+    { pattern: /(جروهى|جروهي|Grohe)/i, canonical: "جروهي", rawBrand: "جروهي" },
+    { pattern: /(دورافيت|Duravit)/i, canonical: "دورافيت", rawBrand: "دورافيت" },
+    { pattern: /(سيكا|Sika)/i, canonical: "سيكا", rawBrand: "سيكا" },
+    { pattern: /(مابى|Mapei)/i, canonical: "مابي", rawBrand: "مابي" },
+    { pattern: /(كيما|Kima)/i, canonical: "كيما", rawBrand: "كيما" },
+    { pattern: /(أهرام|الاهرام|الأهرام|Ahram)/i, canonical: "الأهرام", rawBrand: "الأهرام" },
+    { pattern: /(دورو|Douro|Duru)/i, canonical: "دورو", rawBrand: "دورو" }
+  ];
+
+  // Combine learned dynamic rules and standard pre-defined system rules
+  const brandRules = [...dynamicRules, ...baseBrandRules];
+
+  return docs.map(doc => {
+    if (!doc.items || !Array.isArray(doc.items)) return doc;
+    
+    const updatedItems = doc.items.map((item: LineItem) => {
+      let desc = item.description || "";
+      let foundBrand = "";
+      
+      for (const rule of brandRules) {
+        const match = desc.match(rule.pattern);
+        if (match) {
+          if (!foundBrand) {
+            foundBrand = rule.canonical;
+          }
+          if (rule.rawBrand) {
+            const escRaw = rule.rawBrand.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            desc = desc.replace(new RegExp(escRaw, 'gi'), " ");
+          } else {
+            desc = desc.replace(rule.pattern, " ");
+          }
+        }
+      }
+      
+      const q = Number(item.quantity) || 0;
+      const p = Number(item.unitPrice) || 0;
+      const tot = Number((q * p).toFixed(2));
+
+      let clean = desc;
+      clean = clean.replace(/[\(\[\{\/]\s*[\)\]\}/]/g, " ");
+      clean = clean.replace(/(ماركة|ماركه|براند|نوع|صنع|بجوزا|هوزا|برند)\s+/gi, ' ');
+      clean = clean.trim().replace(/\s+/g, ' ');
+      clean = clean.replace(/^[-\s,\.\/—\|_]+/, '').replace(/[-\s,\.\/—\|_]+$/, '').trim();
+      
+      const finalBrand = item.brand && item.brand.trim() !== "" ? item.brand : foundBrand;
+      
+      return {
+        ...item,
+        brand: finalBrand || "",
+        description: finalBrand ? (clean || desc) : desc,
+        quantity: q,
+        unitPrice: p,
+        total: tot
+      };
+    });
+
+    const computedTotal = updatedItems.reduce((sum: number, item: any) => sum + (item.total || 0), 0);
+    const roundedComputedTotal = Number(computedTotal.toFixed(2));
+
+    return {
+      ...doc,
+      items: updatedItems,
+      totalAmount: roundedComputedTotal
+    };
+  });
+};
+
+export default function App() {
+  const [rawDocuments, setRawDocuments] = useState<ProcessedDocument[]>([]);
+  const setDocuments = useCallback((val: ProcessedDocument[] | ((prev: ProcessedDocument[]) => ProcessedDocument[])) => {
+    setRawDocuments(prev => {
+      const resolved = typeof val === 'function' ? val(prev) : val;
+      return sanitizeAndExtractBrands(resolved);
+    });
+  }, []);
+  const documents = rawDocuments;
+
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [projectsList, setProjectsList] = useState<string[]>([]);
+  const [newProjectInput, setNewProjectInput] = useState<string>('');
+  const [suppliersList, setSuppliersList] = useState<string[]>([]);
+  const [newSupplierInput, setNewSupplierInput] = useState<string>('');
+  
+  // Navigation & Control States
+  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'files' | 'projects'>('spreadsheet');
+  const [selectedDoc, setSelectedDoc] = useState<ProcessedDocument | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [uploading, setUploading] = useState<boolean>(false);
+  const [uploadInstructions, setUploadInstructions] = useState<string>('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Filter States
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'po' | 'quote'>('all');
+  const [filterDate, setFilterDate] = useState<string>('');
+  const [filterClient, setFilterClient] = useState<string>('');
+  const [filterAmount, setFilterAmount] = useState<string>('');
+  const [filterWithholdingOnly, setFilterWithholdingOnly] = useState<boolean>(false);
+  const [projectSearchTerm, setProjectSearchTerm] = useState<string>('');
+  const [selectedFolderProject, setSelectedFolderProject] = useState<string | null>(null);
+
+  // Projects Budget & Spending analytics states
+  const [projectSubTab, setProjectSubTab] = useState<'folders' | 'charts' | 'suppliers'>('folders');
+  const [chartSelectedProject, setChartSelectedProject] = useState<string>('all');
+  const [chartSelectedCurrency, setChartSelectedCurrency] = useState<string>('EGP');
+  const [chartSelectedDocType, setChartSelectedDocType] = useState<'po' | 'quote' | 'all'>('po');
+
+  // Inline Editing Mode States for Spreadsheet
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [rawEditDocs, setRawEditDocs] = useState<ProcessedDocument[]>([]);
+  const setEditDocs = useCallback((val: ProcessedDocument[] | ((prev: ProcessedDocument[]) => ProcessedDocument[])) => {
+    setRawEditDocs(prev => {
+      const resolved = typeof val === 'function' ? val(prev) : val;
+      return sanitizeAndExtractBrands(resolved);
+    });
+  }, []);
+  const editDocs = rawEditDocs;
+
+  // Document Comparison States
+  const [isComparing, setIsComparing] = useState<boolean>(false);
+  const [compareDocAId, setCompareDocAId] = useState<string | null>(null);
+  const [compareDocBId, setCompareDocBId] = useState<string | null>(null);
+  const [printDirection, setPrintDirection] = useState<'rtl' | 'ltr'>('ltr');
+  const [showExcelGrid, setShowExcelGrid] = useState<boolean>(false);
+  const [showPrintInstructions, setShowPrintInstructions] = useState<boolean>(false);
+  const [isSavingDrawer, setIsSavingDrawer] = useState<boolean>(false);
+
+  // Duplicate upload warning states
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState<boolean>(false);
+  const [existingDuplicateDoc, setExistingDuplicateDoc] = useState<ProcessedDocument | null>(null);
+  const [proposedDuplicateDoc, setProposedDuplicateDoc] = useState<ProcessedDocument | null>(null);
+  const [confirmingAction, setConfirmingAction] = useState<boolean>(false);
+
+  // Decoupled window/tab print routing detection
+  const [printDocId, setPrintDocId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('print');
+    }
+    return null;
+  });
+  const [printDirectionParam, setPrintDirectionParam] = useState<'rtl' | 'ltr'>(() => {
+    if (typeof window !== 'undefined') {
+      return (new URLSearchParams(window.location.search).get('dir') as 'rtl' | 'ltr') || 'ltr';
+    }
+    return 'ltr';
+  });
+  const [tableAlignment, setTableAlignment] = useState<'center' | 'left' | 'right' | 'auto'>(() => {
+    if (typeof window !== 'undefined') {
+      return (new URLSearchParams(window.location.search).get('align') as 'center' | 'left' | 'right' | 'auto') || 'center';
+    }
+    return 'center';
+  });
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
+
+  // States for Local Storage Data Retention & Sync Backup
+  const [hasBackupToRestore, setHasBackupToRestore] = useState<boolean>(false);
+  const [backupCount, setBackupCount] = useState<number>(0);
+  const [isInIframe, setIsInIframe] = useState<boolean>(false);
+
+  // Local interactive sound/ping settings
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
+  const [showNotificationToast, setShowNotificationToast] = useState<AppNotification | null>(null);
+
+  // References for file uploads
+  const dashboardFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Keep track of total document count to trigger local screen notifications on addition
+  const lastDocCountRef = useRef<number | null>(null);
+
+  // 1. Initial State Fetch and Continual Polling
+  const fetchData = async (isPoll = false) => {
+    let res: Response | null = null;
+    let attempt = 0;
+    const maxAttempts = isPoll ? 1 : 5;
+
+    while (attempt < maxAttempts) {
+      try {
+        if (!isPoll && attempt === 0) setLoading(true);
+        res = await fetch('/api/documents');
+        if (res.ok) {
+          break;
+        }
+      } catch (e) {
+        console.warn(`Fetch attempt ${attempt + 1} failed:`, e);
+      }
+      attempt++;
+      if (attempt < maxAttempts) {
+        // Wait 1.5 seconds between initial attempts to let container boot
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+    }
+
+    try {
+      if (!res || !res.ok) throw new Error('فشل جلب البيانات من الخادم');
+      const data = await res.json();
+      
+      setDocuments(data.documents || []);
+      setNotifications(data.notifications || []);
+      setProjectsList(data.projects || []);
+      setSuppliersList(data.suppliers || []);
+ 
+      // Trigger instant audio notification if new documents are received in background (polling)
+      if (lastDocCountRef.current !== null && (data.documents?.length || 0) > lastDocCountRef.current) {
+        const latestDoc = data.documents[0];
+        const newNotif: AppNotification = {
+          id: `toast_${Date.now()}`,
+          type: 'success',
+          title: 'تم استلام مستند جديد تلقائياً!',
+          message: `وصول ${latestDoc.docType === 'po' ? 'أمر شراء' : 'عرض سعر'} من المورد "${latestDoc.clientName}" بقيمة ${latestDoc.totalAmount} ${latestDoc.currency}`,
+          timestamp: new Date().toISOString(),
+          read: false
+        };
+ 
+        setShowNotificationToast(newNotif);
+        setTimeout(() => setShowNotificationToast(null), 7000);
+ 
+        if (audioEnabled) {
+          try {
+            const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = context.createOscillator();
+            const gain = context.createGain();
+            osc.connect(gain);
+            gain.connect(context.destination);
+            osc.frequency.setValueAtTime(587.33, context.currentTime); // D5 note
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.15, context.currentTime);
+            osc.start();
+            osc.stop(context.currentTime + 0.15);
+            setTimeout(() => {
+              const osc2 = context.createOscillator();
+              const gain2 = context.createGain();
+              osc2.connect(gain2);
+              gain2.connect(context.destination);
+              osc2.frequency.setValueAtTime(880, context.currentTime); // A5 note
+              osc2.type = 'sine';
+              gain2.gain.setValueAtTime(0.15, context.currentTime);
+              osc2.start();
+              osc2.stop(context.currentTime + 0.3);
+            }, 150);
+          } catch (e) {
+            console.log("Audio feedback blocker active:", e);
+          }
+        }
+      }
+ 
+      lastDocCountRef.current = data.documents?.length || 0;
+      setErrorMsg(null);
+    } catch (err: any) {
+      console.error(err);
+      if (!isPoll) setErrorMsg('خطأ في الاتصال بالخادم. تأكد من تشغيل Express Backend.');
+    } finally {
+      if (!isPoll) setLoading(false);
+    }
+  };
+
+  const handleAddProject = async (projectName: string) => {
+    if (!projectName || !projectName.trim()) return;
+    try {
+      const res = await fetch('/api/projects/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: projectName.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.projects) {
+          setProjectsList(data.projects);
+        }
+      }
+    } catch (err) {
+      console.error('Error adding project:', err);
+    }
+  };
+
+  const handleAddSupplier = async (supplierName: string) => {
+    if (!supplierName || !supplierName.trim()) return;
+    try {
+      const res = await fetch('/api/suppliers/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: supplierName.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.suppliers) {
+          setSuppliersList(data.suppliers);
+        }
+      }
+    } catch (err) {
+      console.error('Error adding supplier:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+
+    // Poll the backend API every 4 seconds for real-time file arrival notifications!
+    const interval = setInterval(() => {
+      fetchData(true);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [audioEnabled]);
+
+  // Handle iframe sandbox inspection for print notices
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsInIframe(window.self !== window.top);
+    }
+  }, []);
+
+  // Reactive backups to localStorage to prevent data loss across server restarts/container deletions
+  useEffect(() => {
+    if (!loading && rawDocuments && rawDocuments.length > 0) {
+      localStorage.setItem('delta_documents_backup', JSON.stringify(rawDocuments));
+    }
+  }, [loading, rawDocuments]);
+
+  useEffect(() => {
+    if (projectsList && projectsList.length > 0) {
+      localStorage.setItem('delta_projects_backup', JSON.stringify(projectsList));
+    }
+  }, [projectsList]);
+
+  useEffect(() => {
+    if (suppliersList && suppliersList.length > 0) {
+      localStorage.setItem('delta_suppliers_backup', JSON.stringify(suppliersList));
+    }
+  }, [suppliersList]);
+
+  // Proactive check to detect if server database list is empty but browser has a local backup ready
+  useEffect(() => {
+    if (!loading && documents && documents.length === 0) {
+      try {
+        const localData = localStorage.getItem('delta_documents_backup');
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setHasBackupToRestore(true);
+            setBackupCount(parsed.length);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not parse delta_documents_backup:", e);
+      }
+    } else if (documents && documents.length > 0) {
+      setHasBackupToRestore(false);
+    }
+  }, [loading, documents]);
+
+  // Bulk restore engine to merge and push local backup list up to the active server
+  const handleRestoreFromBackup = async () => {
+    try {
+      const localData = localStorage.getItem('delta_documents_backup');
+      const localProj = localStorage.getItem('delta_projects_backup');
+      const localSupp = localStorage.getItem('delta_suppliers_backup');
+      
+      let docsToRestore = [];
+      if (localData) {
+        docsToRestore = JSON.parse(localData);
+      }
+
+      if (docsToRestore.length === 0) {
+        alert("عذراً، لا تتوفر أية سجلات لتاريخ المعالجة بالنسخة الاحتياطية.");
+        return;
+      }
+
+      setLoading(true);
+      
+      // Update the empty main server database with the complete backup records array
+      const res = await fetch('/api/documents/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documents: docsToRestore })
+      });
+
+      if (res.ok) {
+        // Sequentially restore learned projects and suppliers list as well
+        if (localProj) {
+          try {
+            const projs = JSON.parse(localProj);
+            if (Array.isArray(projs)) {
+              for (const p of projs) {
+                await handleAddProject(p);
+              }
+            }
+          } catch {}
+        }
+        if (localSupp) {
+          try {
+            const supps = JSON.parse(localSupp);
+            if (Array.isArray(supps)) {
+              for (const s of supps) {
+                await handleAddSupplier(s);
+              }
+            }
+          } catch {}
+        }
+
+        triggerNotificationToast(
+          'success',
+          'تم استعادة أرشيف البيانات بكامل تفاصيله! 📂',
+          `تمت مزامنة واسترجاع عدد (${docsToRestore.length}) مستندات تالفة وإعادتها لقاعدة بيانات النظام تلقائياً وبنجاح.`
+        );
+        fetchData();
+      } else {
+        throw new Error('فشلت المزامنة من خادم Cloud Run.');
+      }
+    } catch (e: any) {
+      alert("عذراً، واجهنا مشكلة أثناء استعادة البيانات المحلية: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initialize draft spreadsheet values when editing mode toggled
+  useEffect(() => {
+    if (isEditing) {
+      setEditDocs(JSON.parse(JSON.stringify(documents)));
+    }
+  }, [isEditing, documents]);
+
+  // Get the next auto-incremented PO number for a project (e.g. if previous is 11, next is 12)
+  const getNextPoNumberForProject = (projName: string, docsList = documents) => {
+    const cleanProj = projName?.trim() || 'عام';
+    const projectPos = docsList.filter(
+      d => d.docType === 'po' && (d.projectName?.trim() || 'عام') === cleanProj
+    );
+    
+    let maxNum = 0;
+    projectPos.forEach(d => {
+      if (d.docNumber) {
+        const cleanStr = d.docNumber.replace(/[^\d]/g, '');
+        const num = parseInt(cleanStr, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+
+    if (maxNum > 0) {
+      return maxNum + 1;
+    }
+
+    // Fallback: search globally across all POs to continue a global sequence
+    let globalMax = 0;
+    docsList.filter(d => d.docType === 'po').forEach(d => {
+      if (d.docNumber) {
+        const cleanStr = d.docNumber.replace(/[^\d]/g, '');
+        const num = parseInt(cleanStr, 10);
+        if (!isNaN(num) && num > globalMax) {
+          globalMax = num;
+        }
+      }
+    });
+
+    if (globalMax > 0) {
+      return globalMax + 1;
+    }
+
+    return 11; // Default starting number as in user's example
+  };
+
+  // Get style for due dates based on closeness to today
+  const getDueDateWarningStyle = (dueDateStr?: string) => {
+    if (!dueDateStr) return "text-slate-400 italic";
+    const due = new Date(dueDateStr);
+    if (isNaN(due.getTime())) return "text-slate-400";
+    const now = new Date();
+    // Reset hours to compare purely by days/hours
+    const diffMs = due.getTime() - now.getTime();
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    if (diffHours < 0) {
+      return "text-rose-600 bg-rose-50 border border-rose-150 px-2 py-0.5 rounded-md font-bold text-[10px]";
+    }
+    if (diffHours <= 48) {
+      return "text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-extrabold text-[10px] animate-pulse";
+    }
+    return "text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-md font-medium text-[10px]";
+  };
+
+  // Get list of unique projects dynamically
+  const uniqueProjects = useMemo(() => {
+    const list = documents.map(d => d.projectName?.trim()).filter(Boolean);
+    const combined = [...projectsList, ...list];
+    const unique = Array.from(new Set(combined)).map(p => p.trim()).filter(Boolean);
+    // Remove 'عام' if present so we can manually add it to start
+    const cleanUnique = unique.filter(p => p !== 'عام');
+    cleanUnique.unshift('عام');
+    return cleanUnique;
+  }, [projectsList, documents]);
+
+  // Self-learning values loaded dynamically from all documents and items
+  const uniqueClientsList = useMemo(() => {
+    const list = documents.map(d => d.clientName?.trim()).filter(Boolean);
+    const combined = [...suppliersList, ...list];
+    return Array.from(new Set(combined)).map(s => s.trim()).filter(Boolean);
+  }, [suppliersList, documents]);
+
+  const uniqueItemNames = useMemo(() => {
+    const list: string[] = [];
+    documents.forEach(d => {
+      d.items?.forEach(item => {
+        if (item.description?.trim()) list.push(item.description.trim());
+      });
+    });
+    return Array.from(new Set(list));
+  }, [documents]);
+
+  const uniqueItemBrands = useMemo(() => {
+    const list: string[] = ["اليزية", "اليزيه", "Elysee"];
+    documents.forEach(d => {
+      d.items?.forEach(item => {
+        if (item.brand?.trim()) list.push(item.brand.trim());
+      });
+    });
+    return Array.from(new Set(list));
+  }, [documents]);
+
+  const uniqueItemUnits = useMemo(() => {
+    const list: string[] = [];
+    documents.forEach(d => {
+      d.items?.forEach(item => {
+        if (item.unit?.trim()) list.push(item.unit.trim());
+      });
+    });
+    return Array.from(new Set(list));
+  }, [documents]);
+
+  // 2. Calculated Dashboard Statistics
+  const stats: AppStats = useMemo(() => {
+    const uniqueClients = new Set(documents.map(d => d.clientName.trim()));
+    
+    // Sum by currency (EGP, USD, SAR, etc.)
+    const currencyTotals: Record<string, number> = {};
+    documents.forEach(doc => {
+      if (doc.status === 'processed') {
+        const c = doc.currency || 'EGP';
+        currencyTotals[c] = (currencyTotals[c] || 0) + doc.totalAmount;
+      }
+    });
+
+    return {
+      totalProcessedCount: documents.length,
+      uniqueClientCount: uniqueClients.size,
+      totalValueByCurrency: currencyTotals,
+      latestDocumentDate: documents.length > 0 ? documents[0].receiptDate : null
+    };
+  }, [documents]);
+
+  // Filter spreadsheet rows dynamically based on Supplier name, Receipt Date, Amount & Withholding Tax, item names & unit prices
+  const filteredDocs = useMemo(() => {
+    const normSearch = normalizeArabic(searchTerm);
+    const normFilterClient = normalizeArabic(filterClient);
+    return (isEditing ? editDocs : documents).filter(doc => {
+      const matchSearch = normSearch === '' ? true : (
+        normalizeArabic(doc.clientName).includes(normSearch) ||
+        normalizeArabic(doc.docNumber).includes(normSearch) ||
+        normalizeArabic(doc.projectName).includes(normSearch) ||
+        (doc.summary && normalizeArabic(doc.summary).includes(normSearch)) ||
+        doc.receiptDate.includes(searchTerm) ||
+        (doc.items && doc.items.some(item => 
+          normalizeArabic(item.description).includes(normSearch) ||
+          normalizeArabic(item.brand).includes(normSearch) ||
+          (item.unitPrice && item.unitPrice.toString().includes(searchTerm)) ||
+          (item.total && item.total.toString().includes(searchTerm))
+        ))
+      );
+      
+      const matchType = 
+        typeFilter === 'all' ? true : doc.docType === typeFilter;
+
+      const matchFilterDate = filterDate.trim() === '' ? true : (
+        doc.receiptDate.includes(filterDate) || (doc.dueDate && doc.dueDate.includes(filterDate))
+      );
+
+      const matchFilterClient = normFilterClient === '' ? true : (
+        normalizeArabic(doc.clientName).includes(normFilterClient)
+      );
+
+      const matchFilterAmount = filterAmount.trim() === '' ? true : (
+        doc.totalAmount.toString().includes(filterAmount) || 
+        (doc.totalAmount - (doc.withholdingTaxEnabled ? (doc.totalAmount * (doc.withholdingTaxRate || 1)) / 100 : 0)).toString().includes(filterAmount)
+      );
+
+      const matchWithholding = filterWithholdingOnly ? !!doc.withholdingTaxEnabled : true;
+
+      return matchSearch && matchType && matchFilterDate && matchFilterClient && matchFilterAmount && matchWithholding;
+    });
+  }, [documents, editDocs, isEditing, searchTerm, typeFilter, filterDate, filterClient, filterAmount, filterWithholdingOnly]);
+
+  // 3. Document Action Handlers
+  
+  // Direct file drag-and-drop dashboard portal
+  const handleDirectFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    if (uploadInstructions && uploadInstructions.trim() !== '') {
+      formData.append('instructions', uploadInstructions.trim());
+    }
+
+    setUploading(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json'
+        },
+        body: formData
+      });
+      
+      let data: any = {};
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text || `استجابة غير صحيحة من الخادم (رمز ${res.status})`);
+      }
+      
+      if (!res.ok) throw new Error(data.error || 'عذراً، فشل رفع وتحليل المستند');
+      
+      // Clear instructions on success
+      setUploadInstructions('');
+      
+      if (data.duplicateDetected) {
+        setExistingDuplicateDoc(data.existingDocument);
+        setProposedDuplicateDoc(data.proposedDocument);
+        setDuplicateModalOpen(true);
+        setUploading(false);
+        return;
+      }
+
+      if (data.document?.extractionFailed) {
+        triggerNotificationToast(
+          'info',
+          'تم الرفع كمسودة يدوية ⚠️',
+          'قنوات الذكاء الاصطناعي مشغولة حالياً، تم إنشاء مسودة للمستند لتمكينك من إدخال وتعديل البنود يدوياً دون توقف العمل.'
+        );
+      } else {
+        triggerNotificationToast(
+          'success',
+          'تم الرفع وتصنيف البنود بنجاح ✨',
+          `تم جلب بيانات المستند وتصنيفه لـ "${data.document?.clientName || ''}" بنجاح.`
+        );
+      }
+      
+      fetchData();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setUploading(false);
+      if (dashboardFileInputRef.current) dashboardFileInputRef.current.value = '';
+    }
+  };
+
+  // Confirm potential duplicate upload action
+  const handleConfirmDuplicateAction = async (action: 'proceed' | 'merge') => {
+    setConfirmingAction(true);
+    try {
+      const res = await fetch('/api/upload/confirm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action,
+          proposedDocument: proposedDuplicateDoc,
+          existingId: existingDuplicateDoc?.id
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'فشلت معالجة الطلب');
+      }
+
+      triggerNotificationToast(
+        'success',
+        action === 'merge' ? 'تم دمج البنود بنجاح 🔗' : 'تم رفع المستند المكرر بنجاح 📂',
+        action === 'merge' 
+          ? `تمت إضافة بنود المستند الجديد للمستند الحالي للمورد "${existingDuplicateDoc?.clientName}" وتحديث الإجمالي.`
+          : `تم حفظ المستند الجديد كنسخة مكررة بنجاح.`
+      );
+
+      setDuplicateModalOpen(false);
+      setExistingDuplicateDoc(null);
+      setProposedDuplicateDoc(null);
+      fetchData();
+    } catch (err: any) {
+      alert(`خطأ: ${err.message}`);
+    } finally {
+      setConfirmingAction(false);
+    }
+  };
+
+  // Delete document record
+  const handleDeleteDoc = async (id: string, event: MouseEvent) => {
+    event.stopPropagation();
+    if (!confirm('هل أنت متأكد من حذف هذا السجل والمستند نهائياً؟')) return;
+
+    const remaining = documents.filter(d => d.id !== id);
+    try {
+      const res = await fetch('/api/documents/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documents: remaining })
+      });
+      if (res.ok) {
+        setDocuments(remaining);
+        if (selectedDoc?.id === id) setSelectedDoc(null);
+      }
+    } catch (e) {
+      alert('فشل الاتصال بالخادم لحذف السجل.');
+    }
+  };
+
+  // Inline grid edits saver
+  const handleSaveSpreadsheetEdits = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/documents/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documents: editDocs })
+      });
+      
+      if (res.ok) {
+        setDocuments(editDocs);
+        setIsEditing(false);
+        triggerNotificationToast('success', 'تم حفظ التعديلات بنجاح', 'تم تسجيل كافة البنود وتحديث البيانات');
+      } else {
+        throw new Error('فشل الحفظ');
+      }
+    } catch (e: any) {
+      alert('فشل حفظ التعديلات على شيت الإكسيل: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add arbitrary manual blank row to editor
+  const handleAddManualRow = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const nextPoNum = getNextPoNumberForProject('عام', documents);
+    const newRow: ProcessedDocument = {
+      id: `doc_manual_${Date.now()}`,
+      clientName: 'مورد جديد يدوي',
+      projectName: 'عام',
+      shipToAddress: 'عام',
+      receiptDate: today,
+      docType: 'po',
+      docNumber: String(nextPoNum),
+      items: [{ description: 'خدمة/بند افتراضي', quantity: 1, unitPrice: 0, total: 0 }],
+      totalAmount: 0,
+      currency: 'EGP',
+      originalFilename: 'إدخال يدوي مباشر',
+      classifiedPath: '',
+      status: 'processed',
+      processedAt: new Date().toISOString(),
+      telegramUser: null,
+      summary: 'بند مدخل يدوياً من الشيت البديل',
+      notes: '',
+      projectStatus: 'in_progress'
+    };
+
+    if (isEditing) {
+      setEditDocs([newRow, ...editDocs]);
+    } else {
+      const updated = [newRow, ...documents];
+      setDocuments(updated);
+      setIsEditing(true);
+      setEditDocs([newRow, ...documents]);
+    }
+  };
+
+  // Trigger local utility toast
+  const triggerNotificationToast = (type: 'success' | 'info' | 'error', title: string, message: string) => {
+    const notif: AppNotification = {
+      id: `toast_${Date.now()}`,
+      type,
+      title,
+      message,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+    setShowNotificationToast(notif);
+    setTimeout(() => setShowNotificationToast(null), 5000);
+  };
+
+  // Clean and download physical file
+  const triggerFileDownload = (doc: ProcessedDocument) => {
+    if (!doc.classifiedPath) {
+      alert('هذا البند لا يحتوي على مستند مادي مرتبط (إدخال يدوي).');
+      return;
+    }
+    window.open(`/api/documents/download?path=${encodeURIComponent(doc.classifiedPath)}`, '_blank');
+  };
+
+  // Export spreadsheet using xlsx compiled helper
+  const handleExportToExcel = () => {
+    if (documents.length === 0) {
+      alert('لا توجد بيانات متاحة للتصدير حالياً.');
+      return;
+    }
+
+    const dataToExport = filteredDocs.map((doc, idx) => {
+      return {
+        "م": idx + 1,
+        "اسم المشروع": doc.projectName || "عام",
+        "اسم المورد": doc.clientName,
+        "تاريخ الاستلام": doc.receiptDate,
+        "تاريخ الاستحقاق": doc.dueDate || "—",
+        "نوع المستند": doc.docType === 'po' ? 'أمر شراء (PO)' : doc.docType === 'quote' ? 'عرض سعر (Quote)' : 'غير معروف',
+        "رقم مرجعي": doc.docNumber,
+        "المبلغ الإجمالي": doc.totalAmount,
+        "العملة": doc.currency,
+        "ملخص المستند": doc.summary || doc.notes || '',
+        "تاريخ المعالجة بالذكاء الاصطناعي": new Date(doc.processedAt).toLocaleString('ar-EG'),
+        "حالة الملف": doc.status === 'processed' ? 'مكتمل ومصنف' : 'قيد الانتظار',
+        "المستقبل": 'رفع مباشر'
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "شيت الفواتير وعروض الأسعار");
+    
+    // Set column sizing for readable layouts
+    ws['!cols'] = [
+      { wch: 6 },   // م
+      { wch: 25 },  // اسم المشروع
+      { wch: 25 },  // اسم المورد
+      { wch: 15 },  // تاريخ الاستلام
+      { wch: 15 },  // تاريخ الاستحقاق
+      { wch: 20 },  // نوع المستند
+      { wch: 15 },  // رقم مرجعي
+      { wch: 18 },  // المبلغ الإجمالي
+      { wch: 10 },  // العملة
+      { wch: 45 },  // ملخص المستند
+      { wch: 25 },  // تاريخ المعالجة بالذكاء الاصطناعي
+      { wch: 18 },  // حالة الملف
+      { wch: 15 }   // المستقبل
+    ];
+
+    // Auto-apply gorgeous styling to each cell in the worksheet
+    for (const cellRef in ws) {
+      if (cellRef.startsWith('!')) continue;
+      const cell = ws[cellRef];
+      if (!cell) continue;
+
+      const match = cellRef.match(/^([A-Z]+)([0-9]+)$/);
+      if (!match) continue;
+      const colStr = match[1];
+      const rowStr = match[2];
+      const r = parseInt(rowStr) - 1; // 0-indexed row
+
+      if (r === 0) {
+        // Styled Table Headers
+        // @ts-ignore
+        cell.s = {
+          font: { name: "Segoe UI", sz: 10.5, bold: true, color: { rgb: "FFFFFF" } },
+          fill: { patternType: "solid", fgColor: { rgb: "0284C7" } }, // Bright modern theme matching web UI
+          alignment: { horizontal: "center", vertical: "center", wrapText: true },
+          border: {
+            top: { style: "thin", color: { rgb: "0284C7" } },
+            bottom: { style: "medium", color: { rgb: "0284C7" } },
+            left: { style: "thin", color: { rgb: "CBD5E1" } },
+            right: { style: "thin", color: { rgb: "CBD5E1" } }
+          }
+        };
+      } else {
+        // Table body rows styling with alternating light gray/white background
+        const isOdd = r % 2 !== 0;
+        const bgRgb = isOdd ? "F8FAFC" : "FFFFFF";
+        let cellColor = "1E293B"; // Default slate text
+        const isTotalCol = colStr === 'H';
+
+        if (isTotalCol) {
+          cellColor = "0F172A"; // Darker for total
+        }
+
+        // @ts-ignore
+        cell.s = {
+          font: { name: "Segoe UI", sz: 10, bold: isTotalCol, color: { rgb: cellColor } },
+          fill: { patternType: "solid", fgColor: { rgb: bgRgb } },
+          alignment: { 
+            horizontal: (colStr === 'B' || colStr === 'C' || colStr === 'J') ? "right" : "center", 
+            vertical: "center" 
+          },
+          border: {
+            top: { style: "thin", color: { rgb: "E2E8F0" } },
+            bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+            left: { style: "thin", color: { rgb: "E2E8F0" } },
+            right: { style: "thin", color: { rgb: "E2E8F0" } }
+          }
+        };
+
+        // Number format for Amount (H)
+        if (isTotalCol) {
+          cell.z = "#,##0.00";
+        }
+      }
+    }
+
+    XLSX.writeFile(wb, "سجل_أوامر_الشراء_وعروض_الأسعار_المصنف.xlsx");
+    triggerNotificationToast('success', 'اكتمل تصدير الملف', 'تم تصدير ملف الإكسيل التفاعلي وتحميله بنجاح!');
+  };
+
+  // Convert Gregorian YYYY-MM-DD to Arabic Slash D/M/YYYY
+  const formatDateToArabicSlash = (dateStr: string) => {
+    if (!dateStr) return "24/9/2025";
+    try {
+      const parts = dateStr.includes('/') ? dateStr.split('/') : dateStr.split('-');
+      if (parts.length === 3) {
+        // if already D/M/YYYY, return it
+        if (dateStr.includes('/')) return dateStr;
+        const y = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        const d = parseInt(parts[2]);
+        return `${d}/${m}/${y}`;
+      }
+      return dateStr;
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  // Export selected purchase order / document to matching DELTA Excel template structure
+  const handleExportToDeltaExcel = (doc: ProcessedDocument) => {
+    if (!doc) {
+      alert('الرجاء تحديد مستند أولاً لتصديره.');
+      return;
+    }
+
+    try {
+      const isQuote = doc.docType === 'quote';
+      const itemsCount = Math.max(doc.items?.length || 0, 5);
+      
+      const itemsSubtotal = (doc.items || []).reduce((sum, item) => sum + Number(((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)), 0);
+      const discPct = doc.discountPercentage || 0;
+      const discAmt = doc.discountAmount || 0;
+      const pctDiscountVal = (itemsSubtotal * discPct) / 100;
+      const flatDiscountVal = discAmt;
+      const totalDiscount = pctDiscountVal + flatDiscountVal;
+      const finalTotalAmount = Math.max(0, itemsSubtotal - totalDiscount);
+
+      let discountOffset = 0;
+      if (discPct > 0 || discAmt > 0) {
+        discountOffset = 1 + (discPct > 0 ? 1 : 0) + (discAmt > 0 ? 1 : 0);
+      }
+
+      const taxOffset = doc.withholdingTaxEnabled ? 2 : 0;
+      const totalRowIdx = 8 + itemsCount;
+      const termsStart = totalRowIdx + 2 + discountOffset + taxOffset;
+      const sigHeadersRowIdx = totalRowIdx + 12 + discountOffset + taxOffset;
+      const sigNamesRowIdx = totalRowIdx + 13 + discountOffset + taxOffset;
+      const totalRowsCount = sigNamesRowIdx + 3;
+
+      const rows: any[][] = [];
+      for (let i = 0; i < totalRowsCount; i++) {
+        rows[i] = Array(8).fill(""); // columns A to H (0 to 7)
+      }
+
+      // 1. Title Banner BLOCK
+      rows[1][0] = "DELTA";
+      rows[1][6] = isQuote ? "PRICE" : "PURCHASE";
+      rows[2][0] = "FOR ROAD CONSTRUCTION";
+      rows[2][6] = isQuote ? "OFFER" : "ORDER";
+
+      // 2. Metadata Labels Headers
+      rows[4][0] = isQuote ? "Seller / البائع" : "Vendor / البائع";
+      rows[4][3] = "Ship to / اسم المشروع";
+      rows[4][4] = "No:";
+      rows[4][5] = isQuote ? "Quote Date" : "Order Date";
+      rows[4][6] = isQuote ? "Quotation Total" : "Purshase order Total"; // Matches spelling of DELTA requirements
+
+      // Calculated Values with defaults
+      const vendorName = doc.clientName || "رواد للتوكيلات التجارية";
+      const cleanProjectNameForExcel = (doc.projectName || "").replace(/\s*project\s*$/i, "").trim();
+      const shipToValue = cleanProjectNameForExcel ? `${cleanProjectNameForExcel} Project` : (doc.shipToAddress || "عام");
+      const orderNo = (doc.docNumber && doc.docNumber !== "N/A" && doc.docNumber !== "REF") ? doc.docNumber : "31";
+      const orderDate = formatDateToArabicSlash(doc.receiptDate);
+      
+      // Default delivery date: order date + 5 days, or use customized deliveryDate, or default 15-06-2026
+      let deliveryDateStr = doc.deliveryDate || "15-06-2026";
+      if (!doc.deliveryDate && doc.receiptDate) {
+        try {
+          const dParts = doc.receiptDate.split('-');
+          if (dParts.length === 3) {
+            const dateObj = new Date(parseInt(dParts[0]), parseInt(dParts[1]) - 1, parseInt(dParts[2]));
+            dateObj.setDate(dateObj.getDate() + 5);
+            deliveryDateStr = `${dateObj.getDate()}/${dateObj.getMonth() + 1}/${dateObj.getFullYear()}`;
+          }
+        } catch(e) {}
+      } else if (doc.deliveryDate) {
+        deliveryDateStr = formatDateToArabicSlash(doc.deliveryDate);
+      }
+
+      const totalText = `${doc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${doc.currency || 'EGP'}`;
+
+      // 3. Metadata Values
+      rows[5][0] = vendorName;
+      rows[5][3] = shipToValue;
+      rows[5][4] = orderNo;
+      rows[5][5] = orderDate;
+      // Use dynamic formula for total in the metadata box pointing to the final totals row (Excel Row `termsStart - 1`)
+      rows[5][6] = { t: "n", f: `G${termsStart - 1}`, v: doc.totalAmount || 0 };
+
+      // 4. Line Items Table headers (Columns A, B, C, D, E, F, G)
+      // We merge column B & C for Description to match Excel A, B, D, E, F, G layout
+      rows[7][0] = "No";
+      rows[7][1] = "Describtion"; // Exactly matches screenshot spelling
+      rows[7][2] = "";            // Merged under Description
+      rows[7][3] = "Unit";
+      rows[7][4] = "Qty";
+      rows[7][5] = "Price";
+      rows[7][6] = "Amount";
+
+      // 5. Populate grid items (starting at row index 8, i.e. Row 9 in Excel)
+      for (let i = 0; i < itemsCount; i++) {
+        const item = doc.items && doc.items[i];
+        const rIdx = 8 + i; 
+        rows[rIdx][0] = i + 1; // serial No.
+        
+        if (item) {
+          // If a brand is specified, we output description with brand appended
+          let fullDesc = item.description || "";
+          if (item.brand && item.brand.trim() !== "") {
+            fullDesc += ` (${item.brand})`;
+          }
+          rows[rIdx][1] = fullDesc;
+          rows[rIdx][2] = ""; // merged
+          rows[rIdx][3] = item.unit || "عدد";
+          rows[rIdx][4] = item.quantity || 0;
+          rows[rIdx][5] = item.unitPrice || 0;
+          // Excel formula: Qty * Price
+          rows[rIdx][6] = { t: "n", f: `E${rIdx + 1}*F${rIdx + 1}`, v: (item.quantity * item.unitPrice) || 0 };
+        } else {
+          rows[rIdx][1] = "";
+          rows[rIdx][2] = "";
+          rows[rIdx][3] = "";
+          rows[rIdx][4] = "";
+          rows[rIdx][5] = "";
+          rows[rIdx][6] = "";
+        }
+      }
+
+      // 6. Table Total sum Row & Discount Rows
+      if (discountOffset === 0) {
+        rows[totalRowIdx][1] = doc.withholdingTaxEnabled ? "Total Before Tax / الإجمالي قبل الخصم" : "Total";
+        // Excel formula: SUM of line items Amount cells (G9 to G[8 + itemsCount])
+        rows[totalRowIdx][6] = { t: "n", f: `SUM(G9:G${8 + itemsCount})`, v: doc.totalAmount || 0 };
+
+        if (doc.withholdingTaxEnabled) {
+          const rate = doc.withholdingTaxRate || 1;
+          const taxAmount = (doc.totalAmount * rate) / 100;
+          const netValue = doc.totalAmount - taxAmount;
+
+          const totalRowExcelNum = totalRowIdx + 1; // 1-based Row Number for total cell
+          rows[totalRowIdx + 1][1] = `Commercial & Industrial Profits Tax (${rate}%) / خصم أ.ت.ص`;
+          rows[totalRowIdx + 1][6] = { t: "n", f: `-G${totalRowExcelNum}*${rate}/100`, v: -taxAmount };
+
+          rows[totalRowIdx + 2][1] = "Net Payable / صافي القيمة المستحقة";
+          rows[totalRowIdx + 2][6] = { t: "n", f: `G${totalRowExcelNum}+G${totalRowExcelNum + 1}`, v: netValue };
+        }
+      } else {
+        let currentIdx = totalRowIdx;
+        
+        // A) Subtotal Row
+        rows[currentIdx][1] = "Subtotal (Before Discount) / الإجمالي قبل التخفيض";
+        rows[currentIdx][6] = { t: "n", f: `SUM(G9:G${8 + itemsCount})`, v: itemsSubtotal };
+        const subtotalExcelNum = currentIdx + 1;
+        currentIdx++;
+        
+        // B) Discount Percentage Row
+        let discPctExcelNum = 0;
+        if (discPct > 0) {
+          rows[currentIdx][1] = `Discount Percentage (${discPct}%) / خصم نسبة مئوية`;
+          rows[currentIdx][6] = { t: "n", f: `-G${subtotalExcelNum}*${discPct}/100`, v: -pctDiscountVal };
+          discPctExcelNum = currentIdx + 1;
+          currentIdx++;
+        }
+        
+        // C) Discount Amount Row
+        let discAmtExcelNum = 0;
+        if (discAmt > 0) {
+          rows[currentIdx][1] = "Discount Amount / تخفيض نقدي إضافي";
+          rows[currentIdx][6] = { t: "n", v: -flatDiscountVal };
+          discAmtExcelNum = currentIdx + 1;
+          currentIdx++;
+        }
+        
+        // D) Total After Discount Row
+        rows[currentIdx][1] = doc.withholdingTaxEnabled ? "Total After Discount / الإجمالي بعد التخفيض" : "Total / الإجمالي النهائي";
+        
+        const formulaParts = [`G${subtotalExcelNum}`];
+        if (discPct > 0) formulaParts.push(`G${discPctExcelNum}`);
+        if (discAmt > 0) formulaParts.push(`G${discAmtExcelNum}`);
+        const totalAfterDiscountExcelNum = currentIdx + 1;
+        
+        rows[currentIdx][6] = { t: "n", f: formulaParts.join("+"), v: finalTotalAmount };
+        
+        if (doc.withholdingTaxEnabled) {
+          const rate = doc.withholdingTaxRate || 1;
+          const taxAmount = (finalTotalAmount * rate) / 100;
+          const netValue = finalTotalAmount - taxAmount;
+
+          rows[currentIdx + 1][1] = `Commercial & Industrial Profits Tax (${rate}%) / خصم أ.ت.ص`;
+          rows[currentIdx + 1][6] = { t: "n", f: `-G${totalAfterDiscountExcelNum}*${rate}/100`, v: -taxAmount };
+
+          rows[currentIdx + 2][1] = "Net Payable / صافي القيمة المستحقة";
+          rows[currentIdx + 2][6] = { t: "n", f: `G${totalAfterDiscountExcelNum}+G${totalAfterDiscountExcelNum + 1}`, v: netValue };
+        }
+      }
+
+      // 7. Terms & Conditions BLOCK
+      rows[termsStart][0] = "Terms & conditions";
+      rows[termsStart + 1][0] = doc.vatTerms || "Prices include 14% VAT.";
+      rows[termsStart + 2][0] = doc.deliveryTerms || "Prices include Transportation.";
+      rows[termsStart + 3][0] = `Place of delivery :  ${shipToValue}`;
+      rows[termsStart + 4][0] = `Date of delivery at site: ${deliveryDateStr}`;
+
+      rows[termsStart + 5][0] = "Payment Terms :";
+      rows[termsStart + 6][0] = "Payment by check in the name of the company as shown in your commercial register";
+      rows[termsStart + 7][0] = ", or in the name of the authorized person through your company";
+      rows[termsStart + 8][0] = `, or by bank transfer to your company account within ${doc.paymentDays || "10"} days of the delivery date.`;
+      rows[termsStart + 9][0] = doc.advancePayment ? `Advance payment: ${doc.advancePayment}` : "";
+
+      // 8. Signatures Block
+      rows[sigHeadersRowIdx][0] = "Head of Procurement and Contracts";
+      rows[sigHeadersRowIdx][3] = "Technical Office Manager";
+      rows[sigHeadersRowIdx][6] = "Generl Manager"; // Spelled exactly like DELTA requirements screenshot
+
+      rows[sigNamesRowIdx][0] = doc.signatureProcurement || "Mr. Mohamed Al-Daly";
+      rows[sigNamesRowIdx][3] = doc.signatureTechnical || "Eng. Nasr Mahmoud";
+      rows[sigNamesRowIdx][6] = doc.signatureManager || "Eng. Sherif Mahmoud";
+
+      // Convert 2D array matrix to standard SheetJS Worksheet object
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      // Define static column sizes matching visual aspect ratio
+      ws['!cols'] = [
+        { wch: 8 },   // Column A: No.
+        { wch: 26 },  // Column B: Description Part 1
+        { wch: 26 },  // Column C: Description Part 2 (Merged with B)
+        { wch: 12 },  // Column D: Unit
+        { wch: 10 },  // Column E: Qty
+        { wch: 15 },  // Column F: Price
+        { wch: 18 },  // Column G: Amount
+        { wch: 10 }   // Column H: Outer spacing
+      ];
+
+      // Define cells merges
+      const merges = [
+        // Merge title "DELTA" across columns A to F (0 to 5)
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 5 } },
+        // PURCHASE ORDER titles spanning column G and H (6 and 7)
+        { s: { r: 1, c: 6 }, e: { r: 1, c: 7 } },
+        { s: { r: 2, c: 6 }, e: { r: 2, c: 7 } },
+
+        // Vendor meta header and value cell mergers spanning A to C (0 to 2)
+        { s: { r: 4, c: 0 }, e: { r: 4, c: 2 } },
+        { s: { r: 5, c: 0 }, e: { r: 5, c: 2 } },
+
+        // Item Header Description merge (B and C, index 1 and 2)
+        { s: { r: 7, c: 1 }, e: { r: 7, c: 2 } },
+
+        // Table Total label row span A to F (index 0 to 5)
+        { s: { r: totalRowIdx, c: 0 }, e: { r: totalRowIdx, c: 5 } }
+      ];
+
+      if (discountOffset > 0) {
+        for (let r = totalRowIdx + 1; r <= totalRowIdx + discountOffset; r++) {
+          merges.push({ s: { r, c: 0 }, e: { r, c: 5 } });
+        }
+      }
+
+      if (doc.withholdingTaxEnabled) {
+        merges.push(
+          { s: { r: totalRowIdx + discountOffset + 1, c: 0 }, e: { r: totalRowIdx + discountOffset + 1, c: 5 } },
+          { s: { r: totalRowIdx + discountOffset + 2, c: 0 }, e: { r: totalRowIdx + discountOffset + 2, c: 5 } }
+        );
+      }
+
+      // Item Description merges (Column B & C)
+      for (let i = 0; i < itemsCount; i++) {
+        merges.push({ s: { r: 8 + i, c: 1 }, e: { r: 8 + i, c: 2 } });
+      }
+
+      // Terms & Conditions mergers (A to H, index 0 to 7)
+      for (let i = 0; i < 10; i++) {
+        merges.push({ s: { r: termsStart + i, c: 0 }, e: { r: termsStart + i, c: 7 } });
+      }
+
+      // Signatures column alignments
+      merges.push(
+        { s: { r: sigHeadersRowIdx, c: 0 }, e: { r: sigHeadersRowIdx, c: 2 } },
+        { s: { r: sigHeadersRowIdx, c: 3 }, e: { r: sigHeadersRowIdx, c: 5 } },
+        { s: { r: sigHeadersRowIdx, c: 6 }, e: { r: sigHeadersRowIdx, c: 7 } },
+
+        { s: { r: sigNamesRowIdx, c: 0 }, e: { r: sigNamesRowIdx, c: 2 } },
+        { s: { r: sigNamesRowIdx, c: 3 }, e: { r: sigNamesRowIdx, c: 5 } },
+        { s: { r: sigNamesRowIdx, c: 6 }, e: { r: sigNamesRowIdx, c: 7 } }
+      );
+
+      ws['!merges'] = merges;
+
+      // Apply highly refined cell-by-cell styling structure for the DELTA design format
+      for (const cellRef in ws) {
+        if (cellRef.startsWith('!')) continue;
+        const cell = ws[cellRef];
+        if (!cell) continue;
+
+        const match = cellRef.match(/^([A-Z]+)([0-9]+)$/);
+        if (!match) continue;
+        const colStr = match[1];
+        const rowStr = match[2];
+        const r = parseInt(rowStr) - 1; // 0-indexed row
+        
+        let c = 0;
+        for (let idx = 0; idx < colStr.length; idx++) {
+          c = c * 26 + (colStr.charCodeAt(idx) - 64);
+        }
+        c = c - 1; // 0-indexed column
+
+        // Initialize general fallback styling shell
+        // @ts-ignore
+        cell.s = {
+          font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } },
+          alignment: { vertical: "center", wrapText: true }
+        };
+
+        // Header Top Banners (r = 1, 2)
+        if (r === 1 || r === 2) {
+          if (c < 6) {
+            // "DELTA" Title Banner (Cols A-F)
+            // @ts-ignore
+            cell.s = {
+              font: { name: "Segoe UI", sz: r === 1 ? 22 : 13, bold: true, color: { rgb: "0284C7" } }, // High contrast theme colors
+              alignment: { horizontal: "left", vertical: "center" }
+            };
+          } else {
+            // "PURCHASE ORDER" / "PRICE OFFER" (Cols G-H)
+            // @ts-ignore
+            cell.s = {
+              font: { name: "Segoe UI", sz: 12.5, bold: true, color: { rgb: "FFFFFF" } },
+              fill: { patternType: "solid", fgColor: { rgb: "0F172A" } },
+              alignment: { horizontal: "center", vertical: "center" }
+            };
+          }
+        }
+
+        // Project and Client Metadata headers & values (r = 4, 5)
+        else if (r === 4) {
+          // Label Headers
+          // @ts-ignore
+          cell.s = {
+            font: { name: "Segoe UI", sz: 9.5, bold: true, color: { rgb: "FFFFFF" } },
+            fill: { patternType: "solid", fgColor: { rgb: "0284C7" } }, // Matches modern primary highlights
+            alignment: { horizontal: "center", vertical: "center", wrapText: true },
+            border: {
+              top: { style: "thin", color: { rgb: "0284C7" } },
+              bottom: { style: "thin", color: { rgb: "0284C7" } },
+              left: { style: "thin", color: { rgb: "CBD5E1" } },
+              right: { style: "thin", color: { rgb: "CBD5E1" } }
+            }
+          };
+        }
+        else if (r === 5) {
+          // Metadata dynamic values
+          // @ts-ignore
+          cell.s = {
+            font: { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "0F172A" } },
+            fill: { patternType: "solid", fgColor: { rgb: "F1F5F9" } },
+            alignment: { horizontal: "center", vertical: "center", wrapText: true },
+            border: {
+              top: { style: "thin", color: { rgb: "CBD5E1" } },
+              bottom: { style: "thin", color: { rgb: "CBD5E1" } },
+              left: { style: "thin", color: { rgb: "CBD5E1" } },
+              right: { style: "thin", color: { rgb: "CBD5E1" } }
+            }
+          };
+          if (c === 6) {
+            cell.z = `#,##0.00 " ${doc.currency || 'EGP'}"`;
+          }
+        }
+
+        // Table Header row (r = 7)
+        else if (r === 7) {
+          // @ts-ignore
+          cell.s = {
+            font: { name: "Segoe UI", sz: 10.5, bold: true, color: { rgb: "FFFFFF" } },
+            fill: { patternType: "solid", fgColor: { rgb: "0F172A" } },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "0F172A" } },
+              bottom: { style: "medium", color: { rgb: "0F172A" } },
+              left: { style: "thin", color: { rgb: "334155" } },
+              right: { style: "thin", color: { rgb: "334155" } }
+            }
+          };
+        }
+
+        // Line Items Body cells (r >= 8 && r < 8 + itemsCount)
+        else if (r >= 8 && r < 8 + itemsCount) {
+          const isOdd = r % 2 !== 0;
+          const bgRgb = isOdd ? "F8FAFC" : "FFFFFF";
+          let alignStr = "center";
+          
+          if (c === 1 || c === 2) {
+            alignStr = "right"; // Right-aligned Arabic descriptions or Left-aligned for English
+          } else if (c === 6) {
+            alignStr = "left"; // Amounts left-aligned typically in billing forms, or right. Let's do right for standard number columns
+          }
+
+          if (c === 6) {
+            alignStr = "right";
+          }
+
+          // @ts-ignore
+          cell.s = {
+            font: { name: "Segoe UI", sz: 10, bold: c === 0 || c === 6, color: { rgb: "1E293B" } },
+            fill: { patternType: "solid", fgColor: { rgb: bgRgb } },
+            alignment: { horizontal: alignStr, vertical: "center", wrapText: true },
+            border: {
+              top: { style: "thin", color: { rgb: "E2E8F0" } },
+              bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+              left: { style: "thin", color: { rgb: "E2E8F0" } },
+              right: { style: "thin", color: { rgb: "E2E8F0" } }
+            }
+          };
+
+          if (c === 4) {
+            cell.z = "#,##0";
+          } else if (c === 5 || c === 6) {
+            cell.z = "#,##0.00";
+          }
+        }
+
+        // Subtotals, Discounts, & Net Totals Rows (r >= totalRowIdx && r < termsStart)
+        else if (r >= totalRowIdx && r < termsStart) {
+          const isFinalPayRow = (r === termsStart - 2) || (r === totalRowIdx && !doc.withholdingTaxEnabled);
+          const bgFillColor = isFinalPayRow ? "D1FAE5" : "FEF3C7"; // Light emerald vs warm gold amber
+          const borderStyleBottom = isFinalPayRow ? "double" : "thin";
+
+          // @ts-ignore
+          cell.s = {
+            font: { 
+              name: "Segoe UI", 
+              sz: 10.5, 
+              bold: true, 
+              color: isFinalPayRow && c === 6 ? { rgb: "15803D" } : { rgb: "0F172A" } 
+            },
+            fill: { patternType: "solid", fgColor: { rgb: bgFillColor } },
+            alignment: { horizontal: "right", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "CBD5E1" } },
+              bottom: { style: borderStyleBottom, color: { rgb: "475569" } },
+              left: { style: "thin", color: { rgb: "CBD5E1" } },
+              right: { style: "thin", color: { rgb: "CBD5E1" } }
+            }
+          };
+
+          if (c === 6) {
+            cell.z = "#,##0.00";
+          }
+        }
+
+        // Terms details panel (r >= termsStart && r < termsStart + 10)
+        else if (r >= termsStart && r < termsStart + 10) {
+          const isTitleRow = r === termsStart;
+          // @ts-ignore
+          cell.s = {
+            font: {
+              name: "Segoe UI",
+              sz: isTitleRow ? 11 : 9.5,
+              bold: isTitleRow,
+              color: isTitleRow ? { rgb: "0284C7" } : { rgb: "475569" }
+            },
+            fill: { patternType: "solid", fgColor: { rgb: "F8FAFC" } },
+            alignment: { horizontal: "right", vertical: "center", wrapText: true },
+            border: {
+              top: isTitleRow ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined,
+              bottom: (r === termsStart + 9) ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined,
+              left: (c === 0) ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined,
+              right: (c === 7) ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined
+            }
+          };
+        }
+
+        // Signatures area (r >= sigHeadersRowIdx && r <= sigNamesRowIdx)
+        else if (r >= sigHeadersRowIdx && r <= sigNamesRowIdx) {
+          const isTitle = r === sigHeadersRowIdx;
+          // @ts-ignore
+          cell.s = {
+            font: { name: "Segoe UI", sz: 10, bold: true, color: isTitle ? { rgb: "475569" } : { rgb: "0F172A" } },
+            fill: { patternType: "solid", fgColor: { rgb: "F1F5F9" } },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: {
+              top: isTitle ? { style: "medium", color: { rgb: "475569" } } : undefined,
+              bottom: !isTitle ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined
+            }
+          };
+        }
+      }
+
+      // Package to workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "DELTA_PO");
+
+      XLSX.writeFile(wb, `DELTA_PO_${orderNo}.xlsx`);
+      triggerNotificationToast('success', 'تم تصدير شيت DELTA', 'تم إنشاء وتنزيل شيت إكسيل كود مالي منسق ومطابق لنسق شركة DELTA بنجاح!');
+    } catch (e: any) {
+      alert('فشل تصدير قالب DELTA: ' + e.message);
+    }
+  };
+
+  // Update a single field inside document's line-items in the details drawer and sync immediately in state
+  const handleUpdateDrawerItem = (itemIdx: number, field: keyof LineItem | 'brand' | 'unit', value: any) => {
+    if (!selectedDoc) return;
+    
+    const updatedDoc = { ...selectedDoc };
+    const updatedItems = [...(updatedDoc.items || [])];
+    const updatedItem = { ...updatedItems[itemIdx] };
+    
+    if (field === 'quantity') {
+      updatedItem.quantity = Number(value) || 0;
+      updatedItem.total = updatedItem.quantity * updatedItem.unitPrice;
+    } else if (field === 'unitPrice') {
+      updatedItem.unitPrice = Number(value) || 0;
+      updatedItem.total = updatedItem.quantity * updatedItem.unitPrice;
+    } else {
+      (updatedItem as any)[field] = value;
+    }
+    
+    updatedItems[itemIdx] = updatedItem;
+    updatedDoc.items = updatedItems;
+    
+    // Recalculate invoice overall totalAmount
+    updatedDoc.totalAmount = updatedItems.reduce((sum, item) => sum + Number(((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)), 0);
+    
+    setSelectedDoc(updatedDoc);
+    
+    // Propagate changes to parent document list state dynamically in memory
+    const updatedDocsList = documents.map(d => d.id === selectedDoc.id ? updatedDoc : d);
+    setDocuments(updatedDocsList);
+  };
+
+  // Update a top-level field of the document inside the drawer and sync with state
+  const handleUpdateDrawerField = (field: keyof ProcessedDocument, value: any) => {
+    if (!selectedDoc) return;
+    let updatedDoc = { ...selectedDoc, [field]: value };
+    if (field === 'projectName') {
+      updatedDoc.shipToAddress = value;
+      if (updatedDoc.docType === 'po') {
+        const nextNum = getNextPoNumberForProject(value, documents.filter(d => d.id !== selectedDoc.id));
+        updatedDoc.docNumber = String(nextNum);
+      }
+    } else if (field === 'shipToAddress') {
+      updatedDoc.projectName = value;
+      if (updatedDoc.docType === 'po') {
+        const nextNum = getNextPoNumberForProject(value, documents.filter(d => d.id !== selectedDoc.id));
+        updatedDoc.docNumber = String(nextNum);
+      }
+    } else if (field === 'docType') {
+      if (value === 'po') {
+        const nextNum = getNextPoNumberForProject(updatedDoc.projectName || 'عام', documents.filter(d => d.id !== selectedDoc.id));
+        updatedDoc.docNumber = String(nextNum);
+      }
+    }
+    setSelectedDoc(updatedDoc);
+    
+    const updatedDocsList = documents.map(d => d.id === selectedDoc.id ? updatedDoc : d);
+    setDocuments(updatedDocsList);
+  };
+
+  // Dedicated Permanent Saver for changes made inside the details inspection drawer
+  const handleSaveDrawerEdits = async () => {
+    if (!selectedDoc) return;
+    try {
+      setIsSavingDrawer(true);
+      
+      const updatedDocsList = documents.map(d => d.id === selectedDoc.id ? selectedDoc : d);
+      setDocuments(updatedDocsList);
+
+      const res = await fetch('/api/documents/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documents: updatedDocsList })
+      });
+      
+      if (res.ok) {
+        if (audioEnabled) {
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.setValueAtTime(880, audioCtx.currentTime); // high ping
+            gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.12);
+          } catch (e) {}
+        }
+        triggerNotificationToast(
+          'success', 
+          'تم حفظ كافة التعديلات بنجاح! 💾', 
+          'تم تحديث وتثبيت شروط الدفع، التوصيل، والبنود المخصصة بأمان تامة على خادم البيانات.'
+        );
+      } else {
+        throw new Error('فشل تسجيل التغييرات على الخادم');
+      }
+    } catch (e: any) {
+      alert('عذراً، حدث خطأ أثناء حفظ التعديلات: ' + e.message);
+    } finally {
+      setIsSavingDrawer(false);
+    }
+  };
+
+  // Safe Print engine with graceful in-tab rendering to prevent Cloud Run 403 popup errors
+  const handlePrintDocument = () => {
+    if (!selectedDoc) return;
+    try {
+      setPrintDirectionParam(printDirection);
+      setTableAlignment('center');
+      setPrintDocId(selectedDoc.id);
+    } catch (err: any) {
+      console.warn("Print trigger failed:", err);
+    }
+  };
+
+  // Client-side Direct PDF Render & Download to bypass all browser prints/popups blocks
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById("printable-excel-sheet-delta-isolated");
+    if (!element) {
+      alert("عذراً، لم نتمكن من تحديد جدول الطباعة.");
+      return;
+    }
+
+    setIsGeneratingPDF(true);
+    try {
+      // Force scroll to top of element to prevent cut-off in rendering
+      const restoreScroll = window.scrollY;
+      window.scrollTo(0, 0);
+
+      // Render crisp canvas representation of printable sheet with oklch safety transform
+      const canvas = await html2canvas(element, {
+        scale: 2.0, // High-fidelity print-quality resolution
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        allowTaint: false,
+        onclone: (clonedDoc) => {
+          // Clean all <style> tags inside the cloned document before html2canvas parses them
+          const clonedStyles = clonedDoc.getElementsByTagName("style");
+          Array.from(clonedStyles).forEach((styleEl) => {
+            if (styleEl.textContent && (styleEl.textContent.includes('oklch') || styleEl.textContent.includes('oklab'))) {
+              styleEl.textContent = convertOklToRgb(styleEl.textContent);
+            }
+          });
+
+          const clonedElement = clonedDoc.getElementById("printable-excel-sheet-delta-isolated");
+          if (!clonedElement) return;
+
+          const allElements = clonedElement.getElementsByTagName("*");
+          const elementsList = [clonedElement, ...Array.from(allElements)];
+
+          elementsList.forEach((el) => {
+            const htmlEl = el as HTMLElement;
+            if (!htmlEl.style) return;
+
+            // Resolve any computed styles containing oklch or oklab colors (which crashes html2canvas parsing)
+            const computed = window.getComputedStyle(htmlEl);
+            const colorProps = [
+              'color', 
+              'backgroundColor', 
+              'borderColor', 
+              'borderTopColor', 
+              'borderBottomColor', 
+              'borderLeftColor', 
+              'borderRightColor',
+              'outlineColor'
+            ];
+
+            colorProps.forEach((prop) => {
+              const val = computed[prop as any];
+              if (val && (val.includes('oklch') || val.includes('oklab'))) {
+                htmlEl.style[prop as any] = convertOklToRgb(val);
+              }
+            });
+          });
+        }
+      });
+
+      // Restore scroll
+      window.scrollTo(0, restoreScroll);
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      
+      // Setup PDF document mirroring A4 layout (portrait, mm)
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4"
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      // Calculate responsive margins and aspect ratio
+      const margin = 5; // 5mm minimal print margins
+      const contentWidth = pdfWidth - (margin * 2);
+      const ratio = canvas.height / canvas.width;
+      const contentHeight = contentWidth * ratio;
+
+      const pagePrintableHeight = pdfHeight - (margin * 2);
+
+      if (contentHeight <= pagePrintableHeight) {
+        // Single Page rendering fits perfectly
+        pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, contentHeight);
+        
+        // Mask left and right margins to ensure no overflow leaks visually
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, 0, margin, pdfHeight, 'F');
+        pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F');
+      } else {
+        // Multi-page slicing output with precise mathematically bounded intervals
+        let position = margin;
+        let remainingHeight = contentHeight;
+
+        // Draw initial slice on Page 1
+        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
+        
+        // Cover and mask A4 page margins with solid white rectangles to clip adjacent slivers
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, 0, pdfWidth, margin, 'F'); // Top Margin Mask
+        pdf.rect(0, pdfHeight - margin, pdfWidth, margin, 'F'); // Bottom Margin Mask
+        pdf.rect(0, 0, margin, pdfHeight, 'F'); // Left Margin Mask
+        pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F'); // Right Margin Mask
+
+        remainingHeight -= pagePrintableHeight;
+
+        while (remainingHeight > 0) {
+          pdf.addPage();
+          position = margin - (contentHeight - remainingHeight);
+          pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
+          
+          // Cover and mask A4 page margins on consecutive pages to ensure zero duplicate rendering
+          pdf.setFillColor(255, 255, 255);
+          pdf.rect(0, 0, pdfWidth, margin, 'F'); // Top Margin Mask
+          pdf.rect(0, pdfHeight - margin, pdfWidth, margin, 'F'); // Bottom Margin Mask
+          pdf.rect(0, 0, margin, pdfHeight, 'F'); // Left Margin Mask
+          pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F'); // Right Margin Mask
+
+          remainingHeight -= pagePrintableHeight;
+        }
+      }
+
+      // Format clean filename for saving
+      const docNum = printDoc ? (printDoc.docNumber || "document") : "DELTA";
+      const projName = printDoc ? (printDoc.projectName || "DELTA") : "PROJECT";
+      pdf.save(`${projName}_${docNum}_DELTA_Direct.pdf`);
+    } catch (error: any) {
+      console.error("Direct PDF Generation failed:", error);
+      alert("عذراً، فشل تصدير ملف الـ PDF. يرجى محاولة استخدام طباعة المتصفح لحفظ المستند يدوياً.");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  // Add a blank line item to the document
+  const handleAddDrawerItem = () => {
+    if (!selectedDoc) return;
+    const updatedDoc = { ...selectedDoc };
+    const newItem: LineItem = {
+      description: "",
+      brand: "",
+      unit: "عدد",
+      quantity: 1,
+      unitPrice: 0,
+      total: 0
+    };
+    updatedDoc.items = [...(updatedDoc.items || []), newItem];
+    updatedDoc.totalAmount = updatedDoc.items.reduce((sum, item) => sum + Number(((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)), 0);
+    setSelectedDoc(updatedDoc);
+    
+    const updatedDocsList = documents.map(d => d.id === selectedDoc.id ? updatedDoc : d);
+    setDocuments(updatedDocsList);
+    
+    fetch('/api/documents/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documents: updatedDocsList })
+    }).catch(() => {});
+  };
+
+  // Remove a line item at a specific index
+  const handleRemoveDrawerItem = (itemIdx: number) => {
+    if (!selectedDoc || !selectedDoc.items) return;
+    const updatedDoc = { ...selectedDoc };
+    const updatedItems = [...(updatedDoc.items || [])];
+    updatedItems.splice(itemIdx, 1);
+    updatedDoc.items = updatedItems;
+    updatedDoc.totalAmount = updatedItems.reduce((sum, item) => sum + Number(((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)), 0);
+    setSelectedDoc(updatedDoc);
+    
+    const updatedDocsList = documents.map(d => d.id === selectedDoc.id ? updatedDoc : d);
+    setDocuments(updatedDocsList);
+    
+    fetch('/api/documents/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documents: updatedDocsList })
+    }).catch(() => {});
+  };
+
+  // Clear system warning alerts logs
+  const handleClearNotifications = async () => {
+    try {
+      const res = await fetch('/api/notifications/clear', { method: 'POST' });
+      if (res.ok) setNotifications([]);
+    } catch (e) {}
+  };
+
+  // Group categorized documents by unique suppliers for Supplier folders tree
+  const documentsByClient = useMemo(() => {
+    const groups: Record<string, ProcessedDocument[]> = {};
+    documents.forEach(doc => {
+      const name = doc.clientName || 'مورد غير معروف';
+      if (!groups[name]) groups[name] = [];
+      groups[name].push(doc);
+    });
+    return groups;
+  }, [documents]);
+
+  // Group categorized documents by unique projects
+  const documentsByProject = useMemo(() => {
+    const groups: Record<string, ProcessedDocument[]> = {};
+    // Initialize all known projects with an empty array
+    uniqueProjects.forEach(proj => {
+      groups[proj] = [];
+    });
+    if (!groups['عام']) {
+      groups['عام'] = [];
+    }
+    // Populate with documents
+    documents.forEach(doc => {
+      const name = doc.projectName?.trim() || 'عام';
+      if (!groups[name]) groups[name] = [];
+      groups[name].push(doc);
+    });
+    return groups;
+  }, [uniqueProjects, documents]);
+
+  // Dynamically filter projects by search query
+  const filteredProjectsEntries = useMemo(() => {
+    const entries = Object.entries(documentsByProject) as [string, ProcessedDocument[]][];
+    if (!projectSearchTerm.trim()) return entries;
+    const q = projectSearchTerm.trim().toLowerCase();
+    return entries.filter(([pName, pDocs]) => {
+      const matchesName = pName.toLowerCase().includes(q);
+      const matchesDoc = pDocs.some(d => 
+        (d.clientName || '').toLowerCase().includes(q) ||
+        (d.docNumber || '').toLowerCase().includes(q) ||
+        (d.summary || '').toLowerCase().includes(q)
+      );
+      return matchesName || matchesDoc;
+    });
+  }, [documentsByProject, projectSearchTerm]);
+
+  // Helper to compute net spending for a document safely
+  const getDocNetSpent = (doc: ProcessedDocument) => {
+    if (doc.items && doc.items.length > 0) {
+      const itemsSubtotal = doc.items.reduce((sum, item) => sum + Number(((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)), 0);
+      const discPct = doc.discountPercentage || 0;
+      const discAmt = doc.discountAmount || 0;
+      const totalDiscount = ((itemsSubtotal * discPct) / 100) + discAmt;
+      const finalAmount = Math.max(0, itemsSubtotal - totalDiscount);
+      const taxRate = doc.withholdingTaxEnabled ? (doc.withholdingTaxRate || 1) : 0;
+      const taxAmount = (finalAmount * taxRate) / 100;
+      return finalAmount - taxAmount;
+    }
+    return doc.totalAmount || 0;
+  };
+
+  const projectAnalytics = useMemo(() => {
+    // 1. Get unique list of Projects and Currencies from all documents
+    const uniqueCurrencies = new Set<string>();
+    const projectsSet = new Set<string>();
+    
+    // Always pre-populate the project list from the documentsByProject keys
+    Object.keys(documentsByProject).forEach(pName => {
+      projectsSet.add(pName);
+    });
+
+    documents.forEach(d => {
+      if (d.currency) uniqueCurrencies.add(d.currency);
+    });
+    
+    // Default EGP to guarantee at least one currency
+    if (uniqueCurrencies.size === 0) uniqueCurrencies.add('EGP');
+    const currenciesList = Array.from(uniqueCurrencies);
+    const projectsList = Array.from(projectsSet);
+    
+    // Map of month keys to their labels
+    const getMonthLabel = (key: string) => {
+      if (key === '0000-00') return 'غير محدد';
+      const parts = key.split('-');
+      if (parts.length === 2) {
+        const [y, m] = parts;
+        const arabicMonths: Record<string, string> = {
+          '01': 'يناير', '02': 'فبراير', '03': 'مارس', '04': 'أبريل',
+          '05': 'مايو', '06': 'يونيو', '07': 'يوليو', '08': 'أغسطس',
+          '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر'
+        };
+        return `${arabicMonths[m]} ${y}`;
+      }
+      return key;
+    };
+
+    // Filter documents by selected currency first
+    const currencyFiltered = documents.filter(d => {
+      const c = d.currency || 'EGP';
+      return c === chartSelectedCurrency;
+    });
+
+    // Sub-filter by document type selector
+    const typeFiltered = currencyFiltered.filter(d => {
+      if (chartSelectedDocType === 'all') return d.docType === 'po' || d.docType === 'quote';
+      return d.docType === chartSelectedDocType;
+    });
+
+    // 2. Compute project distribution (for PieChart or Horizontal Bar Comparison)
+    // Map project name to total sum
+    const projectSums: Record<string, number> = {};
+    projectsList.forEach(p => { projectSums[p] = 0; });
+    
+    typeFiltered.forEach(d => {
+      const pName = d.projectName?.trim() || 'عام';
+      const amt = getDocNetSpent(d);
+      projectSums[pName] = (projectSums[pName] || 0) + amt;
+    });
+    
+    const projectComparisonData = Object.entries(projectSums)
+      .map(([name, value]) => ({ name, value }))
+      .filter(item => item.value > 0)
+      .sort((a,b) => b.value - a.value);
+
+    // 3. Compute group by month
+    // Find all month keys across typeFiltered
+    const allDocMonths = new Set<string>();
+    typeFiltered.forEach(d => {
+      const dStr = d.receiptDate || d.processedAt || '';
+      const match = dStr.match(/^(\d{4})-(\d{2})/);
+      const mKey = match ? `${match[1]}-${match[2]}` : '0000-00';
+      allDocMonths.add(mKey);
+    });
+    
+    // Sort month keys chronologically
+    const sortedMonthKeys = Array.from(allDocMonths).sort();
+
+    interface MonthlyEntry {
+      month: string;
+      monthKey: string;
+      total?: number;
+      amount?: number;
+      cumulative: number;
+      docCount?: number;
+      [key: string]: any;
+    }
+
+    const monthlyData: MonthlyEntry[] = [];
+    let runningCumulative = 0;
+
+    if (chartSelectedProject === 'all') {
+      // Series contains monthly breakdown of all projects
+      sortedMonthKeys.forEach(mKey => {
+        const mLabel = getMonthLabel(mKey);
+        const item: MonthlyEntry = {
+          month: mLabel,
+          monthKey: mKey,
+          total: 0,
+          cumulative: 0
+        };
+        
+        // Initialize 0 for each project
+        projectsList.forEach(p => {
+          item[p] = 0;
+        });
+
+        // Sum docs in this month
+        typeFiltered.forEach(d => {
+          const dStr = d.receiptDate || d.processedAt || '';
+          const match = dStr.match(/^(\d{4})-(\d{2})/);
+          const docMKey = match ? `${match[1]}-${match[2]}` : '0000-00';
+          
+          if (docMKey === mKey) {
+            const pName = d.projectName?.trim() || 'عام';
+            const amt = getDocNetSpent(d);
+            item[pName] = (item[pName] || 0) + amt;
+            item.total = (item.total || 0) + amt;
+          }
+        });
+
+        runningCumulative += item.total || 0;
+        item.cumulative = runningCumulative;
+        
+        monthlyData.push(item);
+      });
+    } else {
+      // Series contains monthly spending for ONE specific project
+      const projName = chartSelectedProject;
+      sortedMonthKeys.forEach(mKey => {
+        const mLabel = getMonthLabel(mKey);
+        const item: MonthlyEntry = {
+          month: mLabel,
+          monthKey: mKey,
+          amount: 0,
+          cumulative: 0,
+          docCount: 0
+        };
+
+        typeFiltered.forEach(d => {
+          const pName = d.projectName?.trim() || 'عام';
+          if (pName !== projName) return;
+          
+          const dStr = d.receiptDate || d.processedAt || '';
+          const match = dStr.match(/^(\d{4})-(\d{2})/);
+          const docMKey = match ? `${match[1]}-${match[2]}` : '0000-00';
+          
+          if (docMKey === mKey) {
+            const amt = getDocNetSpent(d);
+            item.amount = (item.amount || 0) + amt;
+            item.docCount = (item.docCount || 0) + 1;
+          }
+        });
+
+        runningCumulative += item.amount || 0;
+        item.cumulative = runningCumulative;
+
+        if ((item.amount || 0) > 0 || item.cumulative > 0) {
+          monthlyData.push(item);
+        }
+      });
+    }
+
+    // Prepare overview stats for selected project / all projects
+    let statsTotalAmount = 0;
+    let statsDocCount = 0;
+
+    typeFiltered.forEach(d => {
+      const pName = d.projectName?.trim() || 'عام';
+      if (chartSelectedProject !== 'all' && pName !== chartSelectedProject) return;
+      statsTotalAmount += getDocNetSpent(d);
+      statsDocCount += 1;
+    });
+
+    const statsAverageAmount = statsDocCount > 0 ? statsTotalAmount / statsDocCount : 0;
+
+    return {
+      currenciesList,
+      projectsList,
+      projectComparisonData,
+      monthlyData,
+      totalSpentOverall: statsTotalAmount,
+      docCountOverall: statsDocCount,
+      averageSpentOverall: statsAverageAmount
+    };
+  }, [documents, documentsByProject, chartSelectedProject, chartSelectedCurrency, chartSelectedDocType]);
+
+  // Find printable document from documents list
+  const printDoc = useMemo(() => {
+    if (!printDocId) return null;
+    return documents.find(d => d.id === printDocId);
+  }, [printDocId, documents]);
+
+  // Print trigger auto-opens browser dialog when in independent print window mode
+  useEffect(() => {
+    if (printDocId && !loading && printDoc) {
+      const timer = setTimeout(() => {
+        try {
+          window.focus();
+          window.print();
+        } catch (e) {
+          console.warn("Auto-print block:", e);
+        }
+      }, 750);
+      return () => clearTimeout(timer);
+    }
+  }, [printDocId, loading, printDoc]);
+
+  if (printDocId) {
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-white flex flex-col justify-center items-center gap-4 text-center font-sans p-6" dir="rtl">
+          <div className="w-12 h-12 border-4 border-slate-900 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm font-extrabold text-slate-800">جاري جلب تفاصيل المستند وتجهيز شيت DELTA للطباعة...</p>
+        </div>
+      );
+    }
+
+    if (!printDoc) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center gap-4 text-center font-sans p-6" dir="rtl">
+          <div className="p-3 bg-red-100 text-red-700 rounded-2xl border border-red-200 text-lg">⚠️</div>
+          <p className="text-sm font-bold text-slate-700">عذراً، لم نتمكن من العثور على هذا المستند أو أن معرف المستند غير صحيح.</p>
+          <button 
+            type="button"
+            onClick={() => window.close()} 
+            className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer"
+          >
+            إغلاق هذه الصفحة ❌
+          </button>
+        </div>
+      );
+    }
+
+    const hasAnyBrand = !!(printDoc.items && printDoc.items.some(item => item.brand?.trim() !== ""));
+
+    // Direct printable clean view structure
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-2 sm:p-5 print:p-0 print:bg-white" dir={printDirectionParam}>
+        
+        {/* NON-PRINTABLE DIRECTIVE BANNER (Will be hidden completely during true printing) */}
+        <div className="no-print bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6 max-w-4xl mx-auto flex flex-col gap-4 text-right shadow-xl font-sans text-slate-200">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-3 text-sky-400">
+              <Printer className="w-5 h-5 flex-shrink-0" />
+              <h2 className="text-sm font-black text-white">
+                تجهيز وطباعة شيت DELTA الفني 🖨️
+              </h2>
+            </div>
+            <div className="px-2 py-0.5 bg-indigo-500/20 text-indigo-350 text-[10px] font-bold rounded">
+              إصدار فائق التوافق (v2)
+            </div>
+          </div>
+          
+          <div className="text-xs text-slate-300 leading-relaxed font-medium space-y-3">
+            <p>
+              لتوفير توافق كامل بنسبة 100% مع جميع المتصفحات (Brave, Google Chrome, Firefox, Safari) وتفادي قيود الحماية المفروضة على نوافذ المحاكاة (Iframe) أو مشاكل تسجيل الدخول، قمنا بإتاحة طريقتين مكملتين لحفظ الشيت:
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2 text-right">
+              <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-800">
+                <span className="text-sky-400 font-extrabold block mb-1">الخيار الأول: تنزيل ملف PDF مباشر (موصى به لـ Brave و Iframe) 📥</span>
+                يقوم بتوليد شيت PDF فوري وتنزيله إلى جهازك مباشرة بـ نقرة واحدة دون استخدام نافذة الطباعة التقليدية.
+              </div>
+              <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-800">
+                <span className="text-emerald-400 font-extrabold block mb-1">الخيار الثاني: طباعة المتصفح التقليدية 🖨️</span>
+                يفتح نافذة الطباعة الرسمية الخاصة بـ المتصفح (يعمل بكفاءة عند فتح التطبيق في نافذة مستقلة).
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2.5 bg-slate-800/40 p-4 rounded-xl border border-slate-800 mt-1 text-right">
+            <span className="text-xs font-extrabold text-slate-300 flex items-center gap-1.5 justify-end">
+              <span>تنسيق نصوص الجدول وعرض الخلايا:</span>
+              <span>🛠️</span>
+            </span>
+            <div className="flex flex-wrap gap-2 text-xs font-sans justify-end mt-1">
+              <button
+                type="button"
+                onClick={() => setTableAlignment('center')}
+                className={`px-2.5 py-1.5 rounded-lg font-black transition-all cursor-pointer ${tableAlignment === 'center' ? 'bg-sky-650 text-white shadow' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+              >
+                🎯 في المنتصف (الافتراضي)
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableAlignment('right')}
+                className={`px-2.5 py-1.5 rounded-lg font-black transition-all cursor-pointer ${tableAlignment === 'right' ? 'bg-sky-650 text-white shadow' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+              >
+                ➡️ محاذاة لليمين
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableAlignment('left')}
+                className={`px-2.5 py-1.5 rounded-lg font-black transition-all cursor-pointer ${tableAlignment === 'left' ? 'bg-sky-650 text-white shadow' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+              >
+                ⬅️ محاذاة لليصار
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableAlignment('auto')}
+                className={`px-2.5 py-1.5 rounded-lg font-black transition-all cursor-pointer ${tableAlignment === 'auto' ? 'bg-sky-650 text-white shadow' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+              >
+                🔄 تلقائي طبق الاتجاه
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-between items-center gap-3 mt-2 border-t border-slate-800 pt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setPrintDocId(null);
+                try { window.close(); } catch {}
+              }}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer hover:scale-[1.02]"
+            >
+              العودة للوحة التحكم 🔙
+            </button>
+            
+            <div className="flex flex-wrap gap-2.5">
+              {/* Direct PDF Download Button */}
+              <button
+                type="button"
+                onClick={handleDownloadPDF}
+                disabled={isGeneratingPDF}
+                className="px-5 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-2 hover:scale-[1.02] disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {isGeneratingPDF ? (
+                  <>
+                    <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    <span>جاري توليد ملف PDF فائق الوضوح...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 text-sky-200" />
+                    <span>تنزيل ملف PDF مباشر 📥</span>
+                  </>
+                )}
+              </button>
+
+              {/* Force Open in New Tab URL Anchor for sandboxed bypass */}
+              <a
+                href={`${window.location.origin}${window.location.pathname}?print=${printDoc.id}&dir=${printDirectionParam}`}
+                target="_blank"
+                rel="noopener"
+                className="px-5 py-2 bg-[#1d4ed8] hover:bg-blue-600 text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-2 hover:scale-[1.02] no-print"
+              >
+                <ExternalLink className="w-4 h-4 text-blue-200" />
+                <span>فتح في نافذة كاملة للطباعة الفورية 🌐</span>
+              </a>
+
+              {/* Standard printer trigger */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (isInIframe) {
+                    alert("⚠️ القيود الأمنية للمتصفح تمنع الطباعة من داخل إطار المعاينة (Iframe).\n\nيرجى التفضل بالضغط أولاً على الزر الأزرق المجاور لفتح الصفحة في نافذة كاملة مستقلة [فتح في نافذة كاملة للطباعة الفورية 🌐] لتمكين الطباعة الورقية وحفظها بنقرة واحدة!");
+                    return;
+                  }
+                  try {
+                    window.focus();
+                    window.print();
+                  } catch (e) {
+                    console.warn("Manual print error:", e);
+                  }
+                }}
+                disabled={isGeneratingPDF}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-2 hover:scale-[1.02]"
+              >
+                <Printer className="w-4 h-4 text-emerald-200" />
+                <span>طباعة عبر المتصفح 🖨️</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Iframe restricted browser print warning */}
+        {isInIframe && (
+          <div className="w-full max-w-4xl mx-auto mb-6 bg-amber-950/40 border border-amber-900/40 rounded-2xl p-4 text-right no-print" dir="rtl">
+            <div className="flex items-start gap-3">
+              <span className="text-xl shrink-0">⚠️</span>
+              <div className="space-y-1 font-sans">
+                <h4 className="text-xs font-black text-amber-400">تنبيه لضمان جودة الطباعة المباشرة:</h4>
+                <p className="text-[11px] text-slate-300 leading-relaxed font-bold">
+                  أنت تتصفح الموقع حالياً من داخل إطار المعاينة لـ AI Studio (Iframe). 
+                  متصفحات الويب تمنع تشغيل أمر الطباعة المباشرة داخل الإطارات بسبب قيود الحماية.
+                </p>
+                <div className="pt-2 text-[10.5px] text-amber-300 font-medium space-y-1">
+                  <div>💡 للحصول على المستند الورقي، يرجى الضغط على زر <span className="font-extrabold text-white bg-slate-800 px-1.5 py-0.5 rounded-md text-[10px]">تنزيل ملف PDF مباشر 📥</span> بالأعلى ثم طباعته كالمعتاد.</div>
+                  <div>🔄 أو قم بفتح الموقع في نافذة مستقلة بالكامل عبر زر الانتقال بأعلى الشاشة لتشغيل ميزة الطباعة الفورية للورق!</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PRISTINE VIRTUAL EXCEL SHEET FOR PRINT */}
+        <div className="w-full max-w-4xl mx-auto print-me-wrapper">
+          <div 
+            id="printable-excel-sheet-delta-isolated"
+            className={`border border-slate-300 bg-white font-sans text-xs select-none print-me ${
+              printDirectionParam === 'rtl' ? 'print-rtl' : 'print-ltr'
+            }`}
+          >
+            {/* Header Banner Block */}
+            <div className="excel-header-banner border-b border-slate-350 p-4 flex justify-between items-center bg-[#CCCCCC]">
+              <div className={`${printDirectionParam === 'rtl' ? 'text-right' : 'text-left'} font-sans`}>
+                <div className="text-xl font-black text-black tracking-tight leading-none">DELTA</div>
+                <div className="text-[10px] font-black text-black mt-1.5 tracking-wider">FOR ROAD CONSTRUCTION</div>
+              </div>
+              <div className={`${printDirectionParam === 'rtl' ? 'text-left' : 'text-right'} border-s-2 border-dashed border-black/40 ps-4 font-sans`}>
+                <div className="text-sm font-black text-black tracking-wider leading-none">
+                  {printDoc.docType === 'quote' ? 'PRICE' : 'PURCHASE'}
+                </div>
+                <div className="text-sm font-black text-black tracking-wider leading-none mt-1">
+                  {printDoc.docType === 'quote' ? 'OFFER' : 'ORDER'}
+                </div>
+              </div>
+            </div>
+
+             {/* Metadata Box styled as Excel Rows - Merged into a desktop grid or responsive mobile blocks */}
+             <div className="hidden md:grid grid-cols-12 border-b border-slate-350 text-black font-sans bg-white select-text print:grid">
+               {/* Column 1: Vendor (Seller) */}
+               <div className="col-span-4 p-2.5 flex flex-col gap-1.5 justify-center text-center items-center">
+                 <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                   {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                 </span>
+                 <span className="font-black text-black text-[14px] mt-1 leading-snug w-full text-center block whitespace-normal break-words">
+                   {printDoc.clientName || "غير محدد"}
+                 </span>
+               </div>
+
+               {/* Column 2: Ship to */}
+               <div className="col-span-2 p-2.5 flex flex-col gap-1.5 justify-center text-center items-center">
+                 <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                   {printDirectionParam === 'rtl' ? 'اسم المشروع' : 'SHIP TO'}
+                 </span>
+                 <span className="font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-words">
+                   {printDoc.projectName || "عام"}
+                 </span>
+               </div>
+
+              {/* Column 3: PO No */}
+              <div className="col-span-2 p-2.5 flex flex-col gap-1.5 justify-center text-center">
+                <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                  {printDirectionParam === 'rtl' ? 'رقم أمر الشراء / PO' : 'PO No'}
+                </span>
+                <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-all">
+                  #{printDoc.docNumber || "31"}
+                </span>
+              </div>
+
+              {/* Column 4: Date */}
+              <div className="col-span-2 p-2.5 flex flex-col gap-1.5 justify-center text-center">
+                <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                  {printDirectionParam === 'rtl' ? 'تاريخ المستند' : (printDoc.docType === 'quote' ? 'Quote Date' : 'Order Date')}
+                </span>
+                <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-words">
+                  {printDoc.receiptDate || ""}
+                </span>
+              </div>
+
+              {/* Column 5: Total */}
+              <div className="col-span-2 p-2.5 flex flex-col gap-1.5 justify-center text-center bg-amber-50/10">
+                <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                  {printDoc.docType === 'quote' 
+                    ? (printDirectionParam === 'rtl' ? 'إجمالي العرض' : 'Offer Total') 
+                    : (printDirectionParam === 'rtl' ? 'إجمالي أمر الشراء' : 'Purchase Order')}
+                </span>
+                <span className="font-mono font-black text-[#DC2626] text-[15px] mt-1 leading-none select-text w-full text-center block whitespace-normal break-words">
+                  {printDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Mobile-Friendly Metadata View for printable sheet (Screen interface only, hidden in print output) */}
+            <div className="md:hidden print:hidden border-b border-slate-200 bg-slate-50/70 p-4 space-y-3 font-sans text-right" dir="rtl">
+              <div className="grid grid-cols-2 gap-2.5 text-xs">
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                  <span className="text-[10px] font-bold text-slate-450 mb-1">
+                    {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                  </span>
+                  <span className="font-extrabold text-slate-800 text-xs">
+                    {printDoc.clientName || "غير محدد"}
+                  </span>
+                </div>
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                  <span className="text-[10px] font-bold text-slate-450 mb-1">
+                    {printDirectionParam === 'rtl' ? 'اسم المشروع' : 'SHIP TO'}
+                  </span>
+                  <span className="font-extrabold text-slate-800 text-xs">
+                    {printDoc.projectName || "عام"}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                  <span className="text-[10px] font-bold text-slate-450 mb-1">P.O. Number</span>
+                  <span className="font-mono font-bold text-slate-800 text-[11px] mt-0.5">
+                    #{printDoc.docNumber || "31"}
+                  </span>
+                </div>
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                  <span className="text-[10px] font-bold text-slate-450 mb-1">تاريخ المعاملة</span>
+                  <span className="font-mono font-bold text-slate-800 text-[11px] mt-0.5">
+                    {printDoc.receiptDate || ""}
+                  </span>
+                </div>
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                  <span className="text-[10px] font-bold text-slate-450 mb-1">القيمة الإجمالية</span>
+                  <span className="font-mono font-black text-[#DC2626] text-[11px] mt-0.5">
+                    {printDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Excel Row Headers */}
+            {showExcelGrid && (
+              <div className="bg-[#FAFAFA] border-b border-slate-300 text-slate-400 font-mono text-[9px] font-bold text-center flex animate-none select-none">
+                <div className="py-1 w-12 border-e border-slate-200 bg-[#EFEFEF] text-slate-500 font-bold">Row</div>
+                <div className="py-1 w-12 border-e border-slate-200 bg-[#EFEFEF]">A</div>
+                <div className="py-1 flex-1 border-e border-slate-200">B</div>
+                {hasAnyBrand && <div className="py-1 w-24 border-e border-slate-200">C</div>}
+                <div className="py-1 w-16 border-e border-slate-200">{hasAnyBrand ? 'D' : 'C'}</div>
+                <div className="py-1 w-16 border-e border-slate-200">{hasAnyBrand ? 'E' : 'D'}</div>
+                <div className="py-1 w-24 border-e border-slate-200">{hasAnyBrand ? 'F' : 'E'}</div>
+                <div className="py-1 w-32">{hasAnyBrand ? 'G' : 'F'}</div>
+              </div>
+            )}
+
+            {/* Excel Table Area */}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse border-b border-slate-300 text-sm text-slate-800 table-fixed">
+                <thead>
+                  <tr className="bg-[#EFEFEF] border-b border-slate-300 font-extrabold text-black text-center select-none text-xs align-middle">
+                    {showExcelGrid && <th className="border-e border-slate-300 w-12 min-w-[48px] max-w-[48px] font-mono text-[10px] align-middle text-center font-bold">-</th>}
+                    {showExcelGrid && <th className="border-e border-slate-300 py-2.5 w-12 min-w-[48px] max-w-[48px] font-mono text-[10px] align-middle text-center font-bold">Row No.</th>}
+                    <th className="border-e border-[#B0B0B0] py-2.5 w-12 min-w-[48px] max-w-[48px] font-sans text-center select-none align-middle font-bold text-black">No</th>
+                    <th className="border-e border-[#B0B0B0] py-2.5 px-3 min-w-[260px] text-center align-middle font-bold text-black">
+                      {printDirectionParam === 'rtl' ? 'الوصف التفصيلي (Description)' : 'Description'}
+                    </th>
+                    {hasAnyBrand && (
+                      <th className="border-e border-slate-300 py-2.5 w-24 min-w-[96px] max-w-[96px] font-sans text-center align-middle font-bold text-black">
+                        {printDirectionParam === 'rtl' ? 'البراند (Brand)' : 'Brand'}
+                      </th>
+                    )}
+                    <th className="border-e border-slate-300 py-2.5 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black">Unit</th>
+                    <th className="border-e border-slate-300 py-2.5 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black">Qty</th>
+                    <th className="border-e border-slate-300 py-2.5 w-24 min-w-[96px] max-w-[96px] text-center align-middle font-bold text-black">Price</th>
+                    <th className="py-2.5 w-32 min-w-[128px] max-w-[128px] text-center align-middle font-bold text-black">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const printDocAdvDetails = parseAdvance(printDoc.advancePayment, printDoc.totalAmount);
+                    const printTotalBaseCount = (printDoc.items?.length || 0) + (printDocAdvDetails ? 1 : 0);
+                    
+                    return (
+                      <>
+                        {/* Prepended Advance Payment Row */}
+                        {printDocAdvDetails && (
+                          <tr className="border-b border-blue-100 bg-blue-50/20 font-medium hover:bg-blue-50/40">
+                            {showExcelGrid && (
+                              <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-400 py-3.5 w-12 min-w-[48px] max-w-[48px] select-none align-middle">
+                                10
+                              </td>
+                            )}
+                            {showExcelGrid && (
+                              <td className="border-e border-slate-200 py-3.5 text-center text-slate-500 font-mono font-semibold w-12 min-w-[48px] max-w-[48px] select-none align-middle">
+                                1
+                              </td>
+                            )}
+                            <td className="border-e border-slate-200 py-3.5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] select-none align-middle">1</td>
+                            <td className="border-e border-slate-200 py-3.5 px-3 min-w-[180px] text-center align-middle">
+                              <div className="font-extrabold text-[#0000C8] leading-relaxed text-[13.5px] text-center align-middle">
+                                {printDirectionParam === 'rtl' 
+                                  ? 'الدفعة المقدمة المسددة (تحت الحساب)' 
+                                  : 'Advance Payment Received (On Account)'}
+                              </div>
+                              <div className="flex flex-col gap-1 mt-2 items-center">
+                                <div className="text-[11.5px] text-slate-600 font-bold">
+                                  {printDirectionParam === 'rtl'
+                                    ? `القيمة المدفوعة مقدمًا: ${printDoc.advancePayment}`
+                                    : `Paid Advance Value: ${printDoc.advancePayment}`}
+                                </div>
+                                <div className="text-[12px] text-emerald-800 font-extrabold bg-emerald-50 border border-emerald-150 rounded-md px-2 py-0.5">
+                                  {printDirectionParam === 'rtl'
+                                    ? `باقي قيمة المستند المستحقة (المتبقي): ${printDocAdvDetails.remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${printDoc.currency || 'EGP'}`
+                                    : `Remaining Balance Payable (Due): ${printDocAdvDetails.remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${printDoc.currency || 'EGP'}`}
+                                </div>
+                              </div>
+                            </td>
+                            {hasAnyBrand && <td className="border-e border-slate-200 py-3.5 text-slate-800 font-bold w-24 min-w-[96px] max-w-[96px] text-center align-middle">ADVANCE</td>}
+                            <td className="border-e border-slate-200 py-3.5 text-center text-slate-800 w-16 min-w-[64px] max-w-[64px] align-middle font-bold">-</td>
+                            <td className="border-e border-slate-200 py-3.5 text-center font-bold text-slate-900 w-16 min-w-[64px] max-w-[64px] align-middle">1</td>
+                            <td className="border-e border-slate-200 py-3.5 text-center text-slate-800 w-24 min-w-[96px] max-w-[96px] align-middle font-bold">-</td>
+                            <td className="py-3.5 w-32 min-w-[128px] max-w-[128px] select-text font-black text-rose-700 font-mono text-[13px] text-center align-middle">
+                              {printDocAdvDetails.value.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                            </td>
+                          </tr>
+                        )}
+
+                        {/* Actual Document Items */}
+                        {printDoc.items && printDoc.items.length > 0 ? (
+                          printDoc.items.map((item, idx) => {
+                            const sequenceNo = idx + 1 + (printDocAdvDetails ? 1 : 0);
+                            const rowNo = idx + 10 + (printDocAdvDetails ? 1 : 0);
+                            return (
+                              <tr key={idx} className="border-b border-slate-200 font-bold hover:bg-slate-50/50">
+                                {showExcelGrid && (
+                                  <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-400 py-3.5 w-12 min-w-[48px] max-w-[48px] select-none align-middle">
+                                    {rowNo}
+                                  </td>
+                                )}
+                                {showExcelGrid && (
+                                  <td className="border-e border-slate-200 py-3.5 text-center text-slate-500 font-mono font-semibold w-12 min-w-[48px] max-w-[48px] select-none align-middle">
+                                    {sequenceNo}
+                                  </td>
+                                )}
+                                <td className="border-e border-slate-200 py-3.5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] align-middle">{idx + 1}</td>
+                                <td className="border-e border-slate-200 py-3.5 px-3 min-w-[260px] align-middle text-center">
+                                  <div 
+                                    dir={printDirectionParam === 'rtl' ? 'rtl' : 'ltr'}
+                                    className="font-bold text-black leading-relaxed text-[13px] whitespace-normal break-words w-full text-center align-middle" 
+                                    title={item.description}
+                                  >
+                                    {item.description ? convertEasternToWesternNumerals(item.description.replace(/\\"/g, '"').replace(/\\/g, '').trim()) : ""}
+                                  </div>
+                                </td>
+                                {hasAnyBrand && (
+                                  <td className="border-e border-slate-200 py-3.5 text-black font-bold w-24 min-w-[96px] max-w-[96px] break-words whitespace-normal font-sans text-center align-middle">
+                                    {item.brand ? convertEasternToWesternNumerals(item.brand) : "غير محدد"}
+                                  </td>
+                                )}
+                                <td className="border-e border-slate-200 py-3.5 text-black font-bold w-16 min-w-[64px] max-w-[64px] break-words whitespace-normal text-center align-middle">
+                                  {item.unit ? convertEasternToWesternNumerals(item.unit) : "عدد"}
+                                </td>
+                                <td className="border-e border-slate-200 py-3.5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle">
+                                  {item.quantity || "1"}
+                                </td>
+                                <td className="border-e border-slate-200 py-3.5 font-bold text-black w-24 min-w-[96px] max-w-[96px] text-center align-middle">
+                                  {item.unitPrice?.toLocaleString('en-US', { minimumFractionDigits: 2 }) || "0"}
+                                </td>
+                                <td className="py-3.5 w-32 min-w-[128px] max-w-[128px] select-text font-black text-black font-mono text-[13px] text-center align-middle">
+                                  {item.total ? item.total.toLocaleString('en-US', { minimumFractionDigits: 2 }) : ((item.quantity || 0) * (item.unitPrice || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : null}
+
+                        {/* Empty Spacer Rows to resemble Excel template structure - Disabled per user request */}
+                        {false && Array.from({ length: Math.max(0, 5 - printTotalBaseCount) }).map((_, emptyIdx) => {
+                          const actualIndex = printTotalBaseCount + emptyIdx;
+                          return (
+                            <tr key={`empty-${emptyIdx}`} className="border-b border-slate-150 select-none opacity-40">
+                              {showExcelGrid && (
+                                <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-300 py-3.5 w-12 min-w-[48px] max-w-[48px] select-none">
+                                  {actualIndex + 10}
+                                </td>
+                              )}
+                              {showExcelGrid && (
+                                <td className="border-e border-slate-150 py-3.5 text-center text-slate-300 font-mono font-semibold w-12 min-w-[48px] max-w-[48px]">
+                                  {actualIndex + 1}
+                                </td>
+                              )}
+                              <td className="border-e border-slate-200 py-3.5 text-center font-mono w-12 min-w-[48px] max-w-[48px]">-</td>
+                              <td className="border-e border-slate-200 py-3.5 px-3 text-slate-350 italic font-medium min-w-[180px]">سماحية سطر فارغ لتوسيع الفاتورة وكتابة الملاحظات</td>
+                              {hasAnyBrand && <td className="border-e border-slate-200 py-3.5 text-center text-slate-300 w-24 min-w-[96px] max-w-[96px]">-</td>}
+                              <td className="border-e border-slate-200 py-3.5 text-center text-slate-300 w-16 min-w-[64px] max-w-[64px]">-</td>
+                              <td className="border-e border-slate-200 py-3.5 text-center text-slate-300 w-16 min-w-[64px] max-w-[64px]">-</td>
+                              <td className="border-e border-slate-200 py-3.5 text-center text-slate-300 w-24 min-w-[96px] max-w-[96px]">-</td>
+                              <td className={`py-3.5 w-32 min-w-[128px] max-w-[128px] font-mono font-semibold text-slate-300 ${
+                                tableAlignment === 'center' ? 'text-center px-3' :
+                                tableAlignment === 'left' ? 'text-left pl-3' :
+                                tableAlignment === 'right' ? 'text-right pr-3' :
+                                printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
+                              }`}>-</td>
+                            </tr>
+                          );
+                        })}
+
+                        {/* Total Row */}
+                        <tr className="bg-[#F3F4F6] border-t border-slate-300 font-bold text-slate-900 text-center select-none animate-none">
+                          {showExcelGrid && (
+                            <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                              {10 + printTotalBaseCount}
+                            </td>
+                          )}
+                          <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-slate-800 uppercase tracking-wide">
+                            {printDoc.withholdingTaxEnabled 
+                              ? (printDirectionParam === 'rtl' ? 'الإجمالي قبل الخصم (Total)' : 'Total Before Tax')
+                              : 'Total'
+                            }
+                          </td>
+                          <td className={`py-2 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] font-mono text-xs select-text ${
+                            tableAlignment === 'center' ? 'text-center px-3' :
+                            tableAlignment === 'left' ? 'text-left pl-3' :
+                            tableAlignment === 'right' ? 'text-right pr-3' :
+                            printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
+                          }`}>
+                            {printDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                          </td>
+                        </tr>
+
+                        {/* Conditional withholding tax row */}
+                        {printDoc.withholdingTaxEnabled && (
+                          <>
+                            <tr className="bg-[#FFFDF3] border-t border-slate-200 text-slate-700 text-center select-none font-semibold text-xs font-sans">
+                              {showExcelGrid && (
+                                <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12">
+                                  {11 + printTotalBaseCount}
+                                </td>
+                              )}
+                              <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 text-red-700 font-medium whitespace-nowrap">
+                                {printDirectionParam === 'rtl' 
+                                  ? `خصم ضريبة الأرباح التجارية والصناعية (${printDoc.withholdingTaxRate || 1}%)` 
+                                  : `Commercial & Industrial Profits Tax Discount (${printDoc.withholdingTaxRate || 1}%)`
+                                }
+                              </td>
+                              <td className={`py-2 w-32 min-w-[128px] max-w-[128px] font-bold text-red-600 font-mono text-xs select-text ${
+                                tableAlignment === 'center' ? 'text-center px-3' :
+                                tableAlignment === 'left' ? 'text-left pl-3' :
+                                tableAlignment === 'right' ? 'text-right pr-3' :
+                                printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
+                              }`}>
+                                -{((printDoc.totalAmount * (printDoc.withholdingTaxRate || 1)) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                              </td>
+                            </tr>
+
+                            <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none font-sans">
+                              {showExcelGrid && (
+                                <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                  {12 + printTotalBaseCount}
+                                </td>
+                              )}
+                              <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
+                                {printDirectionParam === 'rtl' ? 'صافي القيمة المستحقة للدفع (Net Payable)' : 'Net Payable'}
+                              </td>
+                              <td className={`py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text ${
+                                tableAlignment === 'center' ? 'text-center px-3' :
+                                tableAlignment === 'left' ? 'text-left pl-3' :
+                                tableAlignment === 'right' ? 'text-right pr-3' :
+                                printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
+                              }`}>
+                                {(printDoc.totalAmount - ((printDoc.totalAmount * (printDoc.withholdingTaxRate || 1)) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                              </td>
+                            </tr>
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Terms and conditions block styled as Sheet Cells with strict LTR alignment */}
+            <div className="bg-[#FCFCFC] border-t-2 border-dashed border-slate-200 p-5 space-y-4 text-xs font-sans text-left select-text" dir="ltr">
+              <div>
+                <div className="font-extrabold text-black mb-2.5 uppercase select-none tracking-wide text-[11px]">
+                  Terms & conditions
+                </div>
+                <div className="space-y-4 text-black font-semibold font-sans">
+                  <div className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-black shrink-0 mt-1.5" />
+                    <span><strong className="text-black mr-1 font-bold">VAT:</strong> {printDoc.vatTerms ?? "Prices include 14% VAT."}</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-black shrink-0 mt-1.5" />
+                    <span><strong className="text-black mr-1 font-bold">Logistic Terms:</strong> {printDoc.deliveryTerms ?? "Prices include Transportation."}</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-black shrink-0 mt-1.5" />
+                    <span><strong className="text-black mr-1 font-bold">Place of delivery:</strong> {printDoc.projectName ? printDoc.projectName.replace(/\s*project\s*$/i, "").trim() : (printDoc.shipToAddress || "عام")}</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-black shrink-0 mt-1.5" />
+                    <span><strong className="text-black mr-1 font-bold">Date of delivery at site:</strong> {printDoc.deliveryDate || "15-06-2026"}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <div className="font-extrabold text-black mb-2.5 uppercase select-none tracking-wide text-[11px]">
+                  Payment Terms :
+                </div>
+                <div className="space-y-2 text-black font-semibold font-sans">
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-black shrink-0 w-3 text-[11px]">1.</span>
+                    <span>Payment by check in the name of the company as shown in your commercial register.</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-black shrink-0 w-3 text-[11px]">2.</span>
+                    <span>Or in the name of the authorized person through your company.</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-black shrink-0 w-3 text-[11px]">3.</span>
+                    <span>Or by bank transfer to your company account within <strong>{printDoc.paymentDays || "10"}</strong> days of the delivery date.</span>
+                  </div>
+                  {printDoc.advancePayment && (
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-[#DC2626] shrink-0 w-3 text-[11px]">4.</span>
+                      <span>
+                        <strong className="text-[#DC2626] mr-1">Advance payment (الدفعة المقدمة):</strong> {printDoc.advancePayment}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Signatures block side-by-side matching the Excel image layout */}
+            <div className="border-t border-[#B0B0B0] grid grid-cols-3 bg-transparent text-center select-text pt-2 pb-2">
+              <div className="border-e border-[#B0B0B0] p-2 flex flex-col justify-between min-h-[140px]">
+                <span className="font-extrabold text-black text-[13px] uppercase leading-normal font-sans whitespace-normal block tracking-tight max-w-full mx-auto text-center">
+                  Head of Procurement and Contracts
+                </span>
+                <div className="h-12 flex-1"></div>
+                <span className="font-bold text-black text-sm block">{printDoc.signatureProcurement || "Mr. Mohamed Al-Daly"}</span>
+              </div>
+              <div className="border-e border-[#B0B0B0] p-2 flex flex-col justify-between min-h-[140px]">
+                <span className="font-extrabold text-black text-[13px] uppercase leading-normal font-sans whitespace-normal block tracking-tight max-w-full mx-auto text-center">
+                  Technical Office Manager
+                </span>
+                <div className="h-12 flex-1"></div>
+                <span className="font-bold text-black text-sm block">{printDoc.signatureTechnical || "Eng. Nasr Mahmoud"}</span>
+              </div>
+              <div className="p-2 flex flex-col justify-between min-h-[140px]">
+                <span className="font-extrabold text-black text-[13px] uppercase leading-normal font-sans whitespace-normal block tracking-tight max-w-full mx-auto text-center">
+                  General Manager
+                </span>
+                <div className="h-12 flex-1"></div>
+                <span className="font-bold text-black text-sm block">{printDoc.signatureManager || "Eng. Sherif Mahmoud"}</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans overflow-x-hidden w-full max-w-full">
+      
+      {/* 1. Header / Navigation Bar */}
+      <header className="bg-[#111827] border-b border-slate-800 sticky top-0 z-40 shadow-lg shadow-black/15">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row justify-between items-center py-4 md:py-0 md:h-20 gap-4">
+            
+            {/* Title & Brand */}
+            <div className="flex items-center gap-3 text-center md:text-right">
+              <div className="p-2.5 bg-sky-600 text-white rounded-xl shadow-md shadow-sky-600/10 shrink-0">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-lg md:text-xl font-bold tracking-tight text-white">نظام الأتمتة المالي الذكي</h1>
+                <p className="text-[11px] md:text-xs text-slate-400">تحليل وتصنيف تلقائي لعروض الأسعار وأوامر الشراء بواسطة الـ AI (مظهر داكن)</p>
+              </div>
+            </div>
+
+            {/* Practical Top Action Panel */}
+            <div className="flex flex-wrap justify-center md:justify-end items-center gap-3 w-full md:w-auto">
+              
+              {/* Sound alert switcher */}
+              <button 
+                onClick={() => setAudioEnabled(!audioEnabled)}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+                  audioEnabled 
+                    ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/60 hover:bg-emerald-950/60' 
+                    : 'bg-[#1f2937] text-slate-400 border-slate-800 hover:bg-[#374151]'
+                }`}
+                title="تصفية رنات التنبيه الصوتي عند استلام ملفات جديدة"
+              >
+                <Bell className={`w-3.5 h-3.5 ${audioEnabled ? 'animate-bounce text-emerald-400' : 'opacity-60'}`} />
+                <span>{audioEnabled ? 'الرنات: نشطة' : 'الرنات: صامت'}</span>
+              </button>
+
+              {/* Directly Upload Trigger Button */}
+              <label 
+                className="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer shadow-md shadow-sky-600/10 transition-all flex items-center gap-2"
+                htmlFor="direct-file-upload-header"
+              >
+                {uploading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+                <span>تحميل مستند مباشر</span>
+                <input 
+                  type="file" 
+                  id="direct-file-upload-header" 
+                  className="hidden" 
+                  ref={dashboardFileInputRef}
+                  onChange={handleDirectFileUpload}
+                  disabled={uploading}
+                  accept="image/*,application/pdf,.pdf"
+                />
+              </label>
+
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* 2. Bento Statistics Cards */}
+      <section className="bg-[#0b0f19]/60 border-b border-slate-800/80 py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            
+            {/* Box 1: Total Docs */}
+            <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
+              <div className="p-3 bg-sky-950/45 text-sky-400 rounded-xl">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-xs text-slate-455 block font-medium">المستندات المستخرجة</span>
+                <span className="text-2xl font-extrabold text-white">{stats.totalProcessedCount}</span>
+                <span className="text-xs text-slate-400 block mt-0.5">ملف مستخرج ومصنف</span>
+              </div>
+            </div>
+
+            {/* Box 2: Total Clients */}
+            <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
+              <div className="p-3 bg-[#2e1065]/40 text-[#a78bfa] rounded-xl">
+                <FolderOpen className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-xs text-slate-455 block font-medium">مجلدات الموردين النشطة</span>
+                <span className="text-2xl font-extrabold text-white">{stats.uniqueClientCount}</span>
+                <span className="text-xs text-slate-400 block mt-0.5">تصنيف أبجدي وتاريخي مالي</span>
+              </div>
+            </div>
+
+            {/* Box 3: Total Revenue/Values */}
+            <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
+              <div className="p-3 bg-emerald-950/40 text-emerald-400 rounded-xl">
+                <DollarSign className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <span className="text-xs text-slate-455 block font-medium">إجمالي المبالغ من الفواتير</span>
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-baseline">
+                  {Object.keys(stats.totalValueByCurrency).length > 0 ? (
+                    Object.entries(stats.totalValueByCurrency).map(([curr, val]) => (
+                      <span key={curr} className="text-lg font-extrabold text-white">
+                        {val.toLocaleString()} <span className="text-xs text-emerald-400">{curr}</span>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-lg font-bold text-slate-400">0 EGP</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Box 4: Extracted types breakdown status list */}
+            <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
+              <div className="p-3 bg-indigo-95/40 text-indigo-400 rounded-xl">
+                <Activity className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-xs text-slate-455 block font-medium">تصنيف المستندات المدخلة</span>
+                <div className="flex items-center gap-2 mt-1.5 text-xs font-bold leading-none">
+                  <span className="bg-sky-950/50 text-sky-400 px-2 py-1 rounded-md border border-sky-900/60">
+                    PO: {documents.filter(d => d.docType === 'po').length}
+                  </span>
+                  <span className="bg-violet-950/50 text-violet-400 px-2 py-1 rounded-md border border-violet-900/60">
+                    Quote: {documents.filter(d => d.docType === 'quote').length}
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400 block mt-1">تصنيف وترتيب دائم بالـ AI</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Global Notification Logs Banner */}
+      {notifications.length > 0 && (
+        <div className="bg-blue-50/50 border-b border-blue-100 py-3">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center text-xs text-blue-800">
+            <div className="flex items-center gap-2">
+              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-md font-bold uppercase">تنبيهات فورية</span>
+              <span className="font-medium">{notifications[0].message}</span>
+              <span className="text-blue-400 font-mono">({new Date(notifications[0].timestamp).toLocaleTimeString('ar-EG')})</span>
+            </div>
+            <button 
+              onClick={handleClearNotifications}
+              className="text-blue-500 hover:text-blue-700 underline font-semibold cursor-pointer"
+            >
+              مسح سجل الإشعارات
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Core Tabbed Controls */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col">
+        
+        {/* Unified Direct Image & PDF Upload Zone required by user */}
+        <div className="bg-[#111827] rounded-3xl border border-slate-800 p-6 mb-6 shadow-xl flex flex-col gap-4">
+          <div className="text-right">
+            <label className="text-xs font-bold text-slate-300 mr-1.5 flex items-center gap-1.5 justify-end">
+              <span>توجيهات أو ملاحظات إضافية لتوجيه الـ AI أثناء قراءة هذا المستند (مثال: "المورد هو مظلوم" أو "العملة بالريال")</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            </label>
+            <div className="mt-1.5">
+              <textarea
+                rows={2}
+                value={uploadInstructions}
+                onChange={(e) => setUploadInstructions(e.target.value)}
+                placeholder="توجيهات اختيارية (مثال: استخدم اسم المورد 'مظلوم'، أو صنف هذه المواد كحديد تسليح)... سيقوم جيميني بالالتزام بها فورياً أثناء استخراج وفهرسة البنود."
+                className="w-full px-4 py-2.5 text-xs bg-[#0b0f19] border border-slate-800 rounded-xl focus:outline-hidden focus:border-sky-500 text-slate-100 placeholder-slate-500 transition-all resize-none font-sans text-right"
+              />
+            </div>
+          </div>
+
+          <div className="bg-[#0b0f19]/40 rounded-2xl border-2 border-dashed border-sky-900/40 hover:border-sky-500/80 hover:shadow-lg transition-all p-8 text-center cursor-pointer relative group">
+            <input 
+              type="file" 
+              id="portal-file-upload"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              onChange={handleDirectFileUpload}
+              disabled={uploading}
+              accept="image/*,application/pdf,.pdf"
+            />
+            <div className="flex flex-col items-center justify-center gap-3">
+              <div className="p-4 bg-sky-950/40 text-sky-450 rounded-full group-hover:scale-105 transition-transform duration-300">
+                {uploading ? (
+                  <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
+                ) : (
+                  <Upload className="w-8 h-8 text-sky-400" />
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-200">اسحب أو اختر ملف الباقة / أمر الشراء / عرض السعر</h3>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  يدعم PDF وجميع أنواع الصور (PNG, JPG, ...). سيتم تطبيق التوجيهات المدونة أعلاه أثناء الفحص بالذكاء الاصطناعي
+                </p>
+              </div>
+              <div className="mt-1">
+                <span className="px-5 py-2.5 bg-sky-650 hover:bg-sky-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all">
+                  {uploading ? 'جاري استخراج البيانات والبنود بالـ AI...' : 'اضغط لاختيار مستند أو اسحبه هنا'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs Headers Panel */}
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center border-b border-slate-800 pb-3 mb-6 gap-3">
+          <div className="flex gap-2 w-full overflow-x-auto pb-2 scrollbar-none scroll-smooth">
+            
+            <button
+              onClick={() => setActiveTab('spreadsheet')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 ${
+                activeTab === 'spreadsheet'
+                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/10'
+                  : 'text-slate-400 hover:bg-[#111827] hover:text-white'
+              }`}
+            >
+              <Table className="w-4 h-4" />
+              <span>شيت الإكسيل التفاعلي ({filteredDocs.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('files')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 ${
+                activeTab === 'files'
+                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                  : 'text-slate-400 hover:bg-[#111827] hover:text-white'
+              }`}
+            >
+              <FolderOpen className="w-4 h-4" />
+              <span>أرشيف مجلدات الموردين ({Object.keys(documentsByClient).length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('projects')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 ${
+                activeTab === 'projects'
+                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                  : 'text-slate-400 hover:bg-[#111827] hover:text-white'
+              }`}
+            >
+              <Briefcase className="w-4 h-4" />
+              <span>تقسيم المشاريع ({Object.keys(documentsByProject).length})</span>
+            </button>
+
+          </div>
+
+          <div className="text-[10px] md:text-xs font-medium text-slate-500 shrink-0 text-right">
+            أخر تحديث بتوقيت النظام: <span className="font-mono text-slate-500">13:38Z (UTC)</span>
+          </div>
+        </div>
+
+        {/* Global Error Banner */}
+        {errorMsg && (
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 text-rose-800 rounded-2xl flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-500 flex-shrink-0" />
+            <div className="text-sm">
+              <span className="font-bold">تنبيه بالنظام: </span> {errorMsg}
+            </div>
+            <button 
+              onClick={() => setErrorMsg(null)}
+              className="mr-auto text-rose-400 hover:text-rose-600 font-bold"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* 5. Tabs Contents rendering */}
+        <div className="flex-1 flex flex-col justify-stretch">
+          
+          {/* TAB 1: INTERACTIVE SPREADSHEET */}
+          {activeTab === 'spreadsheet' && (
+            <div className="bg-[#111827] rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex-1 flex-col flex">
+              
+              {/* Local Backup Alert Banner */}
+              {hasBackupToRestore && (
+                <div className="bg-sky-950/40 border-b border-sky-900/60 p-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-right" dir="rtl">
+                  <div className="flex items-center gap-3 text-right">
+                    <div className="p-2 bg-sky-500/10 text-sky-400 rounded-xl shrink-0">
+                      <Database className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white">رصدنا وجود نسخة احتياطية محلية متطابقة! 📂</h4>
+                      <p className="text-[11px] text-slate-300 mt-0.5 font-medium">
+                        تتوفر سجلات لعدد ({backupCount}) مستندات سابقة في متصفحك الحالي، بينما قاعدة بيانات الملقم فارغة الآن. اضغط على الزر لنقلها ومزامنتها فوراً.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleRestoreFromBackup}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-black shadow-lg shadow-sky-600/15 transition-all flex items-center justify-center gap-2 shrink-0 hover:scale-[1.02] cursor-pointer"
+                  >
+                    <span>استعادة البيانات ومزامنتها الآن ⚙️</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Spreadsheet search control panel */}
+              <div className="p-4 bg-[#1f2937]/50 border-b border-slate-800 flex flex-col gap-3">
+                
+                {/* First Row: Actions & Main Search */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  {/* Search Term Input */}
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="البحث السريع (بالمورد، رقم المستند، اسم القطعة، أو السعر)..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-4 pr-10 py-1.5 bg-[#0b0f19] rounded-xl border border-slate-800 focus:outline-hidden focus:border-sky-500 text-slate-105 placeholder-slate-550 text-xs transition-all"
+                    />
+                  </div>
+
+                  {/* Actions Row */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Display Type Info Label / Selector */}
+                    <div className="flex bg-[#0b0f19] border border-slate-800 p-1 rounded-xl text-[11px] font-bold gap-1">
+                      <button
+                        onClick={() => setTypeFilter('all')}
+                        className={`px-3 py-1 rounded-lg transition-all ${typeFilter === 'all' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                      >
+                        الكل ({documents.length})
+                      </button>
+                      <button
+                        onClick={() => setTypeFilter('po')}
+                        className={`px-3 py-1 rounded-lg transition-all ${typeFilter === 'po' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                      >
+                        أوامر شراء (PO) ({documents.filter(d => d.docType === 'po').length})
+                      </button>
+                      <button
+                        onClick={() => setTypeFilter('quote')}
+                        className={`px-3 py-1 rounded-lg transition-all ${typeFilter === 'quote' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                      >
+                        عروض أسعار ({documents.filter(d => d.docType === 'quote').length})
+                      </button>
+                    </div>
+
+                    {/* Manual addition direct trigger */}
+                    <button
+                      onClick={handleAddManualRow}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-[#1f2937] hover:bg-[#374151] text-slate-200 rounded-lg text-[11px] font-bold border border-slate-800 transition-all cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>إضافة صف يدوي</span>
+                    </button>
+
+                    {/* Document comparison trigger */}
+                    <button
+                      onClick={() => {
+                        setIsComparing(true);
+                        if (documents.length >= 2) {
+                          setCompareDocAId(documents[0].id);
+                          setCompareDocBId(documents[1].id);
+                        } else if (documents.length === 1) {
+                          setCompareDocAId(documents[0].id);
+                        }
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs border border-indigo-500"
+                    >
+                      <GitCompare className="w-3.5 h-3.5" />
+                      <span>مقارنة بندين ومطابقة الأسعار</span>
+                    </button>
+
+                    {/* Export Excel button */}
+                    <button
+                      onClick={handleExportToExcel}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>تصدير إكسيل (.xlsx)</span>
+                    </button>
+
+                    {/* Spreadsheet Save/Edit triggers */}
+                    {isEditing ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={handleSaveSpreadsheetEdits}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[11px] transition-all cursor-pointer shadow-xs"
+                        >
+                          حفظ التعديلات بالشيت ({editDocs.length})
+                        </button>
+                        <button
+                          onClick={() => setIsEditing(false)}
+                          className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-[11px] transition-all font-semibold cursor-pointer"
+                        >
+                          إلغاء التعديل
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsEditing(true)}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs"
+                      >
+                        تعديل خلايا الشيت يدوياً
+                      </button>
+                    )}
+
+                  </div>
+                </div>
+
+                {/* Second Row: Specific Filters */}
+                <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                  {/* Date Filter */}
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[10px] font-bold text-slate-400 mr-1">البحث بالتاريخ (تاريخ الاستلام/الاستحقاق):</label>
+                    <input
+                      type="text"
+                      placeholder="امثلة: 2026-06، 2026-06-13..."
+                      value={filterDate}
+                      onChange={(e) => setFilterDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-sky-500 font-mono text-slate-100 placeholder-slate-600"
+                    />
+                  </div>
+
+                  {/* Client Filter */}
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[10px] font-bold text-slate-400 mr-1">البحث باسم المورد:</label>
+                    <input
+                      type="text"
+                      placeholder="اسم المورد لـ PO..."
+                      value={filterClient}
+                      onChange={(e) => setFilterClient(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-sky-500 text-slate-100 placeholder-slate-600"
+                    />
+                  </div>
+
+                  {/* Amount Filter */}
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[10px] font-bold text-slate-400 mr-1">البحث بمبلغ المستند الإجمالي/الصافي:</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: 5000..."
+                      value={filterAmount}
+                      onChange={(e) => setFilterAmount(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-sky-500 font-mono text-slate-100 placeholder-slate-600"
+                    />
+                  </div>
+
+                  {/* Withholding Tax Toggle Checkbox / Button */}
+                  <div className="flex items-center h-[34px]">
+                    <button
+                      onClick={() => setFilterWithholdingOnly(!filterWithholdingOnly)}
+                      className={`w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                        filterWithholdingOnly 
+                          ? 'bg-rose-950/40 border-rose-900/60 text-rose-300 shadow-2xs' 
+                          : 'bg-[#1f2937] border-slate-800 text-slate-300 hover:bg-[#2e3b4e]'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${filterWithholdingOnly ? 'bg-rose-500 animate-pulse' : 'bg-slate-600'}`}></span>
+                      <span>الموردون الخاضعون لضريبة الخصم والإضافة</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter helper check: if any active filter, show Reset button */}
+                {(filterDate || filterClient || filterAmount || filterWithholdingOnly) && (
+                  <div className="flex justify-end pt-0.5">
+                    <button
+                      onClick={() => {
+                        setFilterDate('');
+                        setFilterClient('');
+                        setFilterAmount('');
+                        setFilterWithholdingOnly(false);
+                      }}
+                      className="text-[10px] text-rose-600 hover:text-rose-800 font-extrabold flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>🔄 إعادة تعيين محددات البحث المتقدم</span>
+                    </button>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Spreadsheat Interactive Sheet Table */}
+              <div className="overflow-x-auto flex-1 w-full max-w-full">
+                {loading ? (
+                  <div className="py-20 flex flex-col justify-center items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
+                    <p className="text-sm text-slate-400">جاري تحميل سجل المعاملات المالية الموثقة...</p>
+                  </div>
+                ) : filteredDocs.length === 0 ? (
+                  <div className="py-24 text-center">
+                    <Table className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                    <h3 className="text-base font-bold text-slate-700">لا توجد مستندات بعد</h3>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      قم برفع ملف في لوحة التصفح، أو أرسله إلى البوت، أو استخدم محاكي الشات بوت لتجربة الاستخراج التلقائي.
+                    </p>
+                    <button
+                      onClick={handleAddManualRow}
+                      className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
+                    >
+                      إدراج صف يدوي للتجربة
+                    </button>
+                  </div>
+                ) : (
+                  <table className="w-full text-right text-xs border-collapse">
+                    <thead className="bg-[#1f2937] text-slate-350 sticky top-0 border-b border-slate-800">
+                      <tr>
+                        <th className="py-4.5 px-4 font-bold">م</th>
+                        <th className="py-4.5 px-4 font-bold">اسم المورد</th>
+                        <th className="py-4.5 px-4 font-bold">المشروع</th>
+                        <th className="py-4.5 px-4 font-bold text-center">حالة المشروع</th>
+                        <th className="py-4.5 px-4 font-bold">تاريخ الاستلام</th>
+                        <th className="py-4.5 px-4 font-bold text-amber-500">تاريخ الاستحقاق</th>
+                        <th className="py-4.5 px-4 font-bold">نوع المستند</th>
+                        <th className="py-4.5 px-4 font-bold">رقم المستند</th>
+                        <th className="py-4.5 px-4 font-bold">القيمة الإجمالية</th>
+                        <th className="py-4.5 px-4 font-bold">العملة</th>
+                        <th className="py-4.5 px-4 font-bold">الملخص</th>
+                        <th className="py-4.5 px-4 font-bold">المستند</th>
+                        <th className="py-4.5 px-4 font-bold text-center">إجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-slate-200">
+                      {filteredDocs.map((doc, idx) => (
+                        <tr 
+                          key={doc.id}
+                          className="hover:bg-[#1f2937]/60 cursor-pointer transition-colors border-b border-slate-800/40"
+                          onClick={() => setSelectedDoc(doc)}
+                        >
+                          {/* Row number */}
+                          <td className="py-3 px-4 font-bold text-slate-500 font-mono">{idx + 1}</td>
+                          
+                          {/* Dynamic clientName cell */}
+                          <td className="py-3 px-4 text-sm font-semibold text-slate-200 whitespace-nowrap">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={doc.clientName}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  draft[idx].clientName = e.target.value;
+                                  setEditDocs(draft);
+                                }}
+                                list="learned-vendors-list"
+                                className="px-2 py-1 border border-sky-900 bg-[#0b0f19] rounded focus:outline-hidden focus:border-sky-550 text-xs text-slate-200"
+                              />
+                            ) : (
+                              <div>
+                                <div className="font-bold text-slate-100">{doc.clientName}</div>
+                                {normalizeArabic(searchTerm) !== '' && doc.items && doc.items.some(item => 
+                                  normalizeArabic(item.description).includes(normalizeArabic(searchTerm)) ||
+                                  normalizeArabic(item.brand).includes(normalizeArabic(searchTerm)) ||
+                                  (item.unitPrice && item.unitPrice.toString().includes(searchTerm))
+                                ) ? (
+                                  <div className="mt-1.5 flex flex-col gap-1 max-w-[280px] whitespace-normal">
+                                    {doc.items.filter(item => 
+                                      normalizeArabic(item.description).includes(normalizeArabic(searchTerm)) ||
+                                      normalizeArabic(item.brand).includes(normalizeArabic(searchTerm)) ||
+                                      (item.unitPrice && item.unitPrice.toString().includes(searchTerm))
+                                    ).map((item, i) => (
+                                      <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-sky-950/60 text-sky-300 border border-sky-90/50 rounded-md px-1.5 py-0.5 leading-tight select-text">
+                                        <span className="font-semibold text-slate-200">🧩 {item.description}</span>
+                                        {item.brand && <span className="text-slate-400 font-mono text-[9px]">({item.brand})</span>}
+                                        <span className="font-bold text-sky-400 bg-sky-950/80 px-1 rounded font-mono">💰 {item.unitPrice.toLocaleString()} {doc.currency}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Project Name Cell */}
+                          <td className="py-3 px-4 text-sm font-semibold text-slate-800 whitespace-nowrap">
+                            {isEditing ? (
+                              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                <select
+                                  value={uniqueProjects.includes(doc.projectName || "عام") ? (doc.projectName || "عام") : "custom"}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val !== "custom") {
+                                      const draft = [...editDocs];
+                                      draft[idx].projectName = val;
+                                      if (draft[idx].docType === 'po') {
+                                        const otherDocs = editDocs.filter((_, dIdx) => dIdx !== idx);
+                                        const nextNum = getNextPoNumberForProject(val, otherDocs);
+                                        draft[idx].docNumber = String(nextNum);
+                                      }
+                                      setEditDocs(draft);
+                                    }
+                                  }}
+                                  className="px-1 py-1 border border-sky-300 bg-white rounded text-xs font-bold text-slate-705 focus:outline-hidden cursor-pointer"
+                                >
+                                  {uniqueProjects.map(p => (
+                                    <option key={p} value={p}>{p}</option>
+                                  ))}
+                                  <option value="custom">✍️ جديد...</option>
+                                </select>
+                                <input
+                                  type="text"
+                                  value={doc.projectName || ''}
+                                  placeholder="عام"
+                                  onChange={(e) => {
+                                    const draft = [...editDocs];
+                                    draft[idx].projectName = e.target.value;
+                                    setEditDocs(draft);
+                                  }}
+                                  onBlur={(e) => {
+                                    const val = e.target.value;
+                                    const draft = [...editDocs];
+                                    if (draft[idx].docType === 'po') {
+                                      const otherDocs = editDocs.filter((_, dIdx) => dIdx !== idx);
+                                      const nextNum = getNextPoNumberForProject(val, otherDocs);
+                                      draft[idx].docNumber = String(nextNum);
+                                      setEditDocs(draft);
+                                    }
+                                  }}
+                                  className="w-20 px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-855 font-extrabold"
+                                />
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sky-50 text-sky-700 text-[11px] font-bold border border-sky-100">
+                                <Briefcase className="w-3 h-3" />
+                                {doc.projectName || 'عام'}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Project Status Cell */}
+                          <td className="py-3 px-4 text-center whitespace-nowrap">
+                            {isEditing ? (
+                              <select
+                                value={doc.projectStatus || 'in_progress'}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  draft[idx].projectStatus = e.target.value as any;
+                                  setEditDocs(draft);
+                                }}
+                                className="px-1.5 py-1 border border-sky-200 bg-white rounded-lg focus:outline-hidden focus:border-sky-500 text-[11px] text-slate-800 font-bold cursor-pointer"
+                              >
+                                <option value="in_progress">⏳ قيد التنفيذ</option>
+                                <option value="completed">✔️ مكتمل</option>
+                                <option value="deferred">💤 مؤجل</option>
+                              </select>
+                            ) : (
+                              (() => {
+                                const status = doc.projectStatus || 'in_progress';
+                                if (status === 'completed') {
+                                  return (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold border border-emerald-100">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                      <span>مكتمل</span>
+                                    </span>
+                                  );
+                                } else if (status === 'deferred') {
+                                  return (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 text-slate-500 text-[10px] font-extrabold border border-slate-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                      <span>مؤجل</span>
+                                    </span>
+                                  );
+                                } else {
+                                  return (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 text-[10px] font-extrabold border border-amber-100">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                      <span>قيد التنفيذ</span>
+                                    </span>
+                                  );
+                                }
+                              })()
+                            )}
+                          </td>
+
+                          {/* Date Cell */}
+                          <td className="py-3 px-4 font-medium font-mono">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={doc.receiptDate}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  draft[idx].receiptDate = e.target.value;
+                                  setEditDocs(draft);
+                                }}
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-800"
+                              />
+                            ) : (
+                              doc.receiptDate
+                            )}
+                          </td>
+
+                          {/* Due Date Cell */}
+                          <td className="py-3 px-4 font-mono">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={doc.dueDate || ''}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="YYYY-MM-DD"
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  draft[idx].dueDate = e.target.value;
+                                  setEditDocs(draft);
+                                }}
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-800 w-24"
+                              />
+                            ) : (
+                              <span className={getDueDateWarningStyle(doc.dueDate)}>
+                                {doc.dueDate || '—'}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Document type selector */}
+                          <td className="py-3 px-4">
+                            {isEditing ? (
+                              <select
+                                value={doc.docType}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  const valType = e.target.value as any;
+                                  draft[idx].docType = valType;
+                                  if (valType === 'po') {
+                                    const otherDocs = editDocs.filter((_, dIdx) => dIdx !== idx);
+                                    const nextNum = getNextPoNumberForProject(draft[idx].projectName || 'عام', otherDocs);
+                                    draft[idx].docNumber = String(nextNum);
+                                  }
+                                  setEditDocs(draft);
+                                }}
+                                className="px-1.5 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs"
+                              >
+                                <option value="po">أمر شراء PO</option>
+                                <option value="quote">عرض سعر Quote</option>
+                                <option value="unknown">غير مالي</option>
+                              </select>
+                            ) : doc.docType === 'po' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-[10px] bg-sky-50 text-sky-700 border border-sky-100">
+                                أمر شراء PO
+                              </span>
+                            ) : doc.docType === 'quote' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-[10px] bg-violet-50 text-violet-700 border border-violet-100">
+                                عرض سعر Quote
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-[10px] bg-slate-100 text-slate-600">
+                                غير معرف
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Ref Doc Number */}
+                          <td className="py-3 px-4 font-mono">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={doc.docNumber}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  draft[idx].docNumber = e.target.value;
+                                  setEditDocs(draft);
+                                }}
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-800"
+                              />
+                            ) : (
+                              doc.docNumber || 'N/A'
+                            )}
+                          </td>
+
+                          {/* Amount */}
+                          <td className="py-3 px-4 font-bold text-sm text-slate-900 font-mono text-left">
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                value={doc.totalAmount}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  draft[idx].totalAmount = Number(e.target.value);
+                                  setEditDocs(draft);
+                                }}
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-800 text-left"
+                              />
+                            ) : (
+                              doc.totalAmount.toLocaleString()
+                            )}
+                          </td>
+
+                          {/* Currency */}
+                          <td className="py-3 px-4 font-semibold text-slate-500">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={doc.currency}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  draft[idx].currency = e.target.value;
+                                  setEditDocs(draft);
+                                }}
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-800"
+                              />
+                            ) : (
+                              doc.currency
+                            )}
+                          </td>
+
+                          {/* Mini summary sentence */}
+                          <td className="py-3 px-4 text-slate-400 max-w-xs truncate" title={doc.summary}>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={doc.summary || ''}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const draft = [...editDocs];
+                                  draft[idx].summary = e.target.value;
+                                  setEditDocs(draft);
+                                }}
+                                className="w-full px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-800"
+                              />
+                            ) : (
+                              doc.summary || 'توريد بنود تجارية مباشرة'
+                            )}
+                          </td>
+
+                          {/* Classified File Link */}
+                          <td className="py-3 px-4">
+                            {doc.classifiedPath ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerFileDownload(doc);
+                                }}
+                                className="text-sky-600 hover:text-sky-800 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>تحميل</span>
+                              </button>
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
+                          </td>
+
+                          {/* Delete Item action */}
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={(e) => handleDeleteDoc(doc.id, e)}
+                              className="p-1 text-slate-300 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                              title="حذف البند نهائيا"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 2: CLIENT FILE ORGANIZER */}
+          {activeTab === 'files' && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex-1">
+              
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <FolderOpen className="w-5 h-5 text-sky-600" />
+                  مستودع الموردين وتصنيف المجلدات
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  المجلدات التالية تم إنشاؤها تلقائياً على نظام خادم الملفات. يتم تجميع وحفظ المستندات بداخل كل مورد وتصنيف البنود وتواريخ الاستلام.
+                </p>
+              </div>
+
+              {Object.keys(documentsByClient).length === 0 ? (
+                <div className="py-16 text-center border-2 border-dashed border-slate-150 rounded-2xl">
+                  <FolderOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-400">لا توجد مجلدات موردين نشطة حالياً.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {(Object.entries(documentsByClient) as [string, ProcessedDocument[]][]).map(([clientName, docs]) => (
+                    <div key={clientName} className="border border-slate-150 rounded-2xl overflow-hidden hover:border-sky-350 hover:shadow-xs transition-all bg-slate-50/30">
+                      
+                      {/* Customer folder title */}
+                      <div className="bg-slate-100 p-4 border-b border-slate-150 flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-sky-200 text-sky-800 rounded-lg">
+                            <FolderOpen className="w-4 h-4" />
+                          </div>
+                          <span className="font-bold text-slate-800 text-sm">{clientName}</span>
+                        </div>
+                        <span className="px-2 py-0.5 bg-white text-slate-600 rounded-md text-[10px] font-bold border border-slate-150 font-mono">
+                          {docs.length} ملفات
+                        </span>
+                      </div>
+
+                      {/* File item list */}
+                      <div className="p-4 divide-y divide-slate-100 bg-white">
+                        {docs.map(doc => (
+                          <div key={doc.id} className="py-2.5 flex justify-between items-center text-xs gap-3">
+                            <div className="flex items-start gap-2 min-w-0">
+                              <FileText className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${doc.docType === 'po' ? 'text-sky-600' : 'text-violet-600'}`} />
+                              <div className="min-w-0">
+                                <span className="font-semibold text-slate-700 block truncate" title={doc.originalFilename}>
+                                  {doc.docType === 'po' ? 'أمر شراء' : 'عرض سعر'} #{doc.docNumber || 'X'}
+                                </span>
+                                <span className="text-[10px] text-slate-400 block font-mono">تاريخ: {doc.receiptDate}</span>
+                              </div>
+                            </div>
+                            
+                            <div className="text-left flex-shrink-0 flex items-center gap-2">
+                              <span className="font-bold text-slate-800 font-mono">
+                                {doc.totalAmount.toLocaleString()} <span className="text-[10px] text-slate-400">{doc.currency}</span>
+                              </span>
+                              {doc.classifiedPath && (
+                                <button 
+                                  onClick={() => triggerFileDownload(doc)}
+                                  className="p-1 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-md border border-slate-150 cursor-pointer"
+                                  title="تحميل الملف من مجلده الفيزيائي"
+                                >
+                                  <Download className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                    </div>
+                  ))}
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* TAB 3: PROJECT DIVISION & PO SEQUENTIALS */}
+          {activeTab === 'projects' && (
+            <div className="space-y-6 flex-1 flex flex-col select-none">
+              
+              {/* Projects Overview Alert info card */}
+              <div className="bg-gradient-to-r from-indigo-50/70 to-blue-50/50 border border-indigo-150 rounded-2xl p-4 flex gap-3 text-indigo-900 shadow-xs">
+                <Info className="w-5 h-5 text-indigo-650 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <span className="font-extrabold text-indigo-950">مستكشف تقسيم المشاريع التلقائي (DELTA Project Explorer):</span>
+                  <p className="text-xs text-indigo-700 mt-1 leading-relaxed">
+                    هذا التبويب يقوم بفصل المعاملات وعقود التوريد تلقائياً لكل مشروع إنشائي بصورة مستقلة، مع حساب الرصيد الإجمالي التراكمي وتعيين كود مسلسل مستقل للـ POs الخاص ببلان كل مشروع بالتوالي الزمني للاستلام.
+                  </p>
+                </div>
+              </div>
+
+              {/* Sub-tabs selector for Projects Section (only if not viewing a single folder deep) */}
+              {!selectedFolderProject && (
+                <div className="flex gap-2 border-b border-slate-200 pb-0.5" dir="rtl">
+                  <button
+                    onClick={() => setProjectSubTab('folders')}
+                    className={`px-4 py-2.5 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                      projectSubTab === 'folders'
+                        ? 'border-sky-600 text-sky-700 font-extrabold pb-2'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 pb-2'
+                    }`}
+                  >
+                    <Folder className="w-4 h-4 text-amber-500" />
+                    <span>مجلدات وأرشيف المشاريع</span>
+                  </button>
+                  <button
+                    onClick={() => setProjectSubTab('charts')}
+                    className={`px-4 py-2.5 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                      projectSubTab === 'charts'
+                        ? 'border-sky-600 text-sky-700 font-extrabold pb-2'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 pb-2'
+                    }`}
+                  >
+                    <TrendingUp className="w-4 h-4 text-sky-600" />
+                    <span>رسوم الميزانية ومعدل الإنفاق الشهري</span>
+                  </button>
+                  <button
+                    onClick={() => setProjectSubTab('suppliers')}
+                    className={`px-4 py-2.5 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                      projectSubTab === 'suppliers'
+                        ? 'border-sky-600 text-sky-700 font-extrabold pb-2'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 pb-2'
+                    }`}
+                  >
+                    <Truck className="w-4 h-4 text-emerald-600" />
+                    <span>سجل الموردين المعتمدين ({uniqueClientsList.length})</span>
+                  </button>
+                </div>
+              )}
+
+              {selectedFolderProject ? (
+                // ------------------ INSIDE A CHOSEN PROJECT FOLDER ------------------
+                (() => {
+                  const projectName = selectedFolderProject;
+                  const docs = documentsByProject[projectName] || [];
+                  const pos = docs.filter(d => d.docType === 'po');
+                  const quotes = docs.filter(d => d.docType === 'quote');
+                  
+                  // Calculate rich aggregates specifically for this folder
+                  const projectCurrencySums: Record<string, { subtotal: number, discount: number, withholding: number, net: number, count: number }> = {};
+                  docs.forEach(d => {
+                    const c = d.currency || 'EGP';
+                    if (!projectCurrencySums[c]) {
+                      projectCurrencySums[c] = { subtotal: 0, discount: 0, withholding: 0, net: 0, count: 0 };
+                    }
+                    
+                    const itemsSubtotal = (d.items || []).reduce((sum, item) => sum + Number(((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)), 0);
+                    const discPct = d.discountPercentage || 0;
+                    const discAmt = d.discountAmount || 0;
+                    const totalDiscount = ((itemsSubtotal * discPct) / 100) + discAmt;
+                    const finalTotalAmount = Math.max(0, itemsSubtotal - totalDiscount);
+                    
+                    const taxRate = d.withholdingTaxEnabled ? (d.withholdingTaxRate || 1) : 0;
+                    const taxAmount = (finalTotalAmount * taxRate) / 100;
+                    const netPayable = finalTotalAmount - taxAmount;
+                    
+                    projectCurrencySums[c].subtotal += itemsSubtotal;
+                    projectCurrencySums[c].discount += totalDiscount;
+                    projectCurrencySums[c].withholding += taxAmount;
+                    projectCurrencySums[c].net += netPayable;
+                    projectCurrencySums[c].count += 1;
+                  });
+
+                  // Sort documents chronologically by receiptDate
+                  const sortedDocs = [...docs].sort((a, b) => {
+                    const dateA = a.receiptDate || a.processedAt || '';
+                    const dateB = b.receiptDate || b.processedAt || '';
+                    return dateA.localeCompare(dateB);
+                  });
+
+                  return (
+                    <div className="space-y-6 flex-1 flex flex-col">
+                      
+                      {/* Breadcrumbs Navigation */}
+                      <div className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-2 text-slate-600">
+                        <button 
+                          onClick={() => setSelectedFolderProject(null)}
+                          className="flex items-center gap-1 hover:text-sky-600 transition-colors font-bold cursor-pointer"
+                        >
+                          <Folder className="w-4 h-4 text-amber-500" />
+                          <span>المشاريع</span>
+                        </button>
+                        <ChevronRight className="w-3 h-3 text-slate-300" />
+                        <span className="font-extrabold text-slate-800 flex items-center gap-1">
+                          <FolderOpen className="w-4 h-4 text-sky-500" />
+                          {projectName}
+                        </span>
+                      </div>
+
+                      {/* Folder Title Cover & General Info */}
+                      <div className="bg-white rounded-2xl border border-slate-150 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-xs relative overflow-hidden">
+                        {/* Decorative Folder Header Tab inside */}
+                        <div className="absolute top-0 right-8 w-24 h-1.5 bg-sky-500 rounded-t" />
+                        
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-sky-50 text-sky-600 rounded-2xl border border-sky-100">
+                            <FolderOpen className="w-8 h-8" />
+                          </div>
+                          <div>
+                            <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                              <span>المجلد:</span>
+                              <span className="text-sky-700">{projectName}</span>
+                            </h2>
+                            <p className="text-xs text-slate-400 mt-1.5 whitespace-nowrap">
+                              مجموع الملفات: <span className="font-bold text-slate-700">{docs.length} مستندات</span> (أوامر الشراء: {pos.length} | عروض الأسعار: {quotes.length})
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setSelectedFolderProject(null)}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs border border-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors"
+                          >
+                            <ArrowLeft className="w-3.5 h-3.5" />
+                            <span>عرض جميع المجلدات</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* FINANCIAL STATISTICS SEGMENTED BY CURRENCY */}
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-extrabold text-slate-600 flex items-center gap-1.5">
+                          <span className="w-1.5 h-3.5 bg-sky-600 rounded-sm"></span>
+                          <span>تقسيم وتفصيل المبالغ الإجمالية حسب العملة:</span>
+                        </h4>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                          {Object.entries(projectCurrencySums).map(([curr, stat]) => (
+                            <div 
+                              key={curr} 
+                              className="bg-slate-50/55 rounded-2xl border border-slate-150 p-5 flex flex-col justify-between"
+                            >
+                              <div className="flex justify-between items-center pb-3 border-b border-slate-200/60 mb-4">
+                                <span className="text-xs bg-slate-200/60 px-2.5 py-1 text-slate-800 rounded-lg font-bold font-mono">
+                                  عملة: {curr}
+                                </span>
+                                <span className="text-[11px] text-slate-500">
+                                  عدد المعاملات: {stat.count}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-slate-700">
+                                {/* Subtotal before Discount */}
+                                <div className="space-y-1">
+                                  <p className="text-[10px] text-slate-400 font-bold">الإجمالي قبل التخفيض</p>
+                                  <p className="text-xs font-extrabold text-slate-700 font-mono">
+                                    {stat.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+
+                                {/* Discount */}
+                                <div className="space-y-1">
+                                  <p className="text-[10px] text-slate-400 font-bold">إجمالي الخصومات</p>
+                                  <p className="text-xs font-extrabold text-rose-600 font-mono">
+                                    -{stat.discount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+
+                                {/* Withholding Tax */}
+                                <div className="space-y-1">
+                                  <p className="text-[10px] text-slate-400 font-bold">ضرائب خصم أ.ت.ص</p>
+                                  <p className="text-xs font-extrabold text-amber-600 font-mono">
+                                    -{stat.withholding.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+
+                                {/* Net Payable */}
+                                <div className="space-y-1">
+                                  <p className="text-[10px] text-sky-700 font-bold">صافي القيمة المستحقة</p>
+                                  <p className="text-sm font-black text-sky-700 font-mono">
+                                    {stat.net.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Documents table of this folder */}
+                      <div className="bg-white rounded-2xl border border-slate-150 overflow-hidden shadow-xs">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/40 flex justify-between items-center">
+                          <h4 className="text-xs font-bold text-slate-800">
+                            مستندات ومعاملات مجلد المشروع ({docs.length} ملفات)
+                          </h4>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-right text-xs">
+                            <thead className="bg-[#FAFBFD] text-slate-500 border-b border-slate-100 uppercase text-[10px] tracking-wider">
+                              <tr>
+                                <th className="py-3 px-4 font-bold">اسم المورد</th>
+                                <th className="py-3 px-4 font-bold">تاريخ الاستلام</th>
+                                <th className="py-3 px-4 font-bold text-amber-700">تاريخ الاستحقاق</th>
+                                <th className="py-3 px-4 font-bold text-center">حالة المشروع</th>
+                                <th className="py-3 px-4 font-bold">نوع المستند</th>
+                                <th className="py-3 px-4 font-bold">رقم المستند</th>
+                                <th className="py-3 px-4 font-bold">القيمة قبل التخفيض</th>
+                                <th className="py-3 px-4 font-bold">صافي المستحق</th>
+                                <th className="py-3 px-4 font-bold">الملخص والبنود</th>
+                                <th className="py-3 px-4 font-bold text-center w-28">إجراءات</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {sortedDocs.map((doc) => {
+                                // Calculate document specific sums
+                                const itemsSubtotal = (doc.items || []).reduce((sum, item) => sum + Number(((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)), 0);
+                                const discPct = doc.discountPercentage || 0;
+                                const discAmt = doc.discountAmount || 0;
+                                const totalDiscount = ((itemsSubtotal * discPct) / 100) + discAmt;
+                                const finalAmount = Math.max(0, itemsSubtotal - totalDiscount);
+                                
+                                const taxRate = doc.withholdingTaxEnabled ? (doc.withholdingTaxRate || 1) : 0;
+                                const taxAmount = (finalAmount * taxRate) / 100;
+                                const netPayable = finalAmount - taxAmount;
+
+                                return (
+                                  <tr 
+                                    key={doc.id} 
+                                    className="hover:bg-slate-50/40 cursor-pointer transition-colors"
+                                    onClick={() => setSelectedDoc(doc)}
+                                  >
+                                    <td className="py-3.5 px-4 font-semibold text-slate-800 whitespace-nowrap">
+                                      {doc.clientName}
+                                    </td>
+
+                                    <td className="py-3.5 px-4 font-medium text-slate-400 font-mono">
+                                      {doc.receiptDate}
+                                    </td>
+
+                                    <td className="py-3.5 px-4 font-mono">
+                                      <span className={getDueDateWarningStyle(doc.dueDate)}>
+                                        {doc.dueDate || "—"}
+                                      </span>
+                                    </td>
+
+                                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                                      {(() => {
+                                        const status = doc.projectStatus || 'in_progress';
+                                        if (status === 'completed') {
+                                          return (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold border border-emerald-100">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                              <span>مكتمل</span>
+                                            </span>
+                                          );
+                                        } else if (status === 'deferred') {
+                                          return (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-50 text-slate-500 text-[10px] font-extrabold border border-slate-200">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                              <span>مؤجل</span>
+                                            </span>
+                                          );
+                                        } else {
+                                          return (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 text-[10px] font-extrabold border border-amber-100">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                              <span>قيد التنفيذ</span>
+                                            </span>
+                                          );
+                                        }
+                                      })()}
+                                    </td>
+
+                                    <td className="py-3.5 px-4">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                        doc.docType === 'po' 
+                                          ? 'bg-sky-50 text-sky-800' 
+                                          : 'bg-purple-50 text-purple-800'
+                                      }`}>
+                                        {doc.docType === 'po' ? 'أمر شراء' : 'عرض سعر'}
+                                      </span>
+                                    </td>
+
+                                    <td className="py-3.5 px-4 font-mono font-semibold text-slate-700">
+                                      {doc.docNumber || 'X'}
+                                    </td>
+
+                                    <td className="py-3.5 px-4 font-semibold font-mono text-slate-500">
+                                      {itemsSubtotal.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{doc.currency}</span>
+                                    </td>
+
+                                    <td className="py-3.5 px-4 font-black font-mono text-sky-700">
+                                      {netPayable.toLocaleString()} <span className="text-[10px] text-sky-600/70 font-normal">{doc.currency}</span>
+                                    </td>
+
+                                    <td className="py-3.5 px-4 text-slate-500 max-w-xs truncate font-medium" title={doc.summary}>
+                                      {doc.summary || 'بند تجاري معزز'}
+                                    </td>
+
+                                    <td className="py-3.5 px-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                      <div className="flex items-center justify-center gap-2">
+                                        <button 
+                                          onClick={() => setSelectedDoc(doc)}
+                                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-[10px] border border-slate-200 cursor-pointer"
+                                        >
+                                          معاينة الخلايا
+                                        </button>
+                                        {doc.classifiedPath && (
+                                          <button 
+                                            onClick={() => triggerFileDownload(doc)}
+                                            className="p-1 bg-slate-50 hover:bg-slate-100 text-sky-600 rounded border border-slate-200 cursor-pointer animate-none"
+                                            title="تحميل مستند"
+                                          >
+                                            <Download className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })()
+              ) : projectSubTab === 'charts' ? (
+                // ------------------ CHARTS DASHBOARD ------------------
+                <div className="space-y-6 flex-grow flex flex-col">
+                  
+                  {/* Control / Filter Panel */}
+                  <div className="bg-white rounded-2xl border border-slate-150 p-5 shadow-xs bg-white">
+                    <div className="flex items-center gap-2 pb-3 border-b border-slate-100 mb-4">
+                      <TrendingUp className="w-5 h-5 text-sky-600" />
+                      <h3 className="text-sm font-black text-slate-800">تصفية لوحة الميزانية والإنفاق</h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      
+                      {/* 1. Project Selector */}
+                      <div className="space-y-1.5 text-right">
+                        <label className="text-[11px] font-extrabold text-slate-500 block">المشروع الإنشائي:</label>
+                        <select 
+                          value={chartSelectedProject}
+                          onChange={(e) => setChartSelectedProject(e.target.value)}
+                          className="w-full text-xs bg-slate-50/50 hover:bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2.5 font-bold outline-none focus:ring-2 focus:ring-sky-500 transition-all cursor-pointer text-slate-800"
+                        >
+                          <option value="all">كافة المشاريع الإنشائية (تجميعي)</option>
+                          {projectAnalytics.projectsList.map((pName) => (
+                            <option key={pName} value={pName}>{pName}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 2. Currency Selector */}
+                      <div className="space-y-1.5 text-right">
+                        <label className="text-[11px] font-extrabold text-slate-500 block">العملة المالية المعتمدة:</label>
+                        <select 
+                          value={chartSelectedCurrency}
+                          onChange={(e) => setChartSelectedCurrency(e.target.value)}
+                          className="w-full text-xs bg-slate-50/50 hover:bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2.5 font-bold outline-none focus:ring-2 focus:ring-sky-500 transition-all cursor-pointer font-mono text-slate-800"
+                        >
+                          {projectAnalytics.currenciesList.map((curr) => (
+                            <option key={curr} value={curr}>{curr}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 3. Doc Type Selector */}
+                      <div className="space-y-1.5 text-right">
+                        <label className="text-[11px] font-extrabold text-slate-500 block">تصنيف المستندات للتحليل:</label>
+                        <select 
+                          value={chartSelectedDocType}
+                          onChange={(e) => setChartSelectedDocType(e.target.value as any)}
+                          className="w-full text-xs bg-slate-50/50 hover:bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2.5 font-bold outline-none focus:ring-2 focus:ring-sky-500 transition-all cursor-pointer text-slate-800"
+                        >
+                          <option value="po">أوامر الشراء المؤكدة فقط (POs Real Spent)</option>
+                          <option value="quote">عروض الأسعار والتسعيرات (Quotes potential)</option>
+                          <option value="all">كافة المستندات والمدخلات (تجميعي)</option>
+                        </select>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* STATISTICAL SUMMARY CARDS GRID */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    {/* Card 1: Spending Outflow */}
+                    <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-5 flex items-center justify-between shadow-2xs">
+                      <div className="space-y-1 text-right">
+                        <span className="text-[10px] text-slate-500 font-extrabold block">إجمالي القيمة المرصودة للتحليل</span>
+                        <p className="text-xl font-black text-slate-900 font-mono">
+                          {projectAnalytics.totalSpentOverall.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                        <span className="text-[10px] bg-sky-50 border border-sky-100/50 px-2 py-0.5 rounded text-sky-700 font-bold font-mono">
+                          {chartSelectedCurrency}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-sky-50 text-sky-600 rounded-xl">
+                        <BarChart2 className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                    {/* Card 2: Document count */}
+                    <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-5 flex items-center justify-between shadow-2xs">
+                      <div className="space-y-1 text-right">
+                        <span className="text-[10px] text-slate-500 font-extrabold block">عدد المعاملات والمستندات المفحوصة</span>
+                        <p className="text-xl font-black text-slate-900 font-mono">
+                          {projectAnalytics.docCountOverall.toLocaleString('en-US')}
+                        </p>
+                        <span className="text-[10px] bg-emerald-50 border border-emerald-100/50 px-2 py-0.5 rounded text-emerald-800 font-bold">
+                          {chartSelectedDocType === 'po' ? 'مستندات PO' : chartSelectedDocType === 'quote' ? 'عروض أسعار' : 'مستندات مختلطة'}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-emerald-600">
+                        <Layers className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                    {/* Card 3: Average transaction size */}
+                    <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-5 flex items-center justify-between shadow-2xs">
+                      <div className="space-y-1 text-right">
+                        <span className="text-[10px] text-slate-500 font-extrabold block">متوسط التدفق التمويلي لكل معاملة</span>
+                        <p className="text-xl font-black text-slate-900 font-mono">
+                          {projectAnalytics.averageSpentOverall.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                        <span className="text-[10px] bg-indigo-50 border border-indigo-100/50 px-2 py-0.5 rounded text-indigo-800 font-semibold font-mono">
+                          {chartSelectedCurrency} / معاملة
+                        </span>
+                      </div>
+                      <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                        <TrendingUp className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* BENTO GRID: MAIN CHART AND PIE CHART */}
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    
+                    {/* Visual 1: Monthly Spending progression over months */}
+                    <div className="bg-white rounded-2xl border border-slate-150 p-5 shadow-xs xl:col-span-2 flex flex-col justify-between">
+                      <div className="flex justify-between items-center pb-3 border-b border-slate-100 mb-6 font-sans">
+                        <div className="text-right font-sans">
+                          <h4 className="text-xs font-black text-slate-800">التمثيل الزمني للإنفاق وتدفق المستندات</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">منحنيات التدفق الشهري لمدفوعات التوريد والإنفاق المتراكم وتفصيل ميزانية المشاريع.</p>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 font-mono">
+                          عملة التحليل: {chartSelectedCurrency}
+                        </span>
+                      </div>
+
+                      <div className="w-full h-80 min-h-[320px] flex items-center justify-center relative">
+                        {projectAnalytics.monthlyData.length === 0 ? (
+                          <div className="text-center p-8 space-y-2">
+                            <TrendingUp className="w-10 h-10 text-slate-350 mx-auto animate-pulse" />
+                            <p className="text-xs text-slate-500 font-bold">لا تتوفر أية بيانات زمنية مسجلة لهذه الفلترة ومحافظ العملات!</p>
+                            <p className="text-[10px] text-slate-400">يرجى رفع أوامر الشراء أو تعديل العملات المختارة.</p>
+                          </div>
+                        ) : (
+                          <ResponsiveContainer width="100%" height="100%">
+                            {chartSelectedProject === 'all' ? (
+                              <BarChart
+                                data={projectAnalytics.monthlyData}
+                                margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                <XAxis 
+                                  dataKey="month" 
+                                  stroke="#64748b" 
+                                  fontSize={10} 
+                                  fontWeight={700}
+                                  tickLine={false}
+                                />
+                                <YAxis 
+                                  stroke="#64748b" 
+                                  fontSize={10} 
+                                  fontWeight={700}
+                                  tickLine={false}
+                                  tickFormatter={(v) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
+                                />
+                                <Tooltip
+                                  content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                      return (
+                                        <div className="bg-white border border-slate-200 p-3.5 rounded-xl shadow-lg text-right text-xs space-y-1.5 backdrop-blur-md">
+                                          <p className="font-extrabold text-slate-800 border-b border-slate-100 pb-1 mb-1.5">{label}</p>
+                                          {payload.map((entry: any, index: number) => {
+                                            if (entry.name === 'الإجمالي التراكمي' || entry.name === 'total' || entry.name === 'Total' || !entry.value) return null;
+                                            return (
+                                              <p key={index} className="font-semibold flex justify-between gap-4 items-center" style={{ color: entry.fill || entry.stroke }}>
+                                                <span>{entry.name}:</span>
+                                                <span className="font-mono font-black">{(entry.value || 0).toLocaleString()} {chartSelectedCurrency}</span>
+                                              </p>
+                                            );
+                                          })}
+                                          <div className="border-t border-slate-100 pt-1.5 mt-1 text-[10px] text-slate-600 font-extrabold flex justify-between gap-4">
+                                            <span>مجموع الشهر التراكمي:</span>
+                                            <span className="font-mono text-indigo-700">{(payload[0]?.payload?.cumulative || 0).toLocaleString()} {chartSelectedCurrency}</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 10, fontWeight: 700 }} />
+                                {projectAnalytics.projectsList.map((pName, idx) => (
+                                  <Bar 
+                                    key={pName} 
+                                    dataKey={pName} 
+                                    stackId="projectStack" 
+                                    fill={idx === 0 ? '#0284c7' : idx === 1 ? '#0d9488' : idx === 2 ? '#f59e0b' : idx === 3 ? '#4f46e5' : idx === 4 ? '#e11d48' : '#16a34a'} 
+                                    name={pName}
+                                    radius={[0, 0, 0, 0]}
+                                  />
+                                ))}
+                              </BarChart>
+                            ) : (
+                              <BarChart
+                                data={projectAnalytics.monthlyData}
+                                margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                <XAxis 
+                                  dataKey="month" 
+                                  stroke="#64748b" 
+                                  fontSize={10} 
+                                  fontWeight={700}
+                                  tickLine={false}
+                                />
+                                <YAxis 
+                                  stroke="#64748b" 
+                                  fontSize={10} 
+                                  fontWeight={700}
+                                  tickLine={false}
+                                  tickFormatter={(v) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
+                                />
+                                <Tooltip
+                                  content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                      const primaryData = payload.find(p => p.dataKey === 'amount');
+                                      const cumulativeData = payload.find(p => p.dataKey === 'cumulative');
+                                      return (
+                                        <div className="bg-white border border-slate-200 p-3.5 rounded-xl shadow-lg text-right text-xs space-y-1.5 backdrop-blur-md">
+                                          <p className="font-extrabold text-slate-800 border-b border-slate-100 pb-1 mb-1.5">{label}</p>
+                                          <p className="text-sky-700 font-semibold flex justify-between gap-6">
+                                            <span>الإنفاق المباشر للشهر:</span>
+                                            <span className="font-mono font-black">{((primaryData?.value || 0) as number).toLocaleString()} {chartSelectedCurrency}</span>
+                                          </p>
+                                          <p className="text-indigo-650 font-semibold flex justify-between gap-6">
+                                            <span>الرصيد التراكمي للمشروع:</span>
+                                            <span className="font-mono font-black">{((cumulativeData?.value || 0) as number).toLocaleString()} {chartSelectedCurrency}</span>
+                                          </p>
+                                          <p className="text-slate-500 font-semibold flex justify-between gap-6 border-t border-slate-100 pt-1 mt-1 text-[10px]">
+                                            <span>عدد المستندات للشهر:</span>
+                                            <span className="font-mono font-black">{payload[0]?.payload?.docCount || 0} ملف</span>
+                                          </p>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 10, fontWeight: 700 }} />
+                                <Bar 
+                                  dataKey="amount" 
+                                  fill="#0284c7" 
+                                  name="المبلغ الشهري المستهلك" 
+                                  radius={[4, 4, 0, 0]} 
+                                />
+                              </BarChart>
+                            )}
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Visual 2: Comparative Breakdown in Pie Chart */}
+                    <div className="bg-white rounded-2xl border border-slate-150 p-5 shadow-xs flex flex-col justify-between">
+                      <div className="flex flex-col pb-3 border-b border-slate-100 mb-4 text-right">
+                        <h4 className="text-xs font-black text-slate-800">توزيع الإنفاق ومشاركة المحفظة</h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">النسبة المئوية لحصة الإنفاق المسحوبة لكل مشروع من إجمالي الموازنة المتاحة.</p>
+                      </div>
+
+                      <div className="h-60 flex items-center justify-center relative">
+                        {projectAnalytics.projectComparisonData.length === 0 ? (
+                          <div className="text-center p-4">
+                            <Layers className="w-8 h-8 text-slate-300 mx-auto mb-2 animate-pulse" />
+                            <p className="text-[11px] text-slate-500 font-bold">مقارنة غير كافية لمشاريع متعددة.</p>
+                            <p className="text-[9px] text-slate-400">تأكد من إرسال وتصنيف المستندات لعدة مشاريع.</p>
+                          </div>
+                        ) : (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={projectAnalytics.projectComparisonData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={55}
+                                outerRadius={80}
+                                paddingAngle={2}
+                                dataKey="value"
+                              >
+                                {projectAnalytics.projectComparisonData.map((entry, index) => (
+                                  <Cell 
+                                    key={`cell-${index}`} 
+                                    fill={index === 0 ? '#0284c7' : index === 1 ? '#0d9488' : index === 2 ? '#f59e0b' : index === 3 ? '#4f46e5' : index === 4 ? '#e11d48' : '#16a34a'} 
+                                  />
+                                ))}
+                              </Pie>
+                              <Tooltip 
+                                formatter={(value: number) => [`${value.toLocaleString()} ${chartSelectedCurrency}`, 'الإنفاق المحقق']}
+                                contentStyle={{ fontSize: '11px', borderRadius: '12px', textAlign: 'right' }}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+
+                      {/* Manual Side Legends and percentages */}
+                      <div className="space-y-2 max-h-40 overflow-y-auto pt-2 border-t border-slate-100 text-xs">
+                        {projectAnalytics.projectComparisonData.length === 0 ? (
+                          <p className="text-[10px] text-slate-400 text-center">لا يوجد مشاريع لعرضها.</p>
+                        ) : (
+                          projectAnalytics.projectComparisonData.map((item, index) => {
+                            const percent = ((item.value / (projectAnalytics.projectComparisonData.reduce((sum, i) => sum + i.value, 0) || 1)) * 100).toFixed(1);
+                            const col = index === 0 ? '#0284c7' : index === 1 ? '#0d9488' : index === 2 ? '#f59e0b' : index === 3 ? '#4f46e5' : index === 4 ? '#e11d48' : '#16a34a';
+                            return (
+                              <div key={item.name} className="flex items-center justify-between text-slate-700">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span 
+                                    className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
+                                    style={{ backgroundColor: col }}
+                                  />
+                                  <span className="font-bold truncate text-[11px]">{item.name}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-right flex-shrink-0 font-mono text-[11px]">
+                                  <span className="font-black text-slate-800">{percent}%</span>
+                                  <span className="text-slate-400 text-[10px]/[1] font-medium">({item.value.toLocaleString()} {chartSelectedCurrency})</span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                    </div>
+
+                  </div>
+
+                  {/* STATISTICAL DETAILED MONTHLY LEDGER CARD */}
+                  <div className="bg-white rounded-2xl border border-slate-150 overflow-hidden shadow-xs bg-white">
+                    <div className="p-4 border-b border-slate-100 bg-[#FAFBFD] flex justify-between items-center text-right">
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-black text-slate-800">دفتر التفصيل المالي الشهري الدقيق (Expenditure Monthly Log)</h4>
+                        <p className="text-[10px] text-slate-400 mt-1">جدول رقمي يبين مبالغ المصروفات وتراكماتها لكل شهر وتأكيد موازنات العقود.</p>
+                      </div>
+                      <span className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-lg font-bold">
+                        {chartSelectedProject === 'all' ? 'كافة المشاريع' : chartSelectedProject}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-[#FAFBFD]/50 text-slate-500 border-b border-slate-100 uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="py-3 px-6 font-bold">الجدول الزمني (الشهر)</th>
+                            <th className="py-3 px-6 font-bold">{chartSelectedProject === 'all' ? 'إجمالي فواتير الشهر' : 'المنصرف للشهر الحالي'}</th>
+                            <th className="py-3 px-6 font-bold">المنصرف التراكمي العام</th>
+                            <th className="py-3 px-6 font-bold text-center">عدد مستندات المعاملات</th>
+                            <th className="py-3 px-6 font-bold text-center">العملة والوثوقية</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {projectAnalytics.monthlyData.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-8 text-center text-slate-400 font-bold">
+                                لا يوجد سجلات تاريخية للخيارات المحددة لتكوين الدفتر المالي.
+                              </td>
+                            </tr>
+                          ) : (
+                            [...projectAnalytics.monthlyData].reverse().map((row, idx) => {
+                              const currentAmount = chartSelectedProject === 'all' ? (row.total || 0) : (row.amount || 0);
+                              return (
+                                <tr key={row.monthKey || idx} className="hover:bg-slate-50/25 transition-colors">
+                                  <td className="py-3.5 px-6 font-bold text-slate-800">{row.month}</td>
+                                  <td className="py-3.5 px-6 font-black text-slate-900 font-mono">
+                                    {currentAmount.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{chartSelectedCurrency}</span>
+                                  </td>
+                                  <td className="py-3.5 px-6 font-black text-sky-700 font-mono">
+                                    {row.cumulative.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{chartSelectedCurrency}</span>
+                                  </td>
+                                  <td className="py-3.5 px-6 text-center font-bold text-slate-600 font-mono">
+                                    {chartSelectedProject === 'all' ? '-' : (row.docCount || 0)}
+                                  </td>
+                                  <td className="py-3.5 px-6 text-center">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-50 text-sky-700 text-[10px] font-bold border border-sky-100/50">
+                                      مكتملة ومرحلة
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                </div>
+              ) : projectSubTab === 'suppliers' ? (
+                // ------------------ APPROVED SUPPLIERS REGISTER & SEARCH ------------------
+                <div className="space-y-6 flex-grow flex flex-col pt-2 text-right font-sans" dir="rtl">
+                  
+                  {/* Header & Quick Add Supplier */}
+                  <div className="flex flex-col gap-4 bg-slate-50/70 p-4 border border-slate-150 rounded-2xl">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 text-right">
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-black text-slate-800">بوابة إدارة سجل الموردين والشركات المعتمدة</h4>
+                        <p className="text-[10.5px] text-slate-400">تساعد قائمة الموردين المعتمدة نموذج الذكاء الاصطناعي (Gemini OCR) في مطابقة وتصنيف أسماء الشركات بدقة بالغة وتجنب تكرار الأسماء المتشابهة في أرشيف المعاملات.</p>
+                      </div>
+
+                      {/* Search Bar */}
+                      <div className="relative max-w-sm w-full">
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+                          <Search className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="البحث أو تسجيل اسم شركة ومورد معتمد..."
+                          value={newSupplierInput}
+                          onChange={(e) => setNewSupplierInput(e.target.value)}
+                          className="w-full pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all shadow-xs text-right font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Add Supplier Input Form */}
+                    <div className="border-t border-slate-200/60 pt-3 flex flex-col sm:flex-row items-center gap-3">
+                      <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs shrink-0 self-start sm:self-center">
+                        <PlusCircle className="w-4 h-4 text-emerald-600" />
+                        <span>تسجيل مورد/شركة جديدة مباشرة:</span>
+                      </div>
+                      <div className="flex gap-2 w-full sm:max-w-md">
+                        <input
+                          type="text"
+                          placeholder="اكتب اسم الشركة أو المورد الجديد هنا..."
+                          value={newSupplierInput}
+                          onChange={(e) => setNewSupplierInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleAddSupplier(newSupplierInput);
+                              setNewSupplierInput('');
+                            }
+                          }}
+                          className="flex-grow px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-hidden focus:ring-1 focus:ring-sky-500 focus:border-sky-500 text-right font-medium"
+                        />
+                        <button
+                          onClick={() => {
+                            handleAddSupplier(newSupplierInput);
+                            setNewSupplierInput('');
+                          }}
+                          className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs cursor-pointer"
+                        >
+                          إضافة المورد
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Directory Search & List Content */}
+                  {(() => {
+                    const filterText = newSupplierInput.trim().toLowerCase();
+                    const displayedSuppliers = uniqueClientsList.filter(s => 
+                      s.toLowerCase().includes(filterText)
+                    );
+
+                    return displayedSuppliers.length === 0 ? (
+                      <div className="bg-white rounded-2xl border-2 border-dashed border-slate-150 p-16 text-center shadow-xs">
+                        <Truck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                        <p className="text-sm text-slate-500 font-semibold text-center">لا توجد نتائج بحث تطابق المورد المطلوب.</p>
+                        <p className="text-xs text-slate-400 mt-1 text-center font-medium">سجل المورد الآن عبر حقل الإضافة أعلاه لإدراجه كمرجع نشط ومطابق ذكي.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {displayedSuppliers.map((supplier) => {
+                          const vendorDocs = documents.filter(d => (d.clientName || '').trim() === supplier.trim());
+                          const poCount = vendorDocs.filter(d => d.docType === 'po').length;
+                          const quoteCount = vendorDocs.filter(d => d.docType === 'quote').length;
+
+                          const sums: Record<string, number> = {};
+                          vendorDocs.forEach(d => {
+                            const c = d.currency || 'EGP';
+                            sums[c] = (sums[c] || 0) + d.totalAmount;
+                          });
+
+                          return (
+                            <motion.div
+                              layout
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              key={supplier}
+                              className="bg-white border border-slate-150 hover:border-emerald-500 rounded-2xl p-4 shadow-3xs hover:shadow-xs transition-all flex flex-col justify-between overflow-hidden text-right"
+                            >
+                              <div className="space-y-2 text-right">
+                                <div className="flex justify-between items-center gap-2">
+                                  <span className="text-[9.5px] bg-emerald-50 text-emerald-700 font-black px-2 py-0.5 rounded border border-emerald-100">
+                                    مورد نشط
+                                  </span>
+                                  <Truck className="w-4 h-4 text-slate-400" />
+                                </div>
+                                <h5 className="text-[12px] font-black text-slate-800 line-clamp-2 leading-relaxed" title={supplier}>
+                                  {supplier}
+                                </h5>
+                                <div className="flex gap-3 text-[9.5px] text-slate-400 font-bold">
+                                  <span>المستندات: {vendorDocs.length}</span>
+                                  <span>أوامر شراء: {poCount}</span>
+                                  <span>عروض الأسعار: {quoteCount}</span>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 pt-3 border-t border-slate-100/60">
+                                <span className="text-[9px] text-slate-400 font-extrabold block text-right mb-1">تراكمي المشتريات المالية:</span>
+                                {Object.keys(sums).length === 0 ? (
+                                  <p className="text-[10px] text-slate-400 font-semibold text-right italic font-mono">0.00 EGP</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {Object.entries(sums).map(([curr, total]) => (
+                                      <div key={curr} className="flex justify-between items-center text-right font-mono">
+                                        <span className="text-slate-500 text-[10px] font-bold">{curr}</span>
+                                        <span className="text-xs font-black text-slate-900">{total.toLocaleString()}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
+                </div>
+              ) : (
+                // ------------------ ROOT LIST OF PROJECT FOLDERS ------------------
+                <div className="space-y-6 flex-grow flex flex-col">
+                  
+                  {/* Search Bar & Header & Project Creation */}
+                  <div className="flex flex-col gap-4 bg-slate-50/70 p-4 border border-slate-150 rounded-2xl" dir="rtl">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                      <div className="space-y-1 text-right">
+                        <h4 className="text-xs font-black text-slate-800">تصفح مشاريع عقود التوريد النشطة</h4>
+                        <p className="text-[10px] text-slate-400">انقر على أي مجلد من المجلدات أدناه لتصفح تفاصيل المعاملات والمبالغ المفصلة لكل مشروع على حدة.</p>
+                      </div>
+
+                      <div className="relative max-w-sm w-full">
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+                          <Search className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="البحث باسم المشروع أو بيانات البنود..."
+                          value={projectSearchTerm}
+                          onChange={(e) => setProjectSearchTerm(e.target.value)}
+                          className="w-full pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all shadow-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Add Project Form */}
+                    <div className="border-t border-slate-200/60 pt-3 flex flex-col sm:flex-row items-center gap-3">
+                      <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs shrink-0 self-start sm:self-center">
+                        <PlusCircle className="w-4 h-4 text-emerald-600" />
+                        <span>إضافة مشروع جديد كمرجع:</span>
+                      </div>
+                      <div className="flex gap-2 w-full sm:max-w-md">
+                        <input
+                          type="text"
+                          placeholder="مثال: Villette, Azalia, Hyde Park..."
+                          value={newProjectInput}
+                          onChange={(e) => setNewProjectInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleAddProject(newProjectInput);
+                              setNewProjectInput('');
+                            }
+                          }}
+                          className="flex-grow px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-hidden focus:ring-1 focus:ring-sky-500 focus:border-sky-500 text-right"
+                        />
+                        <button
+                          onClick={() => {
+                            handleAddProject(newProjectInput);
+                            setNewProjectInput('');
+                          }}
+                          className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs cursor-pointer"
+                        >
+                          إضافة المشروع
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {filteredProjectsEntries.length === 0 ? (
+                    <div className="bg-white rounded-2xl border-2 border-dashed border-slate-150 p-16 text-center shadow-xs">
+                      <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-3 animate-pulse" />
+                      <p className="text-sm text-slate-500 font-semibold">لا توجد نتائج بحث تطابق استعلامك.</p>
+                      <p className="text-xs text-slate-400 mt-1">تأكد من كتابة أحرف صحيحة أو إضافة مستندات جديدة مسندة لمشاريع مطابقة.</p>
+                    </div>
+                  ) : (
+                    // GRID OF DESIGNER FOLDERS
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {filteredProjectsEntries.map(([projectName, docs]) => {
+                        const pos = docs.filter(d => d.docType === 'po');
+                        const quotes = docs.filter(d => d.docType === 'quote');
+                        
+                        // Sum amount for each currency
+                        const currencySums: Record<string, number> = {};
+                        docs.forEach(d => {
+                          const c = d.currency || 'EGP';
+                          currencySums[c] = (currencySums[c] || 0) + d.totalAmount;
+                        });
+
+                        return (
+                          <div 
+                            key={projectName} 
+                            onClick={() => setSelectedFolderProject(projectName)}
+                            className="group relative bg-[#FCFDFE] hover:bg-white border border-slate-150 hover:border-sky-500 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
+                          >
+                            {/* Visual Folder Tab-flap Overlay */}
+                            <div className="absolute top-0 right-6 w-20 h-1.5 bg-amber-400 rounded-b group-hover:bg-sky-500 transition-all duration-300" />
+                            
+                            <div className="flex items-start gap-4 mt-2">
+                              {/* Glowing yellow folder icon which flips to sky on hover */}
+                              <div className="p-3 bg-amber-50 text-amber-500 group-hover:bg-sky-50 group-hover:text-sky-600 rounded-xl border border-amber-100/60 group-hover:border-sky-100 transition-colors shadow-2xs">
+                                <Folder className="w-8 h-8 fill-amber-300/40 group-hover:fill-sky-300/20" />
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors">
+                                  {projectName}
+                                </h3>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="text-[11px] text-slate-500 font-extrabold bg-slate-100 px-1.5 py-0.5 rounded">
+                                    {docs.length} مستندات
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    ({pos.length} أوامر / {quotes.length} عروض)
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Financial Summary of folder */}
+                            <div className="mt-5 pt-3.5 border-t border-slate-100 flex flex-col gap-1.5">
+                              <span className="text-[9px] text-slate-400 font-extrabold uppercase">إجمالي عقود المجلد:</span>
+                              {Object.keys(currencySums).length === 0 ? (
+                                <span className="text-[11px] text-slate-400 font-semibold font-mono">0.00 EGP</span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1">
+                                  {Object.entries(currencySums).map(([curr, total]) => (
+                                    <span 
+                                      key={curr} 
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100/70 group-hover:bg-sky-50 text-slate-700 group-hover:text-sky-700 font-black text-xs rounded-lg border border-slate-150/50 font-mono transition-colors"
+                                    >
+                                      <span>{total.toLocaleString()}</span>
+                                      <span className="text-[10px] text-slate-400 font-bold">{curr}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+            </div>
+          )}
+
+        </div>
+
+      </main>
+
+      {/* 6. MODAL SIDE-IN SHEET FOR INVOICE / PO DOCUMENT INSPECTION */}
+      <AnimatePresence>
+        {selectedDoc && (
+          <div className="fixed inset-0 z-50 flex justify-end">
+            
+            {/* Overlay backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedDoc(null)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs"
+            />
+
+            {/* Inner Side Sheet container */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+              className="relative w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col z-10 overflow-hidden"
+            >
+              
+              {/* Header drawer controls */}
+              <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => setSelectedDoc(null)}
+                    className="p-1.5 bg-white border border-slate-150 hover:bg-slate-100 rounded-lg text-slate-500 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4 rotate-180" />
+                  </button>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      تفاصيل المستند: {selectedDoc.docType === 'po' ? 'أمر شراء' : 'عرض سعر'}
+                    </h3>
+                    <div className="flex flex-col gap-0.5 mt-0.5">
+                      <p className="text-[10px] text-slate-400 font-mono">ID: {selectedDoc.id}</p>
+                      {selectedDoc.classifiedPath && (
+                        <p className="text-[10.5px] text-emerald-600 font-mono bg-emerald-50/60 border border-emerald-100/50 px-2.5 py-1 rounded-lg flex items-center gap-1 mt-1 font-semibold">
+                          <span className="font-sans text-slate-500 font-bold shrink-0">📂 مسار الحفظ المحلي بالفولدر:</span>
+                          <span className="truncate" title={selectedDoc.classifiedPath}>{selectedDoc.classifiedPath}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {selectedDoc.classifiedPath && (
+                    <button
+                      onClick={() => triggerFileDownload(selectedDoc)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-250"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>تحميل المستند الأصلي</span>
+                    </button>
+                  )}
+                  
+                  {(selectedDoc.docType === 'po' || selectedDoc.docType === 'quote') && (
+                    <button
+                      onClick={() => handleExportToDeltaExcel(selectedDoc)}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs border border-emerald-500"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>تصدير نموذج DELTA (.xlsx)</span>
+                    </button>
+                  )}
+
+                  <button 
+                    onClick={() => setSelectedDoc(null)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-100/50">
+                
+                {/* Visual Label Banner (Matches Excel & Uploaded Screenshot Style) */}
+                <div className="bg-white border border-slate-350 rounded-3xl p-6 shadow-xl relative overflow-hidden max-w-4xl mx-auto font-sans">
+                  
+                  {/* Decorative clipboard tab style */}
+                  <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-blue-700 via-sky-600 to-blue-700" />
+                  
+                  {/* Helper control line at top of preview */}
+                  <div className="flex justify-between items-center mb-4 border-b border-dashed border-slate-250 pb-4 no-print">
+                    <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-sky-600 rounded-full animate-ping" />
+                      💡 نموذج ورقة DELTA التفاعلية - يمكنك النقر والتعديل على أى خلية في الشيت أدناه فوراً!
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={handleAddDrawerItem}
+                        className="px-2.5 py-1.5 bg-sky-100 hover:bg-sky-200 text-sky-800 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                      >
+                        <span>إضافة بند جديد (+)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* PRINT & DIRECTION SETTINGS BAR */}
+                  <div className="bg-[#FAFBFD] border border-slate-200 rounded-2xl p-5 mb-5 flex flex-col gap-4 no-print shadow-xs font-sans">
+                    
+                    {/* First Line: View Options */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100">
+                      
+                      {/* Show/Hide Excel Indices */}
+                      <div className="flex flex-wrap items-center gap-2.5 w-full justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-600"></div>
+                          <span className="text-xs font-bold text-slate-700">هيكل إكسل (الصفوف والأعمدة):</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowExcelGrid(!showExcelGrid)}
+                          className={`px-3 py-1.5 text-[11px] font-bold rounded-xl transition-all cursor-pointer border ${
+                            showExcelGrid 
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
+                              : 'bg-slate-50 border-slate-200 text-slate-500'
+                          }`}
+                        >
+                          {showExcelGrid ? 'معروض (A, B, C / 8, 9) 👁️' : 'مخفي (شكل نظيف ورسمي) 🙈'}
+                        </button>
+                      </div>
+
+                    </div>
+
+                    {/* Withholding Tax Toggle Options */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100">
+                      <div className="flex flex-wrap items-center gap-2.5 text-right w-full justify-between sm:justify-start">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
+                          <span className="text-xs font-bold text-slate-700">شكل أمر الشراء (الأرباح التجارية والصناعية):</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="inline-flex rounded-xl border border-slate-200 p-0.5 bg-white shadow-2xs">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateDrawerField('withholdingTaxEnabled', false);
+                              }}
+                              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                !selectedDoc.withholdingTaxEnabled
+                                  ? 'bg-amber-600 text-white shadow-3xs'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                              }`}
+                            >
+                              الشكل العادي (بدون خصم) 📑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateDrawerField('withholdingTaxEnabled', true);
+                                if (!selectedDoc.withholdingTaxRate) {
+                                  handleUpdateDrawerField('withholdingTaxRate', 1);
+                                }
+                              }}
+                              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                selectedDoc.withholdingTaxEnabled
+                                  ? 'bg-amber-600 text-white shadow-3xs'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                              }`}
+                            >
+                              شكل الخصم الضريبي (خصم الأرباح) ✂️
+                            </button>
+                          </div>
+
+                          {selectedDoc.withholdingTaxEnabled && (
+                            <div className="flex items-center gap-2 bg-amber-50/60 border border-amber-200 px-2.5 py-1 rounded-xl">
+                              <span className="text-[11px] font-bold text-amber-800">نسبة الخصم (WHT %):</span>
+                              <select
+                                value={selectedDoc.withholdingTaxRate || 1}
+                                onChange={(e) => {
+                                  handleUpdateDrawerField('withholdingTaxRate', Number(e.target.value));
+                                }}
+                                className="bg-white border border-amber-300 rounded-lg text-[11px] font-bold py-0.5 px-1.5 text-amber-950 outline-hidden focus:ring-1 focus:ring-amber-500"
+                              >
+                                <option value={1}>1% (سلع ومواد توريد)</option>
+                                <option value={3}>3% (خدمات وعقود)</option>
+                                <option value={5}>5% (إستشارات ومهن)</option>
+                                <option value={10}>10% (أخرى)</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Second Line: Export Action Buttons */}
+                    <div className="flex flex-col sm:flex-row justify-end items-center gap-3">
+                      
+                      {/* Save Changes button */}
+                      <button
+                        type="button"
+                        disabled={isSavingDrawer}
+                        onClick={handleSaveDrawerEdits}
+                        className={`w-full sm:w-auto px-5 py-2.5 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer border hover:scale-[1.02] ${
+                          isSavingDrawer 
+                            ? 'bg-blue-400 border-blue-300 cursor-not-allowed opacity-80' 
+                            : 'bg-blue-600 hover:bg-blue-700 border-blue-500'
+                        }`}
+                      >
+                        {isSavingDrawer ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                            <span>جاري حفظ التعديلات...</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5">
+                            <Save className="w-4 h-4 text-blue-100" />
+                            <span>حفظ تعديلات المستند 💾</span>
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Save to Excel (.XLSX) */}
+                      <button
+                        type="button"
+                        onClick={() => handleExportToDeltaExcel(selectedDoc)}
+                        className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer border border-[#1b874c] hover:scale-[1.02]"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+                        <span>تحميل كملف إكسيل مالي (.xlsx) 📊</span>
+                      </button>
+
+                      {/* Save as PDF */}
+                      <button
+                        type="button"
+                        onClick={handlePrintDocument}
+                        className="w-full sm:w-auto px-4 py-2.5 bg-slate-900 hover:bg-indigo-900 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer border border-slate-800 hover:scale-[1.02] text-center shrink-0"
+                      >
+                        <Printer className="w-4 h-4 text-sky-400" />
+                        <span>حفظ بصيغة PDF / طباعة 📄</span>
+                      </button>
+
+                    </div>
+
+                  </div>
+
+                  {/* Project & PO Sequence row in Excel label */}
+                  <div className="border border-slate-300 border-b-0 bg-slate-100 text-slate-800 font-sans grid grid-cols-1 lg:grid-cols-3 text-xs rounded-t-xl overflow-hidden mb-[-4px] relative z-20 no-print shadow-xs">
+                    <div className="border-b lg:border-b-0 lg:border-r border-slate-250 p-4 flex items-center justify-between gap-4 text-right">
+                      <span className="font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
+                        <Briefcase className="w-4 h-4 text-sky-600" />
+                        اسم المشروع (Project):
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-1 max-w-[280px]">
+                        {(() => {
+                          const currentProjValue = selectedDoc.projectName || "عام";
+                          const isCustomProject = !uniqueProjects.includes(currentProjValue);
+                          
+                          if (isCustomProject) {
+                            return (
+                              <div className="flex items-center gap-1.5 w-full">
+                                <input 
+                                  type="text"
+                                  value={selectedDoc.projectName || ""}
+                                  placeholder="اسم المشروع الجديد..."
+                                  onChange={(e) => handleUpdateDrawerField('projectName', e.target.value)}
+                                  className="flex-grow min-w-[120px] text-right bg-white border border-slate-300 focus:ring-1 focus:ring-sky-500 font-extrabold text-slate-800 text-xs px-2.5 py-1.5 rounded-xl shadow-2xs"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateDrawerField('projectName', 'عام')}
+                                  title="العودة للاختيار من القائمة"
+                                  className="p-1 px-2 border border-slate-200 hover:border-red-200 bg-white hover:bg-red-50 text-red-600 rounded-lg text-[10px] font-bold cursor-pointer transition-all shrink-0"
+                                >
+                                  إلغاء ❌
+                                </button>
+                              </div>
+                            );
+                          } else {
+                            return (
+                              <select
+                                value={currentProjValue}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === "custom") {
+                                    handleUpdateDrawerField('projectName', "");
+                                  } else {
+                                    handleUpdateDrawerField('projectName', val === "عام" ? "عام" : val);
+                                  }
+                                }}
+                                className="bg-white border border-slate-300 text-slate-700 text-xs px-2 py-1.5 rounded-xl font-bold focus:outline-hidden cursor-pointer w-full shadow-2xs"
+                              >
+                                {uniqueProjects.map(p => (
+                                  <option key={p} value={p}>{p}</option>
+                                ))}
+                                <option value="custom">✍️ إضافة مشروع جديد...</option>
+                              </select>
+                            );
+                          }
+                        })()}
+                      </div>
+                    </div>
+                    <div className="border-b lg:border-b-0 lg:border-r border-slate-250 p-4 flex items-center justify-between gap-4 text-right">
+                      <span className="font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
+                        <CircleDot className="w-4 h-4 text-amber-500" />
+                        حالة المشروع (Status):
+                      </span>
+                      <select
+                        value={selectedDoc.projectStatus || 'in_progress'}
+                        onChange={(e) => handleUpdateDrawerField('projectStatus', e.target.value)}
+                        className="bg-white border border-slate-300 text-slate-700 text-xs px-3 py-1.5 rounded-xl font-bold focus:outline-hidden cursor-pointer w-full max-w-[200px] shadow-2xs"
+                      >
+                        <option value="in_progress">⏳ قيد التنفيذ (In Progress)</option>
+                        <option value="completed">✔️ مكتمل (Completed)</option>
+                        <option value="deferred">💤 مؤجل (Deferred)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* VIRTUAL EXCEL SHEET CONTAINER */}
+                  <div 
+                    id="playable-excel-sheet-delta"
+                    dir={printDirection}
+                    className={`border border-slate-300 bg-white font-sans text-xs select-none print-me ${
+                      printDirection === 'rtl' ? 'print-rtl' : 'print-ltr'
+                    }`}
+                  >
+                    
+                    {/* Header Banner Block */}
+                    <div className="excel-header-banner border-b border-slate-350 p-4 flex justify-between items-center bg-[#CCCCCC]">
+                      <div className={`${printDirection === 'rtl' ? 'text-right' : 'text-left'} font-sans`}>
+                        <div className="text-xl font-black text-black tracking-tight leading-none">DELTA</div>
+                        <div className="text-[10px] font-black text-black mt-1.5 tracking-wider">FOR ROAD CONSTRUCTION</div>
+                      </div>
+                      <div className={`${printDirection === 'rtl' ? 'text-left' : 'text-right'} border-s-2 border-dashed border-black/40 ps-4 font-sans`}>
+                        <div className="text-sm font-black text-black tracking-wider leading-none">
+                          {selectedDoc.docType === 'quote' ? 'PRICE' : 'PURCHASE'}
+                        </div>
+                        <div className="text-sm font-black text-black tracking-wider leading-none mt-1">
+                          {selectedDoc.docType === 'quote' ? 'OFFER' : 'ORDER'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Metadata Box styled as Excel Rows */}
+                    <div className="hidden md:grid grid-cols-12 border-b border-slate-300 text-black font-sans bg-white select-text">
+                      {/* Meta Labels */}
+                      <div className="col-span-4 bg-[#F3F4F6] border-e border-slate-200 p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
+                        {printDirection === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                      </div>
+                      <div className="col-span-2 bg-[#F3F4F6] border-e border-slate-200 p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
+                        {printDirection === 'rtl' ? 'اسم المشروع' : 'Ship to'}
+                      </div>
+                      <div className="col-span-2 bg-[#F3F4F6] border-e border-slate-200 p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">PO No:</div>
+                      <div className="col-span-2 bg-[#F3F4F6] border-e border-slate-200 p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
+                        {selectedDoc.docType === 'quote' ? 'Quote Date' : 'Order Date'}
+                      </div>
+                      <div className="col-span-2 bg-[#F3F4F6] p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
+                        {selectedDoc.docType === 'quote' ? 'Offer Total' : 'PO Total'}
+                      </div>
+
+                      {/* Meta Values Editable Fields */}
+                      <div className="col-span-4 border-e border-slate-300 p-1.5 text-center bg-white min-h-[36px] flex items-center justify-center overflow-hidden">
+                        <input 
+                          type="text"
+                          value={selectedDoc.clientName || ""}
+                          onChange={(e) => handleUpdateDrawerField('clientName', e.target.value)}
+                          list="learned-vendors-list"
+                          className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-bold text-black text-xs px-1 outline-hidden whitespace-nowrap overflow-hidden text-ellipsis"
+                          dir="auto"
+                        />
+                      </div>
+                      <div className="col-span-2 border-e border-slate-300 p-1.5 text-center bg-white flex items-center justify-center font-mono overflow-hidden">
+                        <input 
+                          type="text"
+                          value={selectedDoc.projectName || "عام"}
+                          onChange={(e) => handleUpdateDrawerField('projectName', e.target.value)}
+                          className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-bold text-black text-xs px-1 outline-hidden whitespace-nowrap overflow-hidden text-ellipsis"
+                          dir="auto"
+                        />
+                      </div>
+                      <div className="col-span-2 border-e border-slate-300 p-1.5 text-center bg-white flex items-center justify-center font-mono overflow-hidden">
+                        <input 
+                          type="text"
+                          value={selectedDoc.docNumber || "31"}
+                          onChange={(e) => handleUpdateDrawerField('docNumber', e.target.value)}
+                          className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-bold text-black text-xs px-1 outline-hidden whitespace-nowrap overflow-hidden text-ellipsis"
+                        />
+                      </div>
+                      <div className="col-span-2 border-e border-slate-300 p-1.5 text-center bg-white flex items-center justify-center font-mono overflow-hidden">
+                        <input 
+                          type="text"
+                          value={selectedDoc.receiptDate || ""}
+                          onChange={(e) => handleUpdateDrawerField('receiptDate', e.target.value)}
+                          className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-bold text-black text-xs px-1 outline-hidden whitespace-nowrap overflow-hidden text-ellipsis"
+                        />
+                      </div>
+                      <div className="col-span-2 p-1.5 text-center bg-white flex items-center justify-center font-mono font-black text-[#DC2626] text-xs select-text overflow-hidden whitespace-nowrap text-ellipsis font-black">
+                        {selectedDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    {/* Mobile-Friendly Metadata View for drawer spreadsheet (Screen only, hidden on md) */}
+                    <div className="md:hidden border-b border-slate-200 bg-slate-50 p-4 space-y-3 font-sans text-right" dir="rtl">
+                      <div className="grid grid-cols-2 gap-2.5 text-xs">
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+                          <span className="block text-[10px] text-slate-450 font-bold mb-1 col-span-1">
+                            {printDirection === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                          </span>
+                          <input 
+                            type="text"
+                            value={selectedDoc.clientName || ""}
+                            onChange={(e) => handleUpdateDrawerField('clientName', e.target.value)}
+                            list="learned-vendors-list"
+                            className="w-full bg-transparent border-0 p-0 focus:ring-0 font-extrabold text-slate-800 text-xs text-right outline-hidden"
+                            dir="auto"
+                          />
+                        </div>
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+                          <span className="block text-[10px] text-slate-450 font-bold mb-1 col-span-1">
+                            {printDirection === 'rtl' ? 'اسم المشروع' : 'Ship to'}
+                          </span>
+                          <input 
+                            type="text"
+                            value={selectedDoc.projectName || "عام"}
+                            onChange={(e) => handleUpdateDrawerField('projectName', e.target.value)}
+                            className="w-full bg-transparent border-0 p-0 focus:ring-0 font-extrabold text-slate-800 text-xs text-right outline-hidden"
+                            dir="auto"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2.5 text-xs">
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+                          <span className="block text-[10px] text-slate-450 font-bold mb-1">PO No / المرجع</span>
+                          <input 
+                            type="text"
+                            value={selectedDoc.docNumber || "31"}
+                            onChange={(e) => handleUpdateDrawerField('docNumber', e.target.value)}
+                            className="w-full bg-transparent border-0 p-0 focus:ring-0 font-extrabold text-[#DC2626] text-xs text-center outline-hidden"
+                          />
+                        </div>
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+                          <span className="block text-[10px] text-slate-450 font-bold mb-1">تاريخ المستند</span>
+                          <input 
+                            type="text"
+                            value={selectedDoc.receiptDate || ""}
+                            onChange={(e) => handleUpdateDrawerField('receiptDate', e.target.value)}
+                            className="w-full bg-transparent border-0 p-0 focus:ring-0 font-extrabold text-slate-805 text-xs text-center outline-hidden"
+                          />
+                        </div>
+                        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                          <span className="block text-[10px] text-slate-450 font-bold mb-1">القيمة الإجمالية</span>
+                          <span className="font-mono font-black text-[#DC2626] text-[11px] block text-center leading-none mt-1">
+                            {selectedDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sheet Grid Items Table */}
+                    <div className="relative overflow-x-auto">
+                      <table className="w-full border-collapse table-fixed">
+                        <thead>
+                          {/* Row A-F Column Index Labels */}
+                          {showExcelGrid && (
+                            <tr className="bg-[#EFEFEF] border-b border-slate-300 text-[10px] font-mono text-slate-500 text-center select-none">
+                              <th className="border-e border-slate-300 w-12 min-w-[48px] max-w-[48px] py-0.5 bg-[#DEDEDE] text-slate-800 font-bold">
+                                {printDirection === 'ltr' ? 'Row' : 'الصف'}
+                              </th>
+                              <th className="border-e border-slate-300 w-12 min-w-[48px] max-w-[48px] py-0.5">A</th>
+                              <th className="border-e border-slate-300 py-0.5">B</th>
+                              <th className="border-e border-slate-300 w-16 min-w-[64px] max-w-[64px] py-0.5">C</th>
+                              <th className="border-e border-slate-300 w-16 min-w-[64px] max-w-[64px] py-0.5">D</th>
+                              <th className="border-e border-slate-300 w-24 min-w-[96px] max-w-[96px] py-0.5">E</th>
+                              <th className={`py-0.5 w-28 min-w-[112px] max-w-[112px] ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>F</th>
+                            </tr>
+                          )}
+                          {/* Actual Visual Labels Row matching Excel exactly */}
+                          <tr className="bg-[#F4F4F4] border-b border-slate-300 text-[11px] text-slate-800 font-bold text-center select-none">
+                            {showExcelGrid && (
+                              <th className="border-e border-[#B0B0B0] bg-[#DEDEDE] text-slate-600 font-bold w-12 min-w-[48px] max-w-[48px]">8</th>
+                            )}
+                            <th className="border-e border-[#B0B0B0] py-2 w-12 min-w-[48px] max-w-[48px] text-center">No</th>
+                            <th className={`border-e border-[#B0B0B0] py-2 px-3 ${printDirection === 'rtl' ? 'text-right' : 'text-left'}`}>Describtion</th>
+                            <th className="border-e border-[#B0B0B0] py-2 w-16 min-w-[64px] max-w-[64px]">Unit</th>
+                            <th className="border-e border-[#B0B0B0] py-2 w-16 min-w-[64px] max-w-[64px]">Qty</th>
+                            <th className="border-e border-[#B0B0B0] py-2 w-24 min-w-[96px] max-w-[96px]">Price</th>
+                            <th className={`py-2 w-28 min-w-[112px] max-w-[112px] ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {selectedDoc.items && selectedDoc.items.length > 0 ? (
+                            selectedDoc.items.map((item, idx) => (
+                              <tr key={idx} className="bg-white hover:bg-slate-50/50 transition-colors">
+                                {/* Excel Row Indicator Column */}
+                                {showExcelGrid && (
+                                  <td className="border-e border-slate-200 bg-[#F4F4F4] text-center text-[10px] font-mono font-bold text-slate-500 py-3 w-12 min-w-[48px] max-w-[48px]">
+                                    {9 + idx}
+                                  </td>
+                                )}
+                                
+                                {/* No. */}
+                                <td className="border-e border-slate-200 text-center font-semibold text-slate-700 py-3 font-mono w-12 min-w-[48px] max-w-[48px]">
+                                  {idx + 1}
+                                </td>
+
+                                {/* Description with brand combined cleanly */}
+                                <td className={`border-e border-slate-200 py-2 px-3 ${printDirection === 'rtl' ? 'text-right' : 'text-left'}`}>
+                                  <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-1">
+                                      <button 
+                                        type="button"
+                                        onClick={() => handleRemoveDrawerItem(idx)}
+                                        title="حذف هذا البند"
+                                        className="text-red-400 hover:text-red-600 mr-1 p-0.5 hover:bg-red-50 rounded-sm cursor-pointer"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                      <input 
+                                        type="text"
+                                        value={item.description || ""}
+                                        onChange={(e) => handleUpdateDrawerItem(idx, 'description', e.target.value)}
+                                        list="learned-items-list"
+                                        className={`w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-semibold text-slate-800 text-xs p-1 rounded-sm outline-hidden ${
+                                          printDirection === 'rtl' ? 'text-right' : 'text-left'
+                                        }`}
+                                        placeholder={printDirection === 'rtl' ? "وصف البند التفصيلي" : "Detail Description"}
+                                        dir="auto"
+                                      />
+                                    </div>
+                                    <div className={`flex items-center gap-1.5 text-[10px] ${printDirection === 'rtl' ? 'justify-end pr-5' : 'justify-start pl-5'}`}>
+                                      <span className="text-slate-400 font-medium">
+                                        {printDirection === 'rtl' ? 'ماركة البند:' : 'Brand:'}
+                                      </span>
+                                      <input 
+                                        type="text"
+                                        value={item.brand || ""}
+                                        placeholder={printDirection === 'rtl' ? "(ماركة البند)" : "(Brand Name)"}
+                                        onChange={(e) => handleUpdateDrawerItem(idx, 'brand', e.target.value)}
+                                        list="learned-brands-list"
+                                        className={`bg-transparent border-0 text-slate-500 font-medium text-[10px] p-0 w-24 outline-hidden hover:text-sky-600 focus:text-sky-600 ${
+                                          printDirection === 'rtl' ? 'text-right' : 'text-left'
+                                        }`}
+                                        dir="auto"
+                                      />
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Unit */}
+                                <td className="border-e border-slate-200 py-2 text-center text-slate-700 w-16 min-w-[64px] max-w-[64px]">
+                                  <input 
+                                    type="text"
+                                    value={item.unit || "عدد"}
+                                    onChange={(e) => handleUpdateDrawerItem(idx, 'unit', e.target.value)}
+                                    list="learned-units-list"
+                                    className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-medium text-slate-655 text-xs p-1 rounded-sm outline-hidden"
+                                    dir="auto"
+                                  />
+                                </td>
+
+                                {/* Qty */}
+                                <td className="border-e border-slate-200 py-2 text-center font-mono w-16 min-w-[64px] max-w-[64px]">
+                                  <input 
+                                    type="number"
+                                    value={item.quantity || 0}
+                                    onChange={(e) => handleUpdateDrawerItem(idx, 'quantity', e.target.value)}
+                                    className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-semibold text-slate-700 text-xs p-1 rounded-sm outline-hidden"
+                                  />
+                                </td>
+
+                                {/* Price */}
+                                <td className="border-e border-slate-200 py-2 text-center font-mono w-24 min-w-[96px] max-w-[96px]">
+                                  <input 
+                                    type="number"
+                                    value={item.unitPrice || 0}
+                                    onChange={(e) => handleUpdateDrawerItem(idx, 'unitPrice', e.target.value)}
+                                    className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-semibold text-slate-700 text-xs p-1 rounded-sm outline-hidden"
+                                  />
+                                </td>
+
+                                {/* Amount */}
+                                <td className={`py-3 w-28 min-w-[112px] max-w-[112px] select-text font-bold text-slate-900 font-mono ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                                  {((item.quantity || 0) * (item.unitPrice || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={7} className="py-6 text-center text-slate-400 italic">لا توجد بنود في هذا السجل حالياً.</td>
+                            </tr>
+                          )}
+
+                          {/* Dynamic Spacer Items to reach at least 5 rows like Excel template - Disabled per user request */}
+                          {false && Array.from({ length: Math.max(0, 5 - (selectedDoc.items?.length || 0)) }).map((_, emptyIdx) => {
+                            const actualIndex = (selectedDoc.items?.length || 0) + emptyIdx;
+                            return (
+                              <tr key={`empty-${emptyIdx}`} className="bg-slate-50/10">
+                                {showExcelGrid && (
+                                  <td className="border-e border-slate-200 bg-[#F4F4F4] text-center text-[10px] font-mono font-bold text-slate-400 py-3 w-12">
+                                    {9 + actualIndex}
+                                  </td>
+                                )}
+                                <td className="border-e border-slate-200 text-center py-3 text-slate-300 font-semibold w-12">-</td>
+                                <td className="border-e border-slate-200 py-3 text-slate-300 px-3">-</td>
+                                <td className="border-e border-slate-200 py-3 text-center text-slate-300 w-16">-</td>
+                                <td className="border-e border-slate-200 py-3 text-center text-slate-300 w-16">-</td>
+                                <td className="border-e border-slate-200 py-3 text-center text-slate-300 w-24">-</td>
+                                <td className={`py-3 w-28 font-mono font-semibold text-slate-300 ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>-</td>
+                              </tr>
+                            );
+                          })}
+
+                          {/* Total Row */}
+                          <tr className="bg-[#F3F4F6] border-t border-slate-300 font-bold text-slate-900 text-center select-none">
+                            {/* Row number indicator */}
+                            {showExcelGrid && (
+                              <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                {10 + (selectedDoc.items?.length || 0)}
+                              </td>
+                            )}
+                            {/* Centered Total Label Spanning Column A-E */}
+                            <td colSpan={5} className="border-e border-slate-200 text-center py-2 font-bold text-slate-800 uppercase tracking-wide">
+                              {selectedDoc.withholdingTaxEnabled 
+                                ? (printDirection === 'rtl' ? 'الإجمالي قبل الخصم (Total)' : 'Total Before Tax')
+                                : 'Total'
+                              }
+                            </td>
+                            {/* Total Amount in Column F */}
+                            <td className={`py-2 w-28 font-extrabold text-[#DC2626] font-mono text-xs select-text ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                              {selectedDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {selectedDoc.currency || 'EGP'}
+                            </td>
+                          </tr>
+
+                          {/* Conditional withholding tax row */}
+                          {selectedDoc.withholdingTaxEnabled && (
+                            <>
+                              <tr className="bg-[#FFFDF3] border-t border-slate-200 text-slate-700 text-center select-none font-semibold text-xs">
+                                {showExcelGrid && (
+                                  <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12">
+                                    {11 + (selectedDoc.items?.length || 0)}
+                                  </td>
+                                )}
+                                <td colSpan={5} className="border-e border-slate-200 text-center py-2 text-red-700 font-medium whitespace-nowrap">
+                                  {printDirection === 'rtl' 
+                                    ? `خصم ضريبة الأرباح التجارية والصناعية (${selectedDoc.withholdingTaxRate || 1}%)` 
+                                    : `Commercial & Industrial Profits Tax Discount (${selectedDoc.withholdingTaxRate || 1}%)`
+                                  }
+                                </td>
+                                <td className={`py-2 w-28 font-bold text-red-600 font-mono text-xs select-text ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                                  -{((selectedDoc.totalAmount * (selectedDoc.withholdingTaxRate || 1)) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} {selectedDoc.currency || 'EGP'}
+                                </td>
+                              </tr>
+
+                              <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none">
+                                {showExcelGrid && (
+                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                    {12 + (selectedDoc.items?.length || 0)}
+                                  </td>
+                                )}
+                                <td colSpan={5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
+                                  {printDirection === 'rtl' ? 'صافي القيمة المستحقة للدفع (Net Payable)' : 'Net Payable'}
+                                </td>
+                                <td className={`py-2.5 w-28 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                                  {(selectedDoc.totalAmount - ((selectedDoc.totalAmount * (selectedDoc.withholdingTaxRate || 1)) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })} {selectedDoc.currency || 'EGP'}
+                                </td>
+                              </tr>
+                            </>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Terms and conditions block styled as Sheet Cells with strict LTR alignment */}
+                    <div className="bg-[#FCFCFC] border-t-2 border-dashed border-slate-200 p-5 space-y-4 text-xs font-sans text-left select-text ltr-print-force" dir="ltr">
+                      <div>
+                        <div className="font-extrabold text-slate-900 mb-2.5 uppercase select-none tracking-wide text-[11px] text-[#0000C8]">
+                          Terms & conditions
+                        </div>
+                        <div className="space-y-2 text-slate-700 font-medium">
+                          <div className="flex items-center gap-2 flex-wrap w-full border-b border-dashed border-slate-100 pb-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                            <span className="text-slate-500 font-bold shrink-0 text-[10px] uppercase">VAT:</span>
+                            <input 
+                              type="text"
+                              value={selectedDoc.vatTerms ?? "Prices include 14% VAT."}
+                              onChange={(e) => handleUpdateDrawerField('vatTerms', e.target.value)}
+                              className="font-extrabold text-slate-850 bg-slate-100/50 hover:bg-slate-200 border-0 focus:ring-1 focus:ring-sky-500 text-xs px-2 py-0.5 rounded-md flex-1 max-w-sm outline-hidden font-sans"
+                              placeholder="Prices include 14% VAT."
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap w-full border-b border-dashed border-slate-100 pb-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                            <span className="text-slate-500 font-bold shrink-0 text-[10px] uppercase">Logistic Terms:</span>
+                            <input 
+                              type="text"
+                              value={selectedDoc.deliveryTerms ?? "Prices include Transportation."}
+                              onChange={(e) => handleUpdateDrawerField('deliveryTerms', e.target.value)}
+                              className="font-extrabold text-slate-850 bg-slate-100/50 hover:bg-slate-200 border-0 focus:ring-1 focus:ring-sky-500 text-xs px-2 py-0.5 rounded-md flex-1 max-w-sm outline-hidden font-sans"
+                              placeholder="Prices include Transportation."
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap border-b border-dashed border-slate-100 pb-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                            <span className="text-slate-600">Place of delivery:</span>
+                            <span className="font-bold text-slate-800 px-1 border-b border-slate-200 bg-slate-50 italic">
+                              {selectedDoc.projectName ? selectedDoc.projectName : (selectedDoc.shipToAddress || "عام")}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap border-b border-dashed border-slate-100 pb-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                            <span className="text-slate-600">Date of delivery at site:</span>
+                            <input 
+                              type="text"
+                              value={selectedDoc.deliveryDate || "15-06-2026"}
+                              onChange={(e) => handleUpdateDrawerField('deliveryDate', e.target.value)}
+                              className="font-bold text-slate-800 bg-slate-100/50 hover:bg-slate-200 border-0 focus:ring-1 focus:ring-sky-500 text-xs px-1.5 py-0.5 rounded-sm max-w-xs font-mono outline-hidden"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap text-amber-900 font-bold bg-amber-50/70 p-1.5 rounded-lg border border-amber-200/50">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                            <span className="text-amber-800 text-[11px] font-bold">تاريخ الاستحقاق (Due Date):</span>
+                            <input 
+                              type="text"
+                              value={selectedDoc.dueDate || ""}
+                              placeholder="YYYY-MM-DD"
+                              onChange={(e) => handleUpdateDrawerField('dueDate', e.target.value)}
+                              className="font-bold text-amber-955 bg-white hover:bg-amber-50 border border-amber-300 focus:ring-1 focus:ring-amber-500 text-xs px-2 py-0.5 rounded-md max-w-xs font-mono outline-hidden"
+                            />
+                            {selectedDoc.dueDate && (
+                              <span className={getDueDateWarningStyle(selectedDoc.dueDate)}>
+                                {new Date(selectedDoc.dueDate) < new Date() ? "⚠️ متأخر" : "⏳ غير مستحق"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200/50">
+                        <div className="font-extrabold text-slate-900 mb-2.5 uppercase select-none tracking-wide text-[11px] text-[#0000C8]">
+                          Payment Terms :
+                        </div>
+                        <div className="space-y-2 text-slate-700 font-medium">
+                          <div className="flex items-start gap-2">
+                            <span className="font-bold text-slate-500 shrink-0 w-3 text-[11px]">1.</span>
+                            <span>Payment by check in the name of the company as shown in your commercial register.</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="font-bold text-slate-500 shrink-0 w-3 text-[11px]">2.</span>
+                            <span>Or in the name of the authorized person through your company.</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-500 shrink-0 w-3 text-[11px]">3.</span>
+                            <span>Or by bank transfer to your company account within</span>
+                            <input 
+                              type="text"
+                              value={selectedDoc.paymentDays || "10"}
+                              onChange={(e) => handleUpdateDrawerField('paymentDays', e.target.value)}
+                              className="font-bold text-center bg-slate-100 rounded-md border-0 text-slate-800 text-xs px-1 py-0.5 focus:ring-1 focus:ring-sky-500 w-12 font-mono outline-hidden"
+                            />
+                            <span>days of the delivery date.</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap border-t border-dashed border-slate-200/60 pt-2 pb-1 no-print">
+                            <span className="font-bold text-[#0000C8] shrink-0 w-3 text-[11px]">4.</span>
+                            <span className="text-[#0000C8] font-bold text-[10px] uppercase">Advance Payment (الدفعة المقدمة):</span>
+                            <input 
+                              type="text"
+                              value={selectedDoc.advancePayment || ""}
+                              onChange={(e) => handleUpdateDrawerField('advancePayment', e.target.value)}
+                              className="font-extrabold text-slate-850 bg-amber-50/50 hover:bg-amber-100/70 border border-amber-200 focus:ring-1 focus:ring-amber-500 text-xs px-2.5 py-1 rounded-md flex-1 max-w-sm outline-hidden font-sans"
+                              placeholder="مثال: دفعة مقدمة 20% (Advance payment of 20%)"
+                            />
+                          </div>
+                          {selectedDoc.advancePayment && (
+                            <div className="hidden print:flex items-start gap-2">
+                              <span className="font-bold text-slate-500 shrink-0 w-3 text-[11px]">4.</span>
+                              <span className="font-bold text-slate-900">
+                                Advance payment: {selectedDoc.advancePayment}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Signatures block side-by-side matching the Excel image layout */}
+                    <div className="border-t border-[#B0B0B0] grid grid-cols-3 bg-transparent text-center select-text pt-2 pb-2">
+                      
+                      {/* Column 1: Procurement */}
+                      <div className="border-e border-[#B0B0B0] p-2 flex flex-col justify-between min-h-[72px]">
+                        <span className="font-extrabold text-[#0000C8] text-[13px] uppercase leading-normal font-sans whitespace-normal block tracking-tight max-w-full mx-auto text-center">
+                          Head of Procurement and Contracts
+                        </span>
+                        <input 
+                          type="text"
+                          value={selectedDoc.signatureProcurement || "Mr. Mohamed Al-Daly"}
+                          onChange={(e) => handleUpdateDrawerField('signatureProcurement', e.target.value)}
+                          className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-bold text-slate-900 text-sm p-1 mt-2 outline-hidden"
+                        />
+                      </div>
+
+                      {/* Column 2: Tech Manager */}
+                      <div className="border-e border-[#B0B0B0] p-2 flex flex-col justify-between min-h-[72px]">
+                        <span className="font-extrabold text-[#0000C8] text-[13px] uppercase leading-normal font-sans whitespace-normal block tracking-tight max-w-full mx-auto text-center">
+                          Technical Office Manager
+                        </span>
+                        <input 
+                          type="text"
+                          value={selectedDoc.signatureTechnical || "Eng. Nasr Mahmoud"}
+                          onChange={(e) => handleUpdateDrawerField('signatureTechnical', e.target.value)}
+                          className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-bold text-slate-900 text-sm p-1 mt-2 outline-hidden"
+                        />
+                      </div>
+
+                      {/* Column 3: General Manager */}
+                      <div className="p-2 flex flex-col justify-between min-h-[72px]">
+                        <span className="font-extrabold text-[#0000C8] text-[13px] uppercase leading-normal font-sans whitespace-normal block tracking-tight max-w-full mx-auto text-center">
+                          General Manager
+                        </span>
+                        <input 
+                          type="text"
+                          value={selectedDoc.signatureManager || "Eng. Sherif Mahmoud"}
+                          onChange={(e) => handleUpdateDrawerField('signatureManager', e.target.value)}
+                          className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500 font-bold text-slate-900 text-sm p-1 mt-2 outline-hidden"
+                        />
+                      </div>
+
+                    </div>
+
+                  </div>
+
+                  {/* Bottom details helper banner in drawer */}
+                  <div className="mt-6 flex flex-col gap-3">
+                    <div className="p-4 bg-sky-50/15 border border-sky-100 rounded-2xl">
+                      <span className="text-xs font-bold text-sky-850 block mb-1">💡 ملخص الـ AI وتحليل محتوى الملف الأصلي:</span>
+                      <p className="text-xs text-slate-600 leading-relaxed font-medium select-text">
+                        {selectedDoc.summary || 'تم تسجيل هذه المعاملة بنجاح وتصنيف البنود وتطويرها في نسق الجداول النظيرة لشركة DELTA.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Storage file metadata log */}
+                  <div className="pt-4 mt-6 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-400 font-mono select-none">
+                    <span>الملف الأصلي: {selectedDoc.originalFilename}</span>
+                    <span>تاريخ الحفظ والتحليل: {new Date(selectedDoc.processedAt).toLocaleString('ar-EG')}</span>
+                  </div>
+
+                </div>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+
+
+      {/* 8. DOCUMENT COMPARISON OVERLAY */}
+      <AnimatePresence>
+        {isComparing && (
+          <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col border border-slate-250 font-sans"
+            >
+              {/* Header Box */}
+              <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-xs">
+                    <GitCompare className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900">مقارنة بنود ومطابقة الفروق بين مستندين</h3>
+                    <p className="text-xs text-slate-400 mt-0.5" id="desc-comp-1">مقارنة وتحديد المبالغ والفروق بين عرض السعر وأمر الشراء.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsComparing(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full cursor-pointer border-0 outline-hidden"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Selection Bar */}
+              <div className="p-4 bg-white border-b border-slate-100 grid grid-cols-1 md:grid-cols-5 gap-4 items-center shrink-0 text-right">
+                {/* Selector A */}
+                <div className="md:col-span-2 space-y-1">
+                  <label className="text-[11px] font-bold text-slate-500 block">المستند الأول المقارن (أ) - عرض السعر لشركة DELTA:</label>
+                  <select
+                    value={compareDocAId || ""}
+                    onChange={(e) => setCompareDocAId(e.target.value)}
+                    className="w-full text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-250 p-2 rounded-xl focus:border-indigo-500 text-right outline-hidden font-sans"
+                  >
+                    <option value="">-- اختر المستند الأول --</option>
+                    {documents.map(d => (
+                      <option key={d.id} value={d.id}>
+                        {d.clientName} | {d.docType === 'po' ? 'أمر شراء' : 'عرض سعر'} ({d.docNumber || 'بدون رقم'}) - {d.projectName || 'عام'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Arrow Icon Indicator */}
+                <div className="flex justify-center text-slate-300 col-span-1">
+                  <ArrowLeftRight className="w-5 h-5" />
+                </div>
+
+                {/* Selector B */}
+                <div className="md:col-span-2 space-y-1">
+                  <label className="text-[11px] font-bold text-slate-500 block">المستند الثاني المقارن (ب) - مثلاً أمر الشراء المستخرج:</label>
+                  <select
+                    value={compareDocBId || ""}
+                    onChange={(e) => setCompareDocBId(e.target.value)}
+                    className="w-full text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-250 p-2 rounded-xl focus:border-indigo-500 text-right outline-hidden font-sans"
+                  >
+                    <option value="">-- اختر المستند الثاني --</option>
+                    {documents.map(d => (
+                      <option key={d.id} value={d.id}>
+                        {d.clientName} | {d.docType === 'po' ? 'أمر شراء' : 'عرض سعر'} ({d.docNumber || 'بدون رقم'}) - {d.projectName || 'عام'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Items Side-by-Side Table content */}
+              <div className="flex-1 overflow-y-auto p-6 bg-slate-100/55">
+                {(!compareDocAId || !compareDocBId) ? (
+                  <div className="py-24 text-center">
+                    <GitCompare className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+                    <h3 className="text-base font-bold text-slate-700">الرجاء اختيار مستندين لبدء المطابقة ومقارنة الفروق</h3>
+                    <p className="text-xs text-slate-400 mt-1 font-semibold">يجب اختيار ملفين (مثال: عرض السعر الأصلي لشركة DELTA مقابل أمر التوريد الصادر) لمقارنة البنود تلقائياً.</p>
+                  </div>
+                ) : (() => {
+                  const docA = documents.find(d => d.id === compareDocAId);
+                  const docB = documents.find(d => d.id === compareDocBId);
+                  
+                  if (!docA || !docB) return null;
+
+                  // Run compilation algorithm
+                  const itemsA = docA.items || [];
+                  const itemsB = [...(docB.items || [])];
+                  const compiledPairs: Array<{
+                    descA: string;
+                    qtyA: number;
+                    priceA: number;
+                    totalA: number;
+                    descB: string;
+                    qtyB: number;
+                    priceB: number;
+                    totalB: number;
+                    isMatched: boolean;
+                    qtyDiff: number;
+                    priceDiff: number;
+                    totalDiff: number;
+                  }> = [];
+
+                  itemsA.forEach(itemA => {
+                    const matchIdx = itemsB.findIndex(itemB => 
+                      itemB.description.trim().toLowerCase() === itemA.description.trim().toLowerCase()
+                    );
+
+                    if (matchIdx > -1) {
+                      const itemB = itemsB[matchIdx];
+                      const qtyA = itemA.quantity || 0;
+                      const qtyB = itemB.quantity || 0;
+                      const priceA = itemA.unitPrice || 0;
+                      const priceB = itemB.unitPrice || 0;
+                      const totalA = qtyA * priceA;
+                      const totalB = qtyB * priceB;
+
+                      compiledPairs.push({
+                        descA: itemA.description,
+                        qtyA,
+                        priceA,
+                        totalA,
+                        descB: itemB.description,
+                        qtyB,
+                        priceB,
+                        totalB,
+                        isMatched: true,
+                        qtyDiff: qtyB - qtyA,
+                        priceDiff: priceB - priceA,
+                        totalDiff: totalB - totalA
+                      });
+                      itemsB.splice(matchIdx, 1);
+                    } else {
+                      const qtyA = itemA.quantity || 0;
+                      const priceA = itemA.unitPrice || 0;
+                      const totalA = qtyA * priceA;
+
+                      compiledPairs.push({
+                        descA: itemA.description,
+                        qtyA,
+                        priceA,
+                        totalA,
+                        descB: '',
+                        qtyB: 0,
+                        priceB: 0,
+                        totalB: 0,
+                        isMatched: false,
+                        qtyDiff: -qtyA,
+                        priceDiff: -priceA,
+                        totalDiff: -totalA
+                      });
+                    }
+                  });
+
+                  itemsB.forEach(itemB => {
+                    const qtyB = itemB.quantity || 0;
+                    const priceB = itemB.unitPrice || 0;
+                    const totalB = qtyB * priceB;
+
+                    compiledPairs.push({
+                      descA: '',
+                      qtyA: 0,
+                      priceA: 0,
+                      totalA: 0,
+                      descB: itemB.description,
+                      qtyB,
+                      priceB,
+                      totalB,
+                      isMatched: false,
+                      qtyDiff: qtyB,
+                      priceDiff: priceB,
+                      totalDiff: totalB
+                    });
+                  });
+
+                  // Sum total deltas
+                  const totalAAmount = docA.totalAmount;
+                  const totalBAmount = docB.totalAmount;
+                  const totalDelta = totalBAmount - totalAAmount;
+
+                  return (
+                    <div className="space-y-6">
+                      
+                      {/* Documents comparison summary metadata */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        
+                        {/* Doc A Mini metadata */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-right">
+                          <span className="text-[10px] font-bold text-sky-600 block mb-1">المستند الأساسي (أ)</span>
+                          <h4 className="text-xs font-bold text-slate-800">{docA.clientName}</h4>
+                          <div className="mt-2 text-xs space-y-1 text-slate-500">
+                            <div>المرجع: <span className="font-mono font-bold text-slate-755">{docA.docNumber || 'X'}</span></div>
+                            <div>القيمة: <span className="font-mono font-bold text-[#0000C8]">{docA.totalAmount.toLocaleString()} {docA.currency}</span></div>
+                            <div>المشروع: <span className="font-bold text-slate-700">{docA.projectName || 'عام'}</span></div>
+                          </div>
+                        </div>
+
+                        {/* Doc B Mini metadata */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-right">
+                          <span className="text-[10px] font-bold text-violet-605 block mb-1">المستند المقارن (ب)</span>
+                          <h4 className="text-xs font-bold text-slate-800">{docB.clientName}</h4>
+                          <div className="mt-2 text-xs space-y-1 text-slate-550">
+                            <div>المرجع: <span className="font-mono font-bold text-slate-700">{docB.docNumber || 'X'}</span></div>
+                            <div>القيمة: <span className="font-mono font-bold text-[#0000C8]">{docB.totalAmount.toLocaleString()} {docB.currency}</span></div>
+                            <div>المشروع: <span className="font-bold text-slate-700">{docB.projectName || 'عام'}</span></div>
+                          </div>
+                        </div>
+
+                        {/* Summary Compliance Verdict */}
+                        <div className="bg-white border-2 border-indigo-100 rounded-2xl p-4 flex flex-col justify-between text-right">
+                          <div>
+                            <span className="text-[10px] font-bold text-indigo-700 block mb-1">حالة تطابق البنود الإجمالية</span>
+                            <div className="mt-2 text-xs">
+                              {Math.abs(totalDelta) < 1 ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 font-extrabold rounded-lg border border-green-100">
+                                  ✅ المستندين متطابقان تماماً في السعر الإجمالي
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-700 font-extrabold rounded-lg border border-amber-100">
+                                  ⚠️ يوجد فروق مالية بقيمة {Math.abs(totalDelta).toLocaleString()} {docA.currency}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="text-[11px] text-slate-400 mt-2 font-bold select-all">
+                            {totalDelta > 0 ? (
+                              <span className="text-rose-600">المستند (ب) أعلى سعراً بمقدار +{totalDelta.toLocaleString()}</span>
+                            ) : totalDelta < 0 ? (
+                              <span className="text-emerald-700">المستند (ب) أوفر بمقدار {totalDelta.toLocaleString()}</span>
+                            ) : (
+                              <span className="text-slate-400">تطابق مالي 100%</span>
+                            )}
+                          </div>
+                        </div>
+
+                      </div>
+
+                      {/* Side-by-side Table */}
+                      <div className="bg-white border border-slate-205 rounded-2xl overflow-hidden shadow-xs">
+                        
+                        <div className="p-4 bg-[#FAFBFD] flex flex-col sm:flex-row justify-between items-center border-b border-slate-150 gap-3 text-right">
+                          <span className="text-xs font-extrabold text-slate-850">التوزيع المقارن لبنود التسعير والتوريد</span>
+                          <button
+                            onClick={() => {
+                              const excelData = compiledPairs.map((item, idx) => ({
+                                "الرقم": idx + 1,
+                                "بند المستند الأول الأساسي (أ)": item.descA || "غير مسجل",
+                                "الكمية (أ)": item.qtyA,
+                                "سعر الوحدة (أ)": item.priceA,
+                                "الإجمالي (أ)": item.totalA,
+                                "بند المستند المقارن (ب)": item.descB || "غير مسجل",
+                                "الكمية (ب)": item.qtyB,
+                                "سعر الوحدة (ب)": item.priceB,
+                                "الإجمالي (ب)": item.totalB,
+                                "فرق الكمية (ب - أ)": item.qtyDiff,
+                                "فرق سعر الوحدة (ب - أ)": item.priceDiff,
+                                "فرق الرصيد الإجمالي": item.totalDiff,
+                                "حالة المطابقة": item.isMatched ? "متطابق بالوصف" : "بند زائد بالملف"
+                              }));
+
+                              const ws = XLSX.utils.json_to_sheet(excelData);
+                              const wb = XLSX.utils.book_new();
+                              XLSX.utils.book_append_sheet(wb, ws, "فروق عروض الأسعار والـ POs");
+
+                              // Defined custom column sizes for high quality visual alignment
+                              ws['!cols'] = [
+                                { wch: 6 },   // الرقم
+                                { wch: 30 },  // بند المستند الأول الأساسي (أ)
+                                { wch: 12 },  // الكمية (أ)
+                                { wch: 14 },  // سعر الوحدة (أ)
+                                { wch: 16 },  // الإجمالي (أ)
+                                { wch: 30 },  // بند المستند المقارن (ب)
+                                { wch: 12 },  // الكمية (ب)
+                                { wch: 14 },  // سعر الوحدة (ب)
+                                { wch: 16 },  // الإجمالي (ب)
+                                { wch: 14 },  // فرق الكمية
+                                { wch: 15 },  // فرق سعر الوحدة
+                                { wch: 18 },  // فرق الرصيد الإجمالي
+                                { wch: 18 }   // حالة المطابقة
+                              ];
+
+                              // Style every cell inside the comparison sheet
+                              for (const cellRef in ws) {
+                                if (cellRef.startsWith('!')) continue;
+                                const cell = ws[cellRef];
+                                if (!cell) continue;
+
+                                const match = cellRef.match(/^([A-Z]+)([0-9]+)$/);
+                                if (!match) continue;
+                                const colStr = match[1];
+                                const rowStr = match[2];
+                                const r = parseInt(rowStr) - 1; // 0-indexed row
+
+                                if (r === 0) {
+                                  // Styled Header
+                                  // @ts-ignore
+                                  cell.s = {
+                                    font: { name: "Segoe UI", sz: 10.5, bold: true, color: { rgb: "FFFFFF" } },
+                                    fill: { patternType: "solid", fgColor: { rgb: "4F46E5" } }, // Indigo Theme style for comparative audits
+                                    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+                                    border: {
+                                      top: { style: "thin", color: { rgb: "4F46E5" } },
+                                      bottom: { style: "medium", color: { rgb: "4F46E5" } },
+                                      left: { style: "thin", color: { rgb: "CBD5E1" } },
+                                      right: { style: "thin", color: { rgb: "CBD5E1" } }
+                                    }
+                                  };
+                                } else {
+                                  // Alternating body row zebra-striping
+                                  const isOdd = r % 2 !== 0;
+                                  const bgRgb = isOdd ? "F8FAFC" : "FFFFFF";
+
+                                  let alignmentHoriz = "center";
+                                  if (colStr === 'B' || colStr === 'F') {
+                                    alignmentHoriz = "right"; // Arabic text descriptions aligned right
+                                  } else if (['C', 'D', 'E', 'G', 'H', 'I', 'J', 'K', 'L'].includes(colStr)) {
+                                    alignmentHoriz = "right"; // Numeric values formatted left to right / right aligned
+                                  }
+
+                                  // Highlight rows or cells with actual differences in yellow/red warning tints
+                                  let fgColorCustom = bgRgb;
+                                  let textColorCustom = "1E293B";
+                                  let fontBold = false;
+
+                                  // If there is an actual difference in the row (column L), paint with soft warning color
+                                  if (colStr === 'L' && cell.v && Number(cell.v) !== 0) {
+                                    fgColorCustom = "FEE2E2"; // Light red alert background
+                                    textColorCustom = "991B1B"; // Deep red text
+                                    fontBold = true;
+                                  } else if (colStr === 'M' && cell.v && String(cell.v).includes("زائد")) {
+                                    fgColorCustom = "FEF3C7"; // Amber highlight
+                                    textColorCustom = "92400E";
+                                  }
+
+                                  // @ts-ignore
+                                  cell.s = {
+                                    font: { name: "Segoe UI", sz: 10, bold: fontBold, color: { rgb: textColorCustom } },
+                                    fill: { patternType: "solid", fgColor: { rgb: fgColorCustom } },
+                                    alignment: { horizontal: alignmentHoriz, vertical: "center" },
+                                    border: {
+                                      top: { style: "thin", color: { rgb: "E2E8F0" } },
+                                      bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+                                      left: { style: "thin", color: { rgb: "E2E8F0" } },
+                                      right: { style: "thin", color: { rgb: "E2E8F0" } }
+                                    }
+                                  };
+
+                                  // Appropriate number formats
+                                  if (['D', 'E', 'H', 'I', 'K', 'L'].includes(colStr)) {
+                                    cell.z = "#,##0.00";
+                                  } else if (['C', 'G', 'J'].includes(colStr)) {
+                                    cell.z = "#,##0";
+                                  }
+                                }
+                              }
+
+                              XLSX.writeFile(wb, `DELTA_Comparison_${docA.docNumber}_vs_${docB.docNumber}.xlsx`);
+                              triggerNotificationToast('success', 'تم تصدير شيت فروق المطابقة', 'بشكل لابل إلكترونية مرنة');
+                            }}
+                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs transition-all flex items-center gap-1 cursor-pointer border border-emerald-500 shadow-sm"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>تصدير تقرير فروق الأسعار لابل (.xlsx)</span>
+                          </button>
+                        </div>
+
+                        <div className="overflow-x-auto text-right">
+                          <table className="w-full text-right text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-[#FAFBFD] text-slate-500 border-b border-slate-150 text-[10px] font-bold uppercase tracking-wider select-none">
+                                <th className="py-3 px-4 border-l border-slate-150 text-center w-12 bg-[#F5F5F5] text-slate-600">م</th>
+                                <th className="py-3 px-4 border-l border-slate-150 text-sky-700 bg-sky-50/20 text-right">بند المستند الأساسي (أ)</th>
+                                <th className="py-3 px-3 text-center border-l border-slate-150 text-sky-700 w-16 bg-sky-50/20">كمية (أ)</th>
+                                <th className="py-3 px-3 text-center border-l border-slate-150 text-sky-700 w-24 bg-sky-50/20">سعر الوحدة (أ)</th>
+                                <th className="py-3 px-4 border-l border-slate-150 text-violet-700 bg-violet-50/20 text-right">بند المستند المقارن (ب)</th>
+                                <th className="py-3 px-3 text-center border-l border-slate-150 text-violet-700 w-16 bg-violet-50/20">كمية (ب)</th>
+                                <th className="py-3 px-3 text-center border-l border-slate-150 text-violet-700 w-24 bg-violet-50/20">سعر الوحدة (ب)</th>
+                                <th className="py-3 px-4 border-l border-slate-150 font-bold bg-amber-50/40 text-amber-800 text-center w-28">فروق الأسعار والكمية</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-150 font-semibold text-slate-700">
+                              {compiledPairs.map((item, idx) => {
+                                const hasPriceDiff = item.priceDiff !== 0;
+                                const hasQtyDiff = item.qtyDiff !== 0;
+                                const anyDiff = hasPriceDiff || hasQtyDiff;
+
+                                return (
+                                  <tr key={idx} className={`hover:bg-slate-50/30 transition-colors ${anyDiff ? 'bg-amber-50/10' : ''}`}>
+                                    {/* Number */}
+                                    <td className="py-3 px-4 text-center border-l border-slate-150 text-slate-400 font-mono bg-[#FAF9F5]">{idx + 1}</td>
+
+                                    {/* Item Desc A */}
+                                    <td className="py-3 px-4 border-l border-slate-150 font-semibold text-slate-800 text-right whitespace-normal break-words max-w-xs">
+                                      {item.descA || (
+                                        <span className="text-rose-500 italic font-normal">بند غير موجود في (أ)</span>
+                                      )}
+                                    </td>
+
+                                    {/* Qty A */}
+                                    <td className="py-3 px-3 text-center border-l border-slate-150 font-mono text-slate-600">
+                                      {item.descA ? item.qtyA : '-'}
+                                    </td>
+
+                                    {/* Unit Price A */}
+                                    <td className="py-3 px-3 text-center border-l border-slate-150 font-mono text-slate-600">
+                                      {item.descA ? `${item.priceA.toLocaleString()} ${docA.currency}` : '-'}
+                                    </td>
+
+                                    {/* Item Desc B */}
+                                    <td className="py-3 px-4 border-l border-slate-150 font-semibold text-slate-800 text-right whitespace-normal break-words max-w-xs">
+                                      {item.descB || (
+                                        <span className="text-amber-600 italic font-normal">بند غائب في أمر التوريد</span>
+                                      )}
+                                    </td>
+
+                                    {/* Qty B */}
+                                    <td className={`py-3 px-3 text-center border-l border-slate-150 font-mono font-bold ${
+                                      hasQtyDiff ? (item.qtyDiff > 0 ? 'bg-sky-50 text-sky-800' : 'bg-rose-50 text-rose-800') : 'text-slate-650'
+                                    }`}>
+                                      {item.descB ? item.qtyB : '-'}
+                                    </td>
+
+                                    {/* Unit Price B */}
+                                    <td className={`py-3 px-3 text-center border-l border-slate-150 font-mono font-extrabold ${
+                                      hasPriceDiff ? (item.priceDiff > 0 ? 'bg-amber-100 text-amber-900 font-bold' : 'bg-emerald-50 text-emerald-800') : 'text-slate-650'
+                                    }`}>
+                                      {item.descB ? `${item.priceB.toLocaleString()} ${docB.currency}` : '-'}
+                                    </td>
+
+                                    {/* Comparison Verdict badge Cell */}
+                                    <td className="py-3 px-4 border-l border-slate-150 text-center font-mono">
+                                      {(!item.descA || !item.descB) ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-black border border-rose-100">
+                                          ⚠️ بند مفقود بالطرف الآخر
+                                        </span>
+                                      ) : item.priceDiff === 0 && item.qtyDiff === 0 ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-green-50 text-green-700 text-[10px] font-black border border-green-100">
+                                          ✅ متطابق تماماً
+                                        </span>
+                                      ) : (
+                                        <div className="flex flex-col gap-1 items-center justify-center">
+                                          {hasPriceDiff && (
+                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black ${
+                                              item.priceDiff > 0 ? 'bg-amber-50 text-amber-800 border border-amber-150' : 'bg-emerald-50 text-emerald-800 border border-emerald-100'
+                                            }`}>
+                                              سعر الوحدة: {item.priceDiff > 0 ? '+' : ''}{item.priceDiff.toLocaleString()}
+                                            </span>
+                                          )}
+                                          {hasQtyDiff && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 text-[10px] font-black border border-indigo-150">
+                                              الكمية: {item.qtyDiff > 0 ? '+' : ''}{item.qtyDiff.toLocaleString()}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </td>
+
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                      </div>
+
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Close Panel Footer */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsComparing(false)}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-705 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                >
+                  الرجوع للوحة المتابعة الرئيسية
+                </button>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 9. BOTTOM CORNER REAL-TIME INSTANT FLOATING NOTIFICATION SLIDER */}
+      <AnimatePresence>
+        {showNotificationToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="fixed bottom-6 left-6 z-50 bg-slate-900 text-white rounded-3xl p-5 shadow-2xl max-w-sm border border-slate-800 flex items-start gap-3.5"
+          >
+            <div className="p-2 bg-sky-950 text-sky-400 rounded-xl mt-0.5 flex-shrink-0 animate-pulse">
+              <Bell className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xs font-extrabold text-white">{showNotificationToast.title}</h4>
+              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{showNotificationToast.message}</p>
+              <span className="text-[9px] text-slate-500 font-mono block mt-2">
+                تنبيه قبل: {new Date(showNotificationToast.timestamp).toLocaleTimeString('ar-EG')}
+              </span>
+            </div>
+            <button 
+              onClick={() => setShowNotificationToast(null)}
+              className="text-slate-500 hover:text-slate-350 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 9b. POTENTIAL DUPLICATE VALIDATION MODAL */}
+      <AnimatePresence>
+        {duplicateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-2xl w-full border border-slate-150 relative text-right"
+              dir="rtl"
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setDuplicateModalOpen(false);
+                  setExistingDuplicateDoc(null);
+                  setProposedDuplicateDoc(null);
+                }}
+                className="absolute top-4 left-4 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-4 text-rose-600 border-b border-rose-100 pb-3">
+                <AlertCircle className="w-6 h-6 shrink-0 animate-bounce" />
+                <h3 className="text-base font-black text-slate-900">
+                  تنبيه: تم كشف مستند مكرر محتمل! ⚠️
+                </h3>
+              </div>
+
+              <p className="text-xs text-slate-600 mb-4 leading-relaxed font-bold">
+                لقد قمت للتو برفع مستند يحتوي على نفس <span className="text-rose-600">اسم المورد</span>، ونفس <span className="text-rose-600">القيمة الإجمالية</span>، ونفس <span className="text-rose-600">تاريخ الاستلام</span> كالمستند الموجود بالفعل لدينا في النظام. يرجى مراجعة التفاصيل أدناه واختيار الإجراء المناسب:
+              </p>
+
+              {/* Side by side comparison cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                
+                {/* Existing Document */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-right relative">
+                  <div className="absolute top-3 left-3 px-2 py-0.5 bg-sky-100 text-sky-800 rounded-md text-[10px] font-bold">المستند الحالي في السجل</div>
+                  <h4 className="text-xs font-bold text-slate-500 mb-1">المستند الحالي الموجود:</h4>
+                  <div className="text-xs font-black text-slate-800 mb-3">{existingDuplicateDoc?.clientName || 'غير محدد'}</div>
+                  
+                  <div className="space-y-1.5 text-[11px] text-slate-550">
+                    <div>المرجع: <span className="font-mono font-bold text-slate-700">{existingDuplicateDoc?.docNumber || 'X'}</span></div>
+                    <div>تاريخ الاستلام: <span className="font-mono font-bold text-slate-700">{existingDuplicateDoc?.receiptDate || 'X'}</span></div>
+                    <div>الإجمالي: <span className="font-mono font-bold text-[#0000C8]">{existingDuplicateDoc?.totalAmount.toLocaleString()} {existingDuplicateDoc?.currency}</span></div>
+                    <div>عدد البنود: <span className="font-bold text-slate-700">({existingDuplicateDoc?.items?.length || 0}) بند</span></div>
+                  </div>
+                  
+                  {existingDuplicateDoc?.items && existingDuplicateDoc.items.length > 0 && (
+                    <div className="mt-3 pt-2 border-t border-slate-200 max-h-[100px] overflow-y-auto">
+                      <p className="text-[10px] font-bold text-slate-400 mb-1">البنود الحالية:</p>
+                      <ul className="space-y-1 text-[10px] text-slate-600 font-semibold list-disc list-inside">
+                        {existingDuplicateDoc.items.map((it: any, i: number) => (
+                          <li key={i} className="truncate">
+                            {it.description} ({it.quantity || 1} × {it.unitPrice || 0})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                {/* Proposed Document */}
+                <div className="bg-rose-50/20 border border-rose-100 rounded-2xl p-4 text-right relative">
+                  <div className="absolute top-3 left-3 px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md text-[10px] font-bold">المستند الذي تحاول رفعه</div>
+                  <h4 className="text-xs font-bold text-rose-500 mb-1">المستند الجديد المرفوع:</h4>
+                  <div className="text-xs font-black text-slate-800 mb-3">{proposedDuplicateDoc?.clientName || 'غير محدد'}</div>
+                  
+                  <div className="space-y-1.5 text-[11px] text-slate-550">
+                    <div>المرجع: <span className="font-mono font-bold text-slate-700">{proposedDuplicateDoc?.docNumber || 'X'}</span></div>
+                    <div>تاريخ الاستلام: <span className="font-mono font-bold text-slate-700">{proposedDuplicateDoc?.receiptDate || 'X'}</span></div>
+                    <div>الإجمالي: <span className="font-mono font-bold text-[#0000C8]">{proposedDuplicateDoc?.totalAmount.toLocaleString()} {proposedDuplicateDoc?.currency}</span></div>
+                    <div>عدد البنود: <span className="font-bold text-slate-700">({proposedDuplicateDoc?.items?.length || 0}) بند</span></div>
+                  </div>
+
+                  {proposedDuplicateDoc?.items && proposedDuplicateDoc.items.length > 0 && (
+                    <div className="mt-3 pt-2 border-t border-rose-200/50 max-h-[100px] overflow-y-auto">
+                      <p className="text-[10px] font-bold text-slate-400 mb-1">البنود الجديدة:</p>
+                      <ul className="space-y-1 text-[10px] text-rose-800 font-semibold list-disc list-inside">
+                        {proposedDuplicateDoc.items.map((it: any, i: number) => (
+                          <li key={i} className="truncate">
+                            {it.description} ({it.quantity || 1} × {it.unitPrice || 0})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Selection Options and buttons */}
+              <div className="flex flex-col sm:flex-row-reverse sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 mt-4">
+                
+                <div className="flex flex-wrap gap-2">
+                  {/* Action 1: Proceed */}
+                  <button
+                    disabled={confirmingAction}
+                    onClick={() => handleConfirmDuplicateAction('proceed')}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-350 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                  >
+                    {confirmingAction ? 'جاري الحفظ...' : 'استمرار الرفع وتكرار الملف 📂'}
+                  </button>
+
+                  {/* Action 2: Merge Items */}
+                  <button
+                    disabled={confirmingAction}
+                    onClick={() => handleConfirmDuplicateAction('merge')}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-350 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                  >
+                    {confirmingAction ? 'جاري الدمج...' : 'دمج البنود مع المستند الحالي 🔗'}
+                  </button>
+                </div>
+
+                {/* Action 3: Cancel */}
+                <button
+                  disabled={confirmingAction}
+                  onClick={() => {
+                    setDuplicateModalOpen(false);
+                    setExistingDuplicateDoc(null);
+                    setProposedDuplicateDoc(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                >
+                  إلغاء الرفع وإهماله ❌
+                </button>
+
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 10. SELF-LEARNING AUTOCOMPLETE DATALISTS */}
+      <datalist id="learned-vendors-list">
+        {uniqueClientsList.map((client, idx) => (
+          <option key={`client-opt-${idx}`} value={client} />
+        ))}
+      </datalist>
+
+      <datalist id="learned-items-list">
+        {uniqueItemNames.map((item, idx) => (
+          <option key={`item-opt-${idx}`} value={item} />
+        ))}
+      </datalist>
+
+      <datalist id="learned-brands-list">
+        {uniqueItemBrands.map((brand, idx) => (
+          <option key={`brand-opt-${idx}`} value={brand} />
+        ))}
+      </datalist>
+
+      <datalist id="learned-units-list">
+        {uniqueItemUnits.map((unit, idx) => (
+          <option key={`unit-opt-${idx}`} value={unit} />
+        ))}
+      </datalist>
+
+    </div>
+  );
+}

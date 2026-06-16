@@ -1,0 +1,6 @@
+{
+  "name": "Quotes & POs Automation System",
+  "description": "An automated system that processes quote and purchase order documents, extracts key values with Gemini API, structures spreadsheet logs with Excel download, organizes files by customer and receipt date, and includes real-time notifications with a real & simulated Telegram bot webhook.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

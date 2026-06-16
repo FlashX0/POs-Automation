@@ -1,0 +1,330 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Custom styling for slick scrollbars and Arabic UI layout default */
+html, body {
+  font-family: var(--font-sans);
+  direction: rtl;
+  text-align: right;
+}
+
+/* Prevent horizontal scroll specifically on mobile devices */
+@media (max-width: 767px) {
+  html, body {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+    position: relative;
+  }
+}
+
+/* Force English terms to be LTR and left-aligned under all circumstances */
+.ltr-print-force,
+.ltr-print-force * {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Screen Preview Sizing & Centering for the Virtual Sheet (.print-me) */
+.print-me {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  position: relative !important;
+  width: 100% !important;
+  max-width: 186mm !important; /* Perfect visual width of standard A4/Letter on screens */
+  min-height: 255mm !important; /* Visually balanced initial layout on screen preview */
+  margin: 0 auto !important; /* Centers block horizontally in screens */
+  background: white !important;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.08), 0 8px 16px -6px rgba(0, 0, 0, 0.08) !important; /* Elegant document shadow on screen */
+  border-radius: 4px !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure intermediate segments inside the sheet flex dynamically to push signatures to the bottom */
+.print-me .bg-\[\#FCFCFC\] {
+  flex-grow: 1 !important;
+}
+.print-me .grid-cols-3 {
+  margin-top: auto !important;
+}
+
+/* Ensure cells inside the printable sheet are horizontally and vertically centered */
+.print-me th,
+.print-me td {
+  vertical-align: middle !important;
+  text-align: center !important;
+}
+
+/* Outer wrapper container to center sheet horizontally on screen */
+.print-me-wrapper {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100% !important;
+  padding: 12px 0 !important;
+}
+
+/* Styling for Print Optimization and Text Direction Correction */
+@media print {
+  @page {
+    size: portrait; /* Size-neutral to dynamically adapt to whatever paper is selected: A4, Letter, etc. */
+    margin: 8mm 10mm 8mm 10mm; /* Symmetrical crisp margins to prevent empty secondary pages */
+  }
+
+  /* Hide all sibling elements of main sections or non-printable interface elements */
+  header, 
+  footer, 
+  section,
+  aside,
+  nav,
+  .no-print,
+  button,
+  .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Force background colors and styling for exact printer reproduction */
+  html, body {
+    background: white !important;
+    color: black !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Center the layout flow horizontally and vertically across the printed canvas */
+  #root,
+  main,
+  .print-me-wrapper,
+  div:has(> .print-me) {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    background: transparent !important;
+  }
+
+  /* Reset all fixed or absolute container positioning above .print-me so it doesn't clip */
+  .fixed,
+  .relative {
+    position: static !important;
+    float: none !important;
+  }
+
+  /* Format the printable virtual excel sheet as standard flowing content filling paper perfectly */
+  .print-me {
+    visibility: visible !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    position: relative !important;
+    width: 100% !important;
+    max-width: 100% !important; /* Perfect stretch to fill printable width of any A4/Letter paper */
+    height: auto !important; /* Flow naturally on multi-page printing */
+    min-height: calc(100vh - 1px) !important;
+    max-height: none !important;
+    margin: 0 !important; /* Standard browser margin margins centration */
+    padding: 0 !important;
+    border: 1px solid #4B5563 !important; /* Clear outer frame border */
+    border-radius: 0 !important; /* Solid edges on physical paper */
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Stretch the Terms block dynamically to absorb remaining white space and push signatures to the bottom */
+  .print-me .bg-\[\#FCFCFC\],
+  .print-me div[dir="ltr"] {
+    flex-grow: 1 !important;
+  }
+
+  /* Pin the corporate stamp & signatures box at the absolute bottom of the page boundary */
+  .print-me .grid-cols-3 {
+    margin-top: auto !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Auto columns width adjustment so cells balance and fill print layout beautifully */
+  .print-me table {
+    width: 100% !important;
+    table-layout: auto !important; /* Use auto layout inside print to let description column spread out proportionally */
+  }
+
+  /* SCALE UP FONTS IN PRINT MODE specifically with Cairo standard */
+  .print-me, 
+  .print-me td, 
+  .print-me th, 
+  .print-me span, 
+  .print-me div, 
+  .print-me p {
+    font-size: 15px !important; /* Comfortably enlarged for professional physical font sizing */
+    line-height: 1.6 !important; /* Spacious spacing to look clean */
+  }
+
+  /* Make critical titles even larger */
+  .print-me .text-xl {
+    font-size: 24px !important;
+  }
+  .print-me .text-lg {
+    font-size: 20px !important;
+  }
+  .print-me .text-sm {
+    font-size: 17px !important;
+  }
+  .print-me .text-xs {
+    font-size: 14px !important;
+  }
+  .print-me .text-\[11px\] {
+    font-size: 12px !important;
+  }
+  .print-me .text-\[10px\] {
+    font-size: 11px !important;
+  }
+  .print-me .text-\[8px\], 
+  .print-me .text-\[9px\] {
+    font-size: 10px !important;
+  }
+
+  /* Expanded, well-spaced cell paddings in print */
+  .print-me th,
+  .print-me td {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    vertical-align: middle !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+
+  /* Ensure child items inherit print adjustments */
+  .print-me * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Prevent page breaks inside table rows */
+  .print-me tr {
+    page-break-inside: avoid !important;
+  }
+
+  /* Correct text directionality in print specifically */
+  .print-me.print-rtl {
+    direction: rtl !important;
+    text-align: right !important;
+  }
+
+  .print-me.print-ltr {
+    direction: ltr !important;
+    text-align: left !important;
+  }
+
+  .print-me.print-rtl th:not(.text-center):not(.text-left):not(.text-right),
+  .print-me.print-rtl td:not(.text-center):not(.text-left):not(.text-right) {
+    text-align: right !important;
+  }
+
+  .print-me.print-ltr th:not(.text-center):not(.text-left):not(.text-right),
+  .print-me.print-ltr td:not(.text-center):not(.text-left):not(.text-right) {
+    text-align: left !important;
+  }
+
+  .print-me th.text-center,
+  .print-me td.text-center,
+  .print-me .text-center {
+    text-align: center !important;
+  }
+
+  .print-me th.text-left,
+  .print-me td.text-left,
+  .print-me .text-left {
+    text-align: left !important;
+  }
+
+  .print-me th.text-right,
+  .print-me td.text-right,
+  .print-me .text-right {
+    text-align: right !important;
+  }
+
+  .print-me.print-rtl .desc-cell {
+    text-align: right !important;
+    direction: rtl !important;
+  }
+
+  .print-me.print-ltr .desc-cell {
+    text-align: left !important;
+    direction: ltr !important;
+  }
+
+  .print-me .ltr-print-force,
+  .print-me .ltr-print-force * {
+    direction: ltr !important;
+    text-align: left !important;
+  }
+
+  /* Clean up fields like inputs or dropdowns to blend in print */
+  .print-me input,
+  .print-me select,
+  .print-me textarea {
+    border: none !important;
+    background: transparent !important;
+    outline: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    color: black !important;
+    pointer-events: none !important;
+  }
+
+  /* Crisp high-contrast professional borders for print */
+  .print-me,
+  .print-me table,
+  .print-me th,
+  .print-me td,
+  .print-me div {
+    border-color: #4B5563 !important; /* Clear dark-gray lines for gorgeous crisp outlines */
+  }
+
+  /* Solid professional gray header background + black text */
+  .excel-header-banner {
+    background-color: #CCCCCC !important;
+    color: #000000 !important;
+  }
+}
+

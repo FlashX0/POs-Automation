@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Google AI Studio App</title>
+    <script>
+      // Automatically silence expected, benign development WebSocket and Vite HMR connection failures
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason) {
+          const reasonStr = typeof event.reason === 'string' 
+            ? event.reason 
+            : (event.reason.message || event.reason.toString() || '');
+          if (/websocket|web\s?socket|vite-hmr|failed\s+to\s+connect/i.test(reasonStr)) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            console.debug('Quietly handled sandbox-iframe websocket rejection:', reasonStr);
+          }
+        }
+      }, true);
+
+      window.addEventListener('error', function(event) {
+        const errorMsg = event.message || '';
+        if (/websocket|web\s?socket|vite-hmr|failed\s+to\s+connect/i.test(errorMsg)) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          console.debug('Quietly handled sandbox-iframe websocket error:', errorMsg);
+        }
+      }, true);
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
