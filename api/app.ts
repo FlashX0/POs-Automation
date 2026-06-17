@@ -12,7 +12,8 @@ const app = express();
 const PORT = 3000;
 
 // Set up directories for data storage and classified receipts/orders
-const DATA_DIR = path.join(process.cwd(), "data");
+// تعديل المسارات لتعمل بنجاح على سيرفرات Vercel السحابية
+const DATA_DIR = "/tmp";
 const ORGANIZED_DIR = path.join(DATA_DIR, "organized");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
