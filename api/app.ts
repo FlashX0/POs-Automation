@@ -12,44 +12,48 @@ const app = express();
 const PORT = 3000;
 
 // Set up directories for data storage and classified receipts/orders
-// تعديل المسارات لتعمل بنجاح على سيرفرات Vercel السحابية
-const DATA_DIR = "/tmp";
-const ORGANIZED_DIR = path.join(DATA_DIR, "organized");
-const DB_FILE = path.join(DATA_DIR, "db.json");
+import mongoose from "mongoose";
 
-// Ensure directories exist (wrapped in try/catch for read-only environments like Vercel)
-try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(ORGANIZED_DIR)) {
-    fs.mkdirSync(ORGANIZED_DIR, { recursive: true });
-  }
-} catch (e) {
-  console.warn("Could not create data/organized directories (expected on read-only environments):", e);
+// 1. الاتصال بقاعدة البيانات السحابية باستخدام الرابط من إعدادات Vercel
+const MONGODB_URI = process.env.MONGODB_URI;
+if (MONGODB_URI) {
+  mongoose.connect(MONGODB_URI)
+    .then(() => console.log("Connected to MongoDB Atlas successfully!"))
+    .catch((err) => console.error("MongoDB connection error:", err));
+} else {
+  console.warn("MONGODB_URI is not defined in environment variables.");
 }
 
-// Initialize simple database file
+// 2. إنشاء الـ Schema والـ Model بدلاً من ملف db.json القديم
+const projectSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true }
+});
+const Project = mongoose.model("Project", projectSchema);
+
+// 3. مصفوفة المشاريع الافتراضية الخاصة بك
 const defaultProjects = [
-  "Villette A&B",
-  "Villette C&D",
-  "Azalia",
-  "Block 39",
-  "EDNC",
-  "June - Main Gate Landscape",
-  "June - Main Gate",
-  "Al-brouj",
-  "June",
-  "City Stars Al Sahel",
-  "Allegria",
-  "ETAPA",
-  "strip 2 Mall",
-  "Training Pool",
-  "Al Brouj - New Buffer",
-  "Hyde Park",
-  "Al-Brouj - CGP 1.14A",
-  "JUNE Parcel 01 - Maintrunk"
+  "Villette A&B", "Villette C&D", "Azalia", "Block 39", "EDNC", 
+  "June - Main Gate Landscape", "June - Main Gate", "Al-brouj", "June",
+  "City Stars Al Sahel", "Allegria", "ETAPA", "Strip 2 Mall", "Training Pool", "THE ESTATE"
 ];
+
+// 4. دالة تلقائية لملء قاعدة البيانات بالمشاريع لأول مرة فقط
+async function seedDatabase() {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const count = await Project.countDocuments();
+      if (count === 0) {
+        await Project.insertMany(defaultProjects.map(name => ({ name })));
+        console.log("Database seeded with default projects successfully.");
+      }
+    }
+  } catch (err) {
+    console.error("Error seeding database:", err);
+  }
+}
+
+// تشغيل الدالة بمجرد تمام الاتصال
+mongoose.connection.once("open", seedDatabase);
 
 const defaultSuppliers = [
   "النيل للتوريدات المعمارية",
@@ -130,6 +134,9 @@ function getDb() {
     let changed = false;
     if (!parsed.projects) {
       parsed.projects = [...defaultProjects];
+      changed = true;
+    } else if (!parsed.projects.includes("THE ESTATE")) {
+      parsed.projects.push("THE ESTATE");
       changed = true;
     }
     if (!parsed.suppliers) {
@@ -435,11 +442,12 @@ Core Parsing Guidelines:
 1. Identify Vendor/Seller Name (اسم البائع والمورد): This is the name of the supplier, seller or company we are buying from (اسم البائع أو المورد). In a Purchase Order ('أمر شراء'), this is the vendor whom the order is addressed to. In a Quote ('عرض سعر'), this is the company issuing/authoring the quote. Do NOT extract our company name (e.g. Delta Group) or client name unless they are the actual supplier. You MUST refer to the 'Known Client/Supplier names' list below. If any known vendor/supplier name is present, mentioned, or strongly suggested in the document (e.g. 'Yet Trace', 'Huda Lighting', '3BROTHERS', 'النيل للتوريدات المعمارية' etc.), you MUST choose that exact spelling as the clientName. Maintain proper Arabic spelling if written in Arabic.
 2. Identify Document Date: Format as YYYY-MM-DD. Use today's date (${todayStr}) if not clearly specified or found.
 3. Identify Document Type: Determine if 'po' (Purchase Order / أمر شراء) or 'quote' (Quote / Proposal / Price Offer / عرض سعر). Default to 'unknown' only if absolutely neither.
-4. Extract list of items/lines: Each item must contain a description (Arabic if written in Arabic), quantity, unitPrice, cumulative line total, brand (manufacturer/brand name of the item, e.g., HP, Samsung, LG or supply brand, default empty. Note: 'اليزية' / 'اليزيه' / 'Elysee' / 'Elise' is a brand name/type; always extract it under the 'brand' field and not as part of the raw description), and unit (unit of measurement, e.g., عدد, متر, طن, لتر, علبة, Pcs, Unit, default 'عدد').
+4. Extract list of items/lines: Each item must contain a description, quantity, unitPrice, cumulative line total, brand (manufacturer/brand name of the item, e.g., HP, Samsung, LG or supply brand, default empty. Note: 'اليزية' / 'اليزيه' / 'Elysee' / 'Elise' is a brand name/type; always extract it under the 'brand' field and not as part of the raw description), and unit (unit of measurement, e.g., عدد, متر, طن, لتر, علبة, Pcs, Unit, default 'عدد'). NOTE ON DESCRIPTION: If the item description on the invoice/document contains mixed Arabic and English text (e.g., brand names, technical abbreviations, codes, numbers, specifications), you MUST extract and copy it EXACTLY as written, word-for-word, retaining both the Arabic and English words identically without omitting, translating, or summarizing them.
 5. Extract totalAmount and currency (e.g., EGP, USD, SAR, AED, EUR).
 6. Provide a concise 1-sentence Arabic summary of the transaction.
-7. Identify Project Name: Look for project fields or indicators like 'Project:', 'المشروع:', 'اسم المشروع:', 'عملية:', 'بخصوص عملية:', 'موقع العمل:', etc.. You MUST refer to the Known Projects list below. If any known project name is present/mentioned in the document, or if anything in the document strongly suggests one of those projects (e.g., 'Villette A&B', 'Azalia', 'Al-brouj', etc.), you MUST choose that exact spelling as the projectName. If not found or unclear, default to 'عام'.
+7. Identify Project Name: Look for project fields or indicators like 'Project:', 'المشروع:', 'اسم المشروع:', 'عملية:', 'بخصوص عملية:', 'موقع العمل:', etc.. You MUST refer to the Known Projects list below. If any known project name is present/mentioned in the document, or if anything in the document strongly suggests one of those projects (e.g., 'Villette A&B', 'Azalia', 'Al-brouj', 'THE ESTATE', etc.), you MUST choose that exact spelling as the projectName. If not found or unclear, default to 'عام'.
 8. Identify Due Date / Payment Deadline: Look for payment terms, due date, 'Due Date:', 'تاريخ الاستحقاق', 'يسدد قبل', 'تاريخ السداد', etc. Format as YYYY-MM-DD. If not explicitly found, calculate it if possible or leave empty if completely unavailable.
+9. COPIED DESCRIPTION INTEGRITY (مطابقة وصف البنود): If a line item's description in the table contains both Arabic and English words, or brand serial codes/technical numbers, do NOT attempt to translate or simplify them. Extract the text exactly as it appears in the document, ensuring complete match of both Arabic and English text blocks. We want absolute literal and word-for-word matching list translation items.
 
 CRITICAL ADAPTIVE / SELF-LEARNING RULE (قاعدة التكيف والتعلم الذاتي المستمر):
 To keep the system highly reliable and fully aligned with the user's specific business vocabulary, you MUST match existing nomenclature. If the parsed client/vendor name or any item description/brand/unit in the new document matches or strongly resembles any of the previously saved values below, you MUST automatically use the existing exact spelling/naming from this prior knowledge:
