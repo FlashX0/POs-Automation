@@ -13,7 +13,18 @@ const PORT = 3000;
 
 // Set up directories for data storage and classified receipts/orders
 import mongoose from "mongoose";
+// حل أخطاء البناء السحابي وإعادة توجيه مجلدات الملفات المرفوعة إلى البيئة المؤقتة لـ Vercel
+const DATA_DIR = "/tmp";
+const ORGANIZED_DIR = path.join(DATA_DIR, "organized");
+const DB_FILE = path.join(DATA_DIR, "db.json");
 
+// التأكد من تهيئة المجلدات حتى لا تضرب الـ Routes المسؤولة عن معالجة الفواتير
+try {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(ORGANIZED_DIR)) fs.mkdirSync(ORGANIZED_DIR, { recursive: true });
+} catch (e) {
+  console.warn("Could not create directories in /tmp:", e);
+}
 // 1. الاتصال بقاعدة البيانات السحابية باستخدام الرابط من إعدادات Vercel
 const MONGODB_URI = process.env.MONGODB_URI;
 if (MONGODB_URI) {
