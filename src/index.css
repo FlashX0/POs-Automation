@@ -183,6 +183,8 @@ html, body {
   .print-me table {
     width: 100% !important;
     table-layout: auto !important; /* Use auto layout inside print to let description column spread out proportionally */
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
   }
 
   /* SCALE UP FONTS IN PRINT MODE specifically with Cairo standard */
@@ -239,9 +241,29 @@ html, body {
     print-color-adjust: exact !important;
   }
 
-  /* Prevent page breaks inside table rows */
-  .print-me tr {
+  /* Prevent page breaks inside table rows, cells, and headers */
+  .print-me tr,
+  .print-me td,
+  .print-me th {
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    break-inside: avoid-page !important;
+  }
+
+  /* Ensure division wrappers inside cells cannot get split across pages */
+  .print-me td > div,
+  .print-me td > span {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    break-inside: avoid-page !important;
+  }
+
+  /* Keep entire terms list and signatures blocks intact without page split */
+  .print-me .bg-\[\#FCFCFC\],
+  .print-me div[dir="ltr"],
+  .print-me .grid-cols-3 {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   /* Correct text directionality in print specifically */

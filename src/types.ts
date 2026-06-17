@@ -5,6 +5,7 @@ export interface LineItem {
   total: number;
   brand?: string;
   unit?: string;
+  pageBreakBefore?: boolean;
 }
 
 export interface ProcessedDocument {
@@ -40,6 +41,9 @@ export interface ProcessedDocument {
   deliveryTerms?: string;
   advancePayment?: string;
   dueDate?: string;
+  pricesIncludeTax?: boolean;
+  taxAddPercentEnabled?: boolean;
+  taxAddPercentRate?: number;
 }
 
 export interface AppStats {

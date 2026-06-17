@@ -202,6 +202,47 @@ const parseAdvance = (advanceStr: any, totalAmount: number) => {
   return { value, remaining };
 };
 
+const getAdvancePercentageDetails = (advanceStr: any, totalAmount: number) => {
+  if (!advanceStr) return null;
+  // Convert Eastern Arabic numerals (٣٠) to Western (30)
+  let str = convertEasternToWesternNumerals(String(advanceStr)).trim();
+  if (!str) return null;
+  
+  let p = 0;
+  // Look for any percentage in the string, e.g., "40%"
+  const matchPct = str.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (matchPct) {
+    p = parseFloat(matchPct[1]);
+  } else {
+    // If no percent sign, find first numeric sequence
+    const matchNum = str.match(/(\d+(?:\.\d+)?)/);
+    if (matchNum) {
+      const val = parseFloat(matchNum[1]);
+      if (!isNaN(val) && val > 0) {
+        if (val <= 100) {
+          p = val;
+        } else if (totalAmount > 0) {
+          p = (val / totalAmount) * 100;
+        }
+      }
+    }
+  }
+  
+  if (isNaN(p) || p <= 0 || p >= 100) {
+    // Safe default to avoid any raw text leakage with Arabic letters when parsing fails
+    p = 50;
+  }
+  
+  const formatPctVal = (v: number) => {
+    return v % 1 === 0 ? v.toFixed(0) : v.toFixed(1);
+  };
+  
+  return {
+    advanceStr: `${formatPctVal(p)}%`,
+    deliveryStr: `${formatPctVal(100 - p)}%`
+  };
+};
+
 const sanitizeAndExtractBrands = (docs: ProcessedDocument[]): ProcessedDocument[] => {
   if (!docs) return [];
   
@@ -1389,7 +1430,12 @@ export default function App() {
       rows[termsStart + 6][0] = "Payment by check in the name of the company as shown in your commercial register";
       rows[termsStart + 7][0] = ", or in the name of the authorized person through your company";
       rows[termsStart + 8][0] = `, or by bank transfer to your company account within ${doc.paymentDays || "10"} days of the delivery date.`;
-      rows[termsStart + 9][0] = doc.advancePayment ? `Advance payment: ${doc.advancePayment}` : "";
+      const pctDetails = getAdvancePercentageDetails(doc.advancePayment, finalTotalAmount || doc.totalAmount);
+      if (pctDetails) {
+        rows[termsStart + 9][0] = `Advanced Payment: ${pctDetails.advanceStr} - Upon Delivery: ${pctDetails.deliveryStr}`;
+      } else {
+        rows[termsStart + 9][0] = "";
+      }
 
       // 8. Signatures Block
       rows[sigHeadersRowIdx][0] = "Head of Procurement and Contracts";
@@ -1712,32 +1758,43 @@ export default function App() {
     setDocuments(updatedDocsList);
   };
 
-  // Update a top-level field of the document inside the drawer and sync with state
-  const handleUpdateDrawerField = (field: keyof ProcessedDocument, value: any) => {
-    if (!selectedDoc) return;
-    let updatedDoc = { ...selectedDoc, [field]: value };
-    if (field === 'projectName') {
-      updatedDoc.shipToAddress = value;
-      if (updatedDoc.docType === 'po') {
-        const nextNum = getNextPoNumberForProject(value, documents.filter(d => d.id !== selectedDoc.id));
-        updatedDoc.docNumber = String(nextNum);
+  // Update a top-level field or multiple fields of the document inside the drawer and sync with state
+  const handleUpdateDrawerField = (fieldOrFields: keyof ProcessedDocument | Partial<ProcessedDocument>, value?: any) => {
+    setSelectedDoc(prev => {
+      if (!prev) return null;
+      
+      let updates: Partial<ProcessedDocument> = {};
+      if (typeof fieldOrFields === 'string') {
+        updates = { [fieldOrFields]: value };
+      } else if (fieldOrFields && typeof fieldOrFields === 'object') {
+        updates = fieldOrFields;
       }
-    } else if (field === 'shipToAddress') {
-      updatedDoc.projectName = value;
-      if (updatedDoc.docType === 'po') {
-        const nextNum = getNextPoNumberForProject(value, documents.filter(d => d.id !== selectedDoc.id));
-        updatedDoc.docNumber = String(nextNum);
+
+      let updatedDoc = { ...prev, ...updates };
+      
+      if (updates.projectName !== undefined) {
+        updatedDoc.shipToAddress = updates.projectName;
+        if (updatedDoc.docType === 'po') {
+          const nextNum = getNextPoNumberForProject(updates.projectName || 'عام', documents.filter(d => d.id !== prev.id));
+          updatedDoc.docNumber = String(nextNum);
+        }
+      } else if (updates.shipToAddress !== undefined) {
+        updatedDoc.projectName = updates.shipToAddress;
+        if (updatedDoc.docType === 'po') {
+          const nextNum = getNextPoNumberForProject(updates.shipToAddress || 'عام', documents.filter(d => d.id !== prev.id));
+          updatedDoc.docNumber = String(nextNum);
+        }
+      } else if (updates.docType !== undefined) {
+        if (updates.docType === 'po') {
+          const nextNum = getNextPoNumberForProject(updatedDoc.projectName || 'عام', documents.filter(d => d.id !== prev.id));
+          updatedDoc.docNumber = String(nextNum);
+        }
       }
-    } else if (field === 'docType') {
-      if (value === 'po') {
-        const nextNum = getNextPoNumberForProject(updatedDoc.projectName || 'عام', documents.filter(d => d.id !== selectedDoc.id));
-        updatedDoc.docNumber = String(nextNum);
-      }
-    }
-    setSelectedDoc(updatedDoc);
-    
-    const updatedDocsList = documents.map(d => d.id === selectedDoc.id ? updatedDoc : d);
-    setDocuments(updatedDocsList);
+
+      // Sync to the standard documents list state in background
+      setDocuments(prevDocs => prevDocs.map(d => d.id === prev.id ? updatedDoc : d));
+      return updatedDoc;
+    });
   };
 
   // Dedicated Permanent Saver for changes made inside the details inspection drawer
@@ -1862,8 +1919,6 @@ export default function App() {
       // Restore scroll
       window.scrollTo(0, restoreScroll);
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      
       // Setup PDF document mirroring A4 layout (portrait, mm)
       const pdf = new jsPDF({
         orientation: "portrait",
@@ -1874,53 +1929,74 @@ export default function App() {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      // Calculate responsive margins and aspect ratio
       const margin = 5; // 5mm minimal print margins
       const contentWidth = pdfWidth - (margin * 2);
-      const ratio = canvas.height / canvas.width;
-      const contentHeight = contentWidth * ratio;
-
       const pagePrintableHeight = pdfHeight - (margin * 2);
 
-      if (contentHeight <= pagePrintableHeight) {
-        // Single Page rendering fits perfectly
-        pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, contentHeight);
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      
+      // Calculate scale factor from the physical DOM element to canvas pixels
+      const elementHeight = element.getBoundingClientRect().height;
+      const scaleFactor = imgHeight / elementHeight;
+      const pageHeightPx = Math.floor(imgWidth * (pagePrintableHeight / contentWidth));
+
+      // Get pixel positions of all table rows (tr) relative to the top of the container
+      const containerRect = element.getBoundingClientRect();
+      const rows = element.querySelectorAll('tr');
+      const rowPositions = Array.from(rows).map(row => {
+        const rect = row.getBoundingClientRect();
+        return {
+          top: (rect.top - containerRect.top) * scaleFactor,
+          bottom: (rect.bottom - containerRect.top) * scaleFactor
+        };
+      });
+
+      let sourceY = 0;
+      let pageCount = 0;
+      while (sourceY < imgHeight) {
+        let sliceHeight = Math.min(pageHeightPx, imgHeight - sourceY);
         
-        // Mask left and right margins to ensure no overflow leaks visually
-        pdf.setFillColor(255, 255, 255);
-        pdf.rect(0, 0, margin, pdfHeight, 'F');
-        pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F');
-      } else {
-        // Multi-page slicing output with precise mathematically bounded intervals
-        let position = margin;
-        let remainingHeight = contentHeight;
-
-        // Draw initial slice on Page 1
-        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
-        
-        // Cover and mask A4 page margins with solid white rectangles to clip adjacent slivers
-        pdf.setFillColor(255, 255, 255);
-        pdf.rect(0, 0, pdfWidth, margin, 'F'); // Top Margin Mask
-        pdf.rect(0, pdfHeight - margin, pdfWidth, margin, 'F'); // Bottom Margin Mask
-        pdf.rect(0, 0, margin, pdfHeight, 'F'); // Left Margin Mask
-        pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F'); // Right Margin Mask
-
-        remainingHeight -= pagePrintableHeight;
-
-        while (remainingHeight > 0) {
-          pdf.addPage();
-          position = margin - (contentHeight - remainingHeight);
-          pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
+        // If there is enough height remaining, try to perform a clean split on row boundaries
+        if (sourceY + pageHeightPx < imgHeight) {
+          const splitLine = sourceY + pageHeightPx;
+          // Find if the mathematical split cuts through any table row
+          const intersectingRow = rowPositions.find(r => r.top < splitLine && r.bottom > splitLine);
           
-          // Cover and mask A4 page margins on consecutive pages to ensure zero duplicate rendering
-          pdf.setFillColor(255, 255, 255);
-          pdf.rect(0, 0, pdfWidth, margin, 'F'); // Top Margin Mask
-          pdf.rect(0, pdfHeight - margin, pdfWidth, margin, 'F'); // Bottom Margin Mask
-          pdf.rect(0, 0, margin, pdfHeight, 'F'); // Left Margin Mask
-          pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F'); // Right Margin Mask
-
-          remainingHeight -= pagePrintableHeight;
+          if (intersectingRow) {
+            const cleanHeight = intersectingRow.top - sourceY;
+            // Split early if there is some preceding content, leaving at least 50px of space
+            if (cleanHeight > 50) {
+              sliceHeight = Math.floor(cleanHeight);
+            }
+          }
         }
+        
+        // Create an in-memory canvas for this slice
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = imgWidth;
+        sliceCanvas.height = sliceHeight;
+        
+        const sliceCtx = sliceCanvas.getContext('2d');
+        if (sliceCtx) {
+          sliceCtx.drawImage(
+            canvas,
+            0, sourceY, imgWidth, sliceHeight, // source rect
+            0, 0, imgWidth, sliceHeight        // dest rect
+          );
+        }
+        
+        const sliceImgData = sliceCanvas.toDataURL('image/jpeg', 0.95);
+        
+        if (pageCount > 0) {
+          pdf.addPage();
+        }
+        
+        const sliceHeightMm = (sliceHeight / imgWidth) * contentWidth;
+        pdf.addImage(sliceImgData, 'JPEG', margin, margin, contentWidth, sliceHeightMm);
+        
+        sourceY += sliceHeight;
+        pageCount++;
       }
 
       // Format clean filename for saving
@@ -2042,10 +2118,18 @@ export default function App() {
       const discPct = doc.discountPercentage || 0;
       const discAmt = doc.discountAmount || 0;
       const totalDiscount = ((itemsSubtotal * discPct) / 100) + discAmt;
-      const finalAmount = Math.max(0, itemsSubtotal - totalDiscount);
+      const subtotalAfterDiscount = Math.max(0, itemsSubtotal - totalDiscount);
+      
+      const pricesIncludeTax = doc.pricesIncludeTax !== false; // default true
+      const taxAddPercentEnabled = !pricesIncludeTax && !!doc.taxAddPercentEnabled;
+      const taxAddPercentRate = doc.taxAddPercentRate ?? 14;
+      const vatAmount = taxAddPercentEnabled ? (subtotalAfterDiscount * taxAddPercentRate / 100) : 0;
+      const totalAfterVat = subtotalAfterDiscount + vatAmount;
+
       const taxRate = doc.withholdingTaxEnabled ? (doc.withholdingTaxRate || 1) : 0;
-      const taxAmount = (finalAmount * taxRate) / 100;
-      return finalAmount - taxAmount;
+      const withholdingTaxAmount = (subtotalAfterDiscount * taxRate) / 100;
+      
+      return totalAfterVat - withholdingTaxAmount;
     }
     return doc.totalAmount || 0;
   };
@@ -2343,7 +2427,7 @@ export default function App() {
                 onClick={() => setTableAlignment('left')}
                 className={`px-2.5 py-1.5 rounded-lg font-black transition-all cursor-pointer ${tableAlignment === 'left' ? 'bg-sky-650 text-white shadow' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
               >
-                ⬅️ محاذاة لليصار
+                ⬅️ محاذاة لليسار
               </button>
               <button
                 type="button"
@@ -2468,102 +2552,102 @@ export default function App() {
               </div>
             </div>
 
-             {/* Metadata Box styled as Excel Rows - Merged into a desktop grid or responsive mobile blocks */}
-             <div className="hidden md:grid grid-cols-12 border-b border-slate-350 text-black font-sans bg-white select-text print:grid">
-               {/* Column 1: Vendor (Seller) */}
-               <div className="col-span-4 p-2.5 flex flex-col gap-1.5 justify-center text-center items-center">
-                 <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
-                   {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
-                 </span>
-                 <span className="font-black text-black text-[14px] mt-1 leading-snug w-full text-center block whitespace-normal break-words">
-                   {printDoc.clientName || "غير محدد"}
-                 </span>
-               </div>
-
-               {/* Column 2: Ship to */}
-               <div className="col-span-2 p-2.5 flex flex-col gap-1.5 justify-center text-center items-center">
-                 <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
-                   {printDirectionParam === 'rtl' ? 'اسم المشروع' : 'SHIP TO'}
-                 </span>
-                 <span className="font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-words">
-                   {printDoc.projectName || "عام"}
-                 </span>
-               </div>
-
-              {/* Column 3: PO No */}
-              <div className="col-span-2 p-2.5 flex flex-col gap-1.5 justify-center text-center">
-                <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
-                  {printDirectionParam === 'rtl' ? 'رقم أمر الشراء / PO' : 'PO No'}
-                </span>
-                <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-all">
-                  #{printDoc.docNumber || "31"}
-                </span>
-              </div>
-
-              {/* Column 4: Date */}
-              <div className="col-span-2 p-2.5 flex flex-col gap-1.5 justify-center text-center">
-                <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
-                  {printDirectionParam === 'rtl' ? 'تاريخ المستند' : (printDoc.docType === 'quote' ? 'Quote Date' : 'Order Date')}
-                </span>
-                <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-words">
-                  {printDoc.receiptDate || ""}
-                </span>
-              </div>
-
-              {/* Column 5: Total */}
-              <div className="col-span-2 p-2.5 flex flex-col gap-1.5 justify-center text-center bg-amber-50/10">
-                <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
-                  {printDoc.docType === 'quote' 
-                    ? (printDirectionParam === 'rtl' ? 'إجمالي العرض' : 'Offer Total') 
-                    : (printDirectionParam === 'rtl' ? 'إجمالي أمر الشراء' : 'Purchase Order')}
-                </span>
-                <span className="font-mono font-black text-[#DC2626] text-[15px] mt-1 leading-none select-text w-full text-center block whitespace-normal break-words">
-                  {printDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-
-            {/* Mobile-Friendly Metadata View for printable sheet (Screen interface only, hidden in print output) */}
-            <div className="md:hidden print:hidden border-b border-slate-200 bg-slate-50/70 p-4 space-y-3 font-sans text-right" dir="rtl">
-              <div className="grid grid-cols-2 gap-2.5 text-xs">
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
-                  <span className="text-[10px] font-bold text-slate-450 mb-1">
+              {/* Metadata Box styled as Excel Rows - Merged into a desktop grid or responsive mobile blocks */}
+              <div className="hidden md:grid grid-cols-12 border-b border-slate-350 text-black font-sans bg-white select-text print:grid">
+                {/* Column 1: Vendor (Seller) */}
+                <div className="col-span-3 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center items-center">
+                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
                     {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
                   </span>
-                  <span className="font-extrabold text-slate-800 text-xs">
+                  <span className="font-black text-black text-[14px] mt-1 leading-snug w-full text-center block whitespace-normal break-words">
                     {printDoc.clientName || "غير محدد"}
                   </span>
                 </div>
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
-                  <span className="text-[10px] font-bold text-slate-450 mb-1">
+
+                {/* Column 2: Ship to */}
+                <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center items-center">
+                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
                     {printDirectionParam === 'rtl' ? 'اسم المشروع' : 'SHIP TO'}
                   </span>
-                  <span className="font-extrabold text-slate-800 text-xs">
+                  <span className="font-extrabold text-slate-850 text-xs text-black">
                     {printDoc.projectName || "عام"}
                   </span>
                 </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
-                  <span className="text-[10px] font-bold text-slate-450 mb-1">P.O. Number</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px] mt-0.5">
+
+                {/* Column 3: PO No */}
+                <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center">
+                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                    {printDirectionParam === 'rtl' ? 'رقم أمر الشراء / PO' : 'PO No'}
+                  </span>
+                  <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-all">
                     #{printDoc.docNumber || "31"}
                   </span>
                 </div>
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
-                  <span className="text-[10px] font-bold text-slate-450 mb-1">تاريخ المعاملة</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px] mt-0.5">
+
+                {/* Column 4: Date */}
+                <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center">
+                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                    {printDirectionParam === 'rtl' ? 'تاريخ المستند' : (printDoc.docType === 'quote' ? 'Quote Date' : 'Order Date')}
+                  </span>
+                  <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-words">
                     {printDoc.receiptDate || ""}
                   </span>
                 </div>
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
-                  <span className="text-[10px] font-bold text-slate-450 mb-1">القيمة الإجمالية</span>
-                  <span className="font-mono font-black text-[#DC2626] text-[11px] mt-0.5">
-                    {printDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+
+                {/* Column 5: Total */}
+                <div className="col-span-3 p-2.5 flex flex-col gap-1.5 justify-center text-center bg-amber-50/10 select-text">
+                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                    {printDoc.docType === 'quote' 
+                      ? (printDirectionParam === 'rtl' ? 'إجمالي العرض' : 'Offer Total') 
+                      : (printDirectionParam === 'rtl' ? 'إجمالي أمر الشراء' : 'Purchase Order')}
+                  </span>
+                  <span className="font-mono font-black text-[#DC2626] text-[13.5px] mt-1 leading-none select-text w-full text-center block whitespace-nowrap overflow-visible">
+                    {getDocNetSpent(printDoc).toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                   </span>
                 </div>
               </div>
-            </div>
+
+              {/* Mobile-Friendly Metadata View for printable sheet (Screen interface only, hidden in print output) */}
+              <div className="md:hidden print:hidden border-b border-slate-200 bg-slate-50/70 p-4 space-y-3 font-sans text-right" dir="rtl">
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                    <span className="text-[10px] font-bold text-slate-450 mb-1">
+                      {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                    </span>
+                    <span className="font-extrabold text-slate-800 text-xs">
+                      {printDoc.clientName || "غير محدد"}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                    <span className="text-[10px] font-bold text-slate-450 mb-1">
+                      {printDirectionParam === 'rtl' ? 'اسم المشروع' : 'SHIP TO'}
+                    </span>
+                    <span className="font-extrabold text-slate-800 text-xs">
+                      {printDoc.projectName || "عام"}
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                    <span className="text-[10px] font-bold text-slate-450 mb-1">P.O. Number</span>
+                    <span className="font-mono font-bold text-slate-800 text-[11px] mt-0.5">
+                      #{printDoc.docNumber || "31"}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                    <span className="text-[10px] font-bold text-slate-450 mb-1">تاريخ المعاملة</span>
+                    <span className="font-mono font-bold text-slate-800 text-[11px] mt-0.5">
+                      {printDoc.receiptDate || ""}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                    <span className="text-[10px] font-bold text-slate-450 mb-1">القيمة الإجمالية</span>
+                    <span className="font-mono font-black text-[#DC2626] text-[11px] mt-0.5">
+                      {getDocNetSpent(printDoc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
             {/* Excel Row Headers */}
             {showExcelGrid && (
@@ -2603,61 +2687,33 @@ export default function App() {
                 </thead>
                 <tbody>
                   {(() => {
-                    const printDocAdvDetails = parseAdvance(printDoc.advancePayment, printDoc.totalAmount);
-                    const printTotalBaseCount = (printDoc.items?.length || 0) + (printDocAdvDetails ? 1 : 0);
+                    const printTotalBaseCount = printDoc.items?.length || 0;
                     
                     return (
                       <>
-                        {/* Prepended Advance Payment Row */}
-                        {printDocAdvDetails && (
-                          <tr className="border-b border-blue-100 bg-blue-50/20 font-medium hover:bg-blue-50/40">
-                            {showExcelGrid && (
-                              <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-400 py-3.5 w-12 min-w-[48px] max-w-[48px] select-none align-middle">
-                                10
-                              </td>
-                            )}
-                            {showExcelGrid && (
-                              <td className="border-e border-slate-200 py-3.5 text-center text-slate-500 font-mono font-semibold w-12 min-w-[48px] max-w-[48px] select-none align-middle">
-                                1
-                              </td>
-                            )}
-                            <td className="border-e border-slate-200 py-3.5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] select-none align-middle">1</td>
-                            <td className="border-e border-slate-200 py-3.5 px-3 min-w-[180px] text-center align-middle">
-                              <div className="font-extrabold text-[#0000C8] leading-relaxed text-[13.5px] text-center align-middle">
-                                {printDirectionParam === 'rtl' 
-                                  ? 'الدفعة المقدمة المسددة (تحت الحساب)' 
-                                  : 'Advance Payment Received (On Account)'}
-                              </div>
-                              <div className="flex flex-col gap-1 mt-2 items-center">
-                                <div className="text-[11.5px] text-slate-600 font-bold">
-                                  {printDirectionParam === 'rtl'
-                                    ? `القيمة المدفوعة مقدمًا: ${printDoc.advancePayment}`
-                                    : `Paid Advance Value: ${printDoc.advancePayment}`}
-                                </div>
-                                <div className="text-[12px] text-emerald-800 font-extrabold bg-emerald-50 border border-emerald-150 rounded-md px-2 py-0.5">
-                                  {printDirectionParam === 'rtl'
-                                    ? `باقي قيمة المستند المستحقة (المتبقي): ${printDocAdvDetails.remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${printDoc.currency || 'EGP'}`
-                                    : `Remaining Balance Payable (Due): ${printDocAdvDetails.remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${printDoc.currency || 'EGP'}`}
-                                </div>
-                              </div>
-                            </td>
-                            {hasAnyBrand && <td className="border-e border-slate-200 py-3.5 text-slate-800 font-bold w-24 min-w-[96px] max-w-[96px] text-center align-middle">ADVANCE</td>}
-                            <td className="border-e border-slate-200 py-3.5 text-center text-slate-800 w-16 min-w-[64px] max-w-[64px] align-middle font-bold">-</td>
-                            <td className="border-e border-slate-200 py-3.5 text-center font-bold text-slate-900 w-16 min-w-[64px] max-w-[64px] align-middle">1</td>
-                            <td className="border-e border-slate-200 py-3.5 text-center text-slate-800 w-24 min-w-[96px] max-w-[96px] align-middle font-bold">-</td>
-                            <td className="py-3.5 w-32 min-w-[128px] max-w-[128px] select-text font-black text-rose-700 font-mono text-[13px] text-center align-middle">
-                              {printDocAdvDetails.value.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
-                            </td>
-                          </tr>
-                        )}
-
                         {/* Actual Document Items */}
                         {printDoc.items && printDoc.items.length > 0 ? (
                           printDoc.items.map((item, idx) => {
-                            const sequenceNo = idx + 1 + (printDocAdvDetails ? 1 : 0);
-                            const rowNo = idx + 10 + (printDocAdvDetails ? 1 : 0);
+                            const sequenceNo = idx + 1;
+                            const rowNo = idx + 10;
+                            const pricesIncludeTax = printDoc.pricesIncludeTax !== false;
+                            const taxAddPercentEnabled = !pricesIncludeTax && !!printDoc.taxAddPercentEnabled;
+                            const taxAddPercentRate = printDoc.taxAddPercentRate ?? 14;
+                            const isDescVeryLarge = item.description && (item.description.length > 100 || item.description.includes('\n') || item.description.includes('<br'));
+                            const shouldBreak = !!item.pageBreakBefore || (isDescVeryLarge && idx > 0);
                             return (
-                              <tr key={idx} className="border-b border-slate-200 font-bold hover:bg-slate-50/50">
+                              <tr 
+                                key={idx} 
+                                className="border-b border-slate-200 font-bold hover:bg-slate-50/50"
+                                style={{
+                                  pageBreakInside: 'avoid',
+                                  breakInside: 'avoid',
+                                  ...(shouldBreak ? {
+                                    pageBreakBefore: 'always',
+                                    breakBefore: 'page'
+                                  } : {})
+                                }}
+                              >
                                 {showExcelGrid && (
                                   <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-400 py-3.5 w-12 min-w-[48px] max-w-[48px] select-none align-middle">
                                     {rowNo}
@@ -2689,11 +2745,19 @@ export default function App() {
                                 <td className="border-e border-slate-200 py-3.5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle">
                                   {item.quantity || "1"}
                                 </td>
-                                <td className="border-e border-slate-200 py-3.5 font-bold text-black w-24 min-w-[96px] max-w-[96px] text-center align-middle">
-                                  {item.unitPrice?.toLocaleString('en-US', { minimumFractionDigits: 2 }) || "0"}
+                                <td className="border-e border-slate-200 py-3.5 font-bold text-black w-24 min-w-[96px] max-w-[96px] text-center align-middle font-mono text-[12px]">
+                                  {(() => {
+                                    const basePrice = item.unitPrice || 0;
+                                    const displayedPrice = taxAddPercentEnabled ? basePrice * (1 + taxAddPercentRate / 100) : basePrice;
+                                    return displayedPrice.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                  })()}
                                 </td>
-                                <td className="py-3.5 w-32 min-w-[128px] max-w-[128px] select-text font-black text-black font-mono text-[13px] text-center align-middle">
-                                  {item.total ? item.total.toLocaleString('en-US', { minimumFractionDigits: 2 }) : ((item.quantity || 0) * (item.unitPrice || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                <td className="py-3.5 w-32 min-w-[128px] max-w-[128px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono">
+                                  {(() => {
+                                    const baseTotal = item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0));
+                                    const displayedTotal = taxAddPercentEnabled ? baseTotal * (1 + taxAddPercentRate / 100) : baseTotal;
+                                    return displayedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                  })()}
                                 </td>
                               </tr>
                             );
@@ -2731,74 +2795,92 @@ export default function App() {
                           );
                         })}
 
-                        {/* Total Row */}
-                        <tr className="bg-[#F3F4F6] border-t border-slate-300 font-bold text-slate-900 text-center select-none animate-none">
-                          {showExcelGrid && (
-                            <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
-                              {10 + printTotalBaseCount}
-                            </td>
-                          )}
-                          <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-slate-800 uppercase tracking-wide">
-                            {printDoc.withholdingTaxEnabled 
-                              ? (printDirectionParam === 'rtl' ? 'الإجمالي قبل الخصم (Total)' : 'Total Before Tax')
-                              : 'Total'
-                            }
-                          </td>
-                          <td className={`py-2 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] font-mono text-xs select-text ${
-                            tableAlignment === 'center' ? 'text-center px-3' :
-                            tableAlignment === 'left' ? 'text-left pl-3' :
-                            tableAlignment === 'right' ? 'text-right pr-3' :
-                            printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
-                          }`}>
-                            {printDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
-                          </td>
-                        </tr>
+                        {(() => {
+                          const pricesIncludeTax = printDoc.pricesIncludeTax !== false;
+                          const taxAddPercentEnabled = !pricesIncludeTax && !!printDoc.taxAddPercentEnabled;
+                          const taxAddPercentRate = printDoc.taxAddPercentRate ?? 14;
 
-                        {/* Conditional withholding tax row */}
-                        {printDoc.withholdingTaxEnabled && (
-                          <>
-                            <tr className="bg-[#FFFDF3] border-t border-slate-200 text-slate-700 text-center select-none font-semibold text-xs font-sans">
-                              {showExcelGrid && (
-                                <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12">
-                                  {11 + printTotalBaseCount}
-                                </td>
-                              )}
-                              <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 text-red-700 font-medium whitespace-nowrap">
-                                {printDirectionParam === 'rtl' 
-                                  ? `خصم ضريبة الأرباح التجارية والصناعية (${printDoc.withholdingTaxRate || 1}%)` 
-                                  : `Commercial & Industrial Profits Tax Discount (${printDoc.withholdingTaxRate || 1}%)`
-                                }
-                              </td>
-                              <td className={`py-2 w-32 min-w-[128px] max-w-[128px] font-bold text-red-600 font-mono text-xs select-text ${
-                                tableAlignment === 'center' ? 'text-center px-3' :
-                                tableAlignment === 'left' ? 'text-left pl-3' :
-                                tableAlignment === 'right' ? 'text-right pr-3' :
-                                printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
-                              }`}>
-                                -{((printDoc.totalAmount * (printDoc.withholdingTaxRate || 1)) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
-                              </td>
-                            </tr>
+                          const originalSubtotal = printDoc.items && printDoc.items.length > 0
+                            ? printDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
+                            : (printDoc.totalAmount || 0);
 
-                            <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none font-sans">
-                              {showExcelGrid && (
-                                <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
-                                  {12 + printTotalBaseCount}
+                          const itemsSubtotal = taxAddPercentEnabled
+                            ? originalSubtotal * (1 + taxAddPercentRate / 100)
+                            : originalSubtotal;
+
+                          const withholdingTaxRate = printDoc.withholdingTaxEnabled ? (printDoc.withholdingTaxRate || 1) : 0;
+                          const withholdingTaxAmount = (originalSubtotal * withholdingTaxRate) / 100;
+                          const finalNetPayable = itemsSubtotal - withholdingTaxAmount;
+
+                          return (
+                            <>
+                              {/* 1. Subtotal Row (Always shown, includes VAT directly if taxAddPercentEnabled) */}
+                              <tr className="bg-[#F9FAFB] border-t border-slate-300 font-bold text-slate-900 text-center select-none animate-none">
+                                {showExcelGrid && (
+                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                    {10 + printTotalBaseCount}
+                                  </td>
+                                )}
+                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-slate-800 uppercase tracking-wide">
+                                  {printDirectionParam === 'rtl' ? 'الإجمالي (Total)' : 'Total'}
                                 </td>
+                                <td className={`py-2 w-32 min-w-[128px] max-w-[128px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap ${
+                                  tableAlignment === 'center' ? 'text-center px-3' :
+                                  tableAlignment === 'left' ? 'text-left pl-3' :
+                                  tableAlignment === 'right' ? 'text-right pr-3' :
+                                  printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
+                                }`}>
+                                  {itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                                </td>
+                              </tr>
+
+                              {/* 2. Conditional withholding tax row */}
+                              {printDoc.withholdingTaxEnabled && (
+                                <tr className="bg-[#FFFDF3] border-t border-slate-200 text-slate-700 text-center select-none font-semibold text-xs font-sans">
+                                  {showExcelGrid && (
+                                    <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12">
+                                      {11 + printTotalBaseCount}
+                                    </td>
+                                  )}
+                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 text-amber-700 font-medium whitespace-nowrap">
+                                    {printDirectionParam === 'rtl' 
+                                      ? `خصم ضريبة الأرباح التجارية والصناعية (${printDoc.withholdingTaxRate || 1}%)` 
+                                      : `Commercial & Industrial Profits Tax Discount (${printDoc.withholdingTaxRate || 1}%)`
+                                    }
+                                  </td>
+                                  <td className={`py-2 w-32 min-w-[128px] max-w-[128px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap ${
+                                    tableAlignment === 'center' ? 'text-center px-3' :
+                                    tableAlignment === 'left' ? 'text-left pl-3' :
+                                    tableAlignment === 'right' ? 'text-right pr-3' :
+                                    printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
+                                  }`}>
+                                    -{withholdingTaxAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                                  </td>
+                                </tr>
                               )}
-                              <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
-                                {printDirectionParam === 'rtl' ? 'صافي القيمة المستحقة للدفع (Net Payable)' : 'Net Payable'}
-                              </td>
-                              <td className={`py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text ${
-                                tableAlignment === 'center' ? 'text-center px-3' :
-                                tableAlignment === 'left' ? 'text-left pl-3' :
-                                tableAlignment === 'right' ? 'text-right pr-3' :
-                                printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
-                              }`}>
-                                {(printDoc.totalAmount - ((printDoc.totalAmount * (printDoc.withholdingTaxRate || 1)) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
-                              </td>
-                            </tr>
-                          </>
-                        )}
+
+                              {/* 3. Final Net Payable Row */}
+                              <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none font-sans">
+                                {showExcelGrid && (
+                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                    {12 + printTotalBaseCount}
+                                  </td>
+                                )}
+                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
+                                  Net Payable
+                                </td>
+                                <td className={`py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap ${
+                                  tableAlignment === 'center' ? 'text-center px-3' :
+                                  tableAlignment === 'left' ? 'text-left pl-3' :
+                                  tableAlignment === 'right' ? 'text-right pr-3' :
+                                  printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
+                                }`}>
+                                  {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                                </td>
+                              </tr>
+                            </>
+                          );
+                        })()}
                       </>
                     );
                   })()}
@@ -2849,14 +2931,28 @@ export default function App() {
                     <span className="font-bold text-black shrink-0 w-3 text-[11px]">3.</span>
                     <span>Or by bank transfer to your company account within <strong>{printDoc.paymentDays || "10"}</strong> days of the delivery date.</span>
                   </div>
-                  {printDoc.advancePayment && (
-                    <div className="flex items-start gap-2">
-                      <span className="font-bold text-[#DC2626] shrink-0 w-3 text-[11px]">4.</span>
-                      <span>
-                        <strong className="text-[#DC2626] mr-1">Advance payment (الدفعة المقدمة):</strong> {printDoc.advancePayment}
-                      </span>
-                    </div>
-                  )}
+                  {(() => {
+                    const pctDetails = getAdvancePercentageDetails(printDoc.advancePayment, printDoc.totalAmount);
+                    if (!pctDetails) return null;
+                    return (
+                      <>
+                        <div className="flex items-start gap-2 border-t border-slate-100 pt-2 mt-2">
+                          <span className="font-bold text-[#DC2626] shrink-0 w-3 text-[11px]">4.</span>
+                          <span className="w-full text-[#DC2626] font-bold">
+                            Advanced Payment: <span className="font-mono text-black font-black text-sm ml-1">{pctDetails.advanceStr}</span>
+                          </span>
+                        </div>
+                        {pctDetails.deliveryStr && (
+                          <div className="flex items-start gap-2 bg-emerald-50/70 border border-emerald-100 p-2 rounded-lg mt-1">
+                            <span className="font-bold text-emerald-800 shrink-0 w-3 text-[11px]">5.</span>
+                            <span className="w-full text-emerald-900 font-extrabold">
+                              Upon Delivery: <span className="font-mono text-emerald-950 font-black text-sm ml-1 underline decoration-double decoration-emerald-600">{pctDetails.deliveryStr}</span>
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -3676,7 +3772,7 @@ export default function App() {
                                 className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-800 text-left"
                               />
                             ) : (
-                              doc.totalAmount.toLocaleString()
+                              getDocNetSpent(doc).toLocaleString(undefined, { minimumFractionDigits: 2 })
                             )}
                           </td>
 
@@ -3809,7 +3905,7 @@ export default function App() {
                             
                             <div className="text-left flex-shrink-0 flex items-center gap-2">
                               <span className="font-bold text-slate-800 font-mono">
-                                {doc.totalAmount.toLocaleString()} <span className="text-[10px] text-slate-400">{doc.currency}</span>
+                                {getDocNetSpent(doc).toLocaleString(undefined, { minimumFractionDigits: 2 })} <span className="text-[10px] text-slate-400">{doc.currency}</span>
                               </span>
                               {doc.classifiedPath && (
                                 <button 
@@ -4997,10 +5093,10 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => {
-                                handleUpdateDrawerField('withholdingTaxEnabled', true);
-                                if (!selectedDoc.withholdingTaxRate) {
-                                  handleUpdateDrawerField('withholdingTaxRate', 1);
-                                }
+                                handleUpdateDrawerField({
+                                  withholdingTaxEnabled: true,
+                                  withholdingTaxRate: selectedDoc.withholdingTaxRate || 1
+                                });
                               }}
                               className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
                                 selectedDoc.withholdingTaxEnabled
@@ -5027,6 +5123,87 @@ export default function App() {
                                 <option value={5}>5% (إستشارات ومهن)</option>
                                 <option value={10}>10% (أخرى)</option>
                               </select>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Tax & VAT Toggle Options */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100">
+                      <div className="flex flex-wrap items-center gap-2.5 text-right w-full justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
+                          <span className="text-xs font-bold text-slate-700">الضريبة المضافة (شاملة الضريبة أم لا):</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="inline-flex rounded-xl border border-slate-200 p-0.5 bg-white shadow-2xs">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateDrawerField({
+                                  pricesIncludeTax: true,
+                                  taxAddPercentEnabled: false
+                                });
+                              }}
+                              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                selectedDoc.pricesIncludeTax !== false
+                                  ? 'bg-rose-600 text-white shadow-3xs'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                              }`}
+                            >
+                              الأسعار شاملة الضريبة 🏷️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateDrawerField('pricesIncludeTax', false);
+                              }}
+                              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                selectedDoc.pricesIncludeTax === false
+                                  ? 'bg-rose-600 text-white shadow-3xs'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                              }`}
+                            >
+                              الأسعار غير شاملة الضريبة ❌
+                            </button>
+                          </div>
+
+                          {/* Option to add VAT if prices do not include tax */}
+                          {selectedDoc.pricesIncludeTax === false && (
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={!!selectedDoc.taxAddPercentEnabled}
+                                  onChange={(e) => {
+                                    handleUpdateDrawerField({
+                                      taxAddPercentEnabled: e.target.checked,
+                                      taxAddPercentRate: (e.target.checked && !selectedDoc.taxAddPercentRate) ? 14 : selectedDoc.taxAddPercentRate
+                                    });
+                                  }}
+                                  className="rounded-md border-slate-300 text-rose-600 focus:ring-rose-500 w-4 h-4 cursor-pointer"
+                                />
+                                <span className="text-[11px] font-black text-rose-800">إضافة ضريبة القيمة المضافة (+VAT)</span>
+                              </label>
+
+                              {selectedDoc.taxAddPercentEnabled && (
+                                <div className="flex items-center gap-2 bg-rose-50/60 border border-rose-200 px-2.5 py-1 rounded-xl">
+                                  <span className="text-[11px] font-bold text-rose-800">نسبة الضريبة:</span>
+                                  <select
+                                    value={selectedDoc.taxAddPercentRate ?? 14}
+                                    onChange={(e) => {
+                                      handleUpdateDrawerField('taxAddPercentRate', Number(e.target.value));
+                                    }}
+                                    className="bg-white border border-rose-300 rounded-lg text-[11px] font-bold py-0.5 px-1.5 text-rose-950 outline-hidden focus:ring-1 focus:ring-rose-500"
+                                  >
+                                    <option value={14}>14% (الافتراضي)</option>
+                                    <option value={5}>5% (تخفيض خاص)</option>
+                                    <option value={10}>10% (خدمات خاصة)</option>
+                                    <option value={0}>0% (معفى)</option>
+                                  </select>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -5236,7 +5413,16 @@ export default function App() {
                         />
                       </div>
                       <div className="col-span-2 p-1.5 text-center bg-white flex items-center justify-center font-mono font-black text-[#DC2626] text-xs select-text overflow-hidden whitespace-nowrap text-ellipsis font-black">
-                        {selectedDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        {(() => {
+                          const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
+                          const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
+                          const taxAddPercentRate = selectedDoc.taxAddPercentRate ?? 14;
+                          const originalSubtotal = selectedDoc.items && selectedDoc.items.length > 0
+                            ? selectedDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
+                            : (selectedDoc.totalAmount || 0);
+                          const itemsSubtotal = taxAddPercentEnabled ? originalSubtotal * (1 + taxAddPercentRate / 100) : originalSubtotal;
+                          return itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                        })()}
                       </div>
                     </div>
 
@@ -5291,7 +5477,16 @@ export default function App() {
                         <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                           <span className="block text-[10px] text-slate-450 font-bold mb-1">القيمة الإجمالية</span>
                           <span className="font-mono font-black text-[#DC2626] text-[11px] block text-center leading-none mt-1">
-                            {selectedDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {(() => {
+                              const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
+                              const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
+                              const taxAddPercentRate = selectedDoc.taxAddPercentRate ?? 14;
+                              const originalSubtotal = selectedDoc.items && selectedDoc.items.length > 0
+                                ? selectedDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
+                                : (selectedDoc.totalAmount || 0);
+                              const itemsSubtotal = taxAddPercentEnabled ? originalSubtotal * (1 + taxAddPercentRate / 100) : originalSubtotal;
+                              return itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                            })()}
                           </span>
                         </div>
                       </div>
@@ -5312,7 +5507,7 @@ export default function App() {
                               <th className="border-e border-slate-300 w-16 min-w-[64px] max-w-[64px] py-0.5">C</th>
                               <th className="border-e border-slate-300 w-16 min-w-[64px] max-w-[64px] py-0.5">D</th>
                               <th className="border-e border-slate-300 w-24 min-w-[96px] max-w-[96px] py-0.5">E</th>
-                              <th className={`py-0.5 w-28 min-w-[112px] max-w-[112px] ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>F</th>
+                              <th className={`py-0.5 w-32 min-w-[128px] max-w-[128px] ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>F</th>
                             </tr>
                           )}
                           {/* Actual Visual Labels Row matching Excel exactly */}
@@ -5325,7 +5520,7 @@ export default function App() {
                             <th className="border-e border-[#B0B0B0] py-2 w-16 min-w-[64px] max-w-[64px]">Unit</th>
                             <th className="border-e border-[#B0B0B0] py-2 w-16 min-w-[64px] max-w-[64px]">Qty</th>
                             <th className="border-e border-[#B0B0B0] py-2 w-24 min-w-[96px] max-w-[96px]">Price</th>
-                            <th className={`py-2 w-28 min-w-[112px] max-w-[112px] ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>Amount</th>
+                            <th className={`py-2 w-32 min-w-[128px] max-w-[128px] ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>Amount</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
@@ -5368,21 +5563,34 @@ export default function App() {
                                         dir="auto"
                                       />
                                     </div>
-                                    <div className={`flex items-center gap-1.5 text-[10px] ${printDirection === 'rtl' ? 'justify-end pr-5' : 'justify-start pl-5'}`}>
-                                      <span className="text-slate-400 font-medium">
-                                        {printDirection === 'rtl' ? 'ماركة البند:' : 'Brand:'}
-                                      </span>
-                                      <input 
-                                        type="text"
-                                        value={item.brand || ""}
-                                        placeholder={printDirection === 'rtl' ? "(ماركة البند)" : "(Brand Name)"}
-                                        onChange={(e) => handleUpdateDrawerItem(idx, 'brand', e.target.value)}
-                                        list="learned-brands-list"
-                                        className={`bg-transparent border-0 text-slate-500 font-medium text-[10px] p-0 w-24 outline-hidden hover:text-sky-600 focus:text-sky-600 ${
-                                          printDirection === 'rtl' ? 'text-right' : 'text-left'
-                                        }`}
-                                        dir="auto"
-                                      />
+                                    <div className={`flex items-center gap-3 text-[10px] flex-wrap ${printDirection === 'rtl' ? 'justify-end pr-5' : 'justify-start pl-5'}`}>
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-slate-400 font-medium">
+                                          {printDirection === 'rtl' ? 'ماركة البند:' : 'Brand:'}
+                                        </span>
+                                        <input 
+                                          type="text"
+                                          value={item.brand || ""}
+                                          placeholder={printDirection === 'rtl' ? "(ماركة البند)" : "(Brand Name)"}
+                                          onChange={(e) => handleUpdateDrawerItem(idx, 'brand', e.target.value)}
+                                          list="learned-brands-list"
+                                          className={`bg-transparent border-0 text-slate-500 font-medium text-[10px] p-0 w-24 outline-hidden hover:text-sky-600 focus:text-sky-600 ${
+                                            printDirection === 'rtl' ? 'text-right' : 'text-left'
+                                          }`}
+                                          dir="auto"
+                                        />
+                                      </div>
+                                      <label className="flex items-center gap-1 cursor-pointer select-none no-print">
+                                        <input 
+                                          type="checkbox"
+                                          checked={!!item.pageBreakBefore}
+                                          onChange={(e) => handleUpdateDrawerItem(idx, 'pageBreakBefore', e.target.checked)}
+                                          className="rounded-sm border-slate-300 text-sky-600 focus:ring-sky-500 w-3 h-3 cursor-pointer"
+                                        />
+                                        <span className="text-[9px] font-bold text-slate-400 hover:text-sky-605 transition-colors">
+                                          {printDirection === 'rtl' ? 'صفحة جديدة 📄' : 'New Page 📄'}
+                                        </span>
+                                      </label>
                                     </div>
                                   </div>
                                 </td>
@@ -5421,7 +5629,14 @@ export default function App() {
 
                                 {/* Amount */}
                                 <td className={`py-3 w-28 min-w-[112px] max-w-[112px] select-text font-bold text-slate-900 font-mono ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
-                                  {((item.quantity || 0) * (item.unitPrice || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                  {(() => {
+                                    const baseTotal = (item.quantity || 0) * (item.unitPrice || 0);
+                                    const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
+                                    const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
+                                    const taxAddPercentRate = selectedDoc.taxAddPercentRate ?? 14;
+                                    const displayedTotal = taxAddPercentEnabled ? baseTotal * (1 + taxAddPercentRate / 100) : baseTotal;
+                                    return displayedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                  })()}
                                 </td>
                               </tr>
                             ))
@@ -5467,8 +5682,17 @@ export default function App() {
                               }
                             </td>
                             {/* Total Amount in Column F */}
-                            <td className={`py-2 w-28 font-extrabold text-[#DC2626] font-mono text-xs select-text ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
-                              {selectedDoc.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {selectedDoc.currency || 'EGP'}
+                            <td className={`py-2 w-32 font-extrabold text-[#DC2626] font-mono text-xs select-text whitespace-nowrap ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                              {(() => {
+                                const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
+                                const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
+                                const taxAddPercentRate = selectedDoc.taxAddPercentRate ?? 14;
+                                const originalSubtotal = selectedDoc.items && selectedDoc.items.length > 0
+                                  ? selectedDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
+                                  : (selectedDoc.totalAmount || 0);
+                                const itemsSubtotal = taxAddPercentEnabled ? originalSubtotal * (1 + taxAddPercentRate / 100) : originalSubtotal;
+                                return itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                              })()} {selectedDoc.currency || 'EGP'}
                             </td>
                           </tr>
 
@@ -5487,8 +5711,15 @@ export default function App() {
                                     : `Commercial & Industrial Profits Tax Discount (${selectedDoc.withholdingTaxRate || 1}%)`
                                   }
                                 </td>
-                                <td className={`py-2 w-28 font-bold text-red-600 font-mono text-xs select-text ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
-                                  -{((selectedDoc.totalAmount * (selectedDoc.withholdingTaxRate || 1)) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} {selectedDoc.currency || 'EGP'}
+                                <td className={`py-2 w-32 font-bold text-red-600 font-mono text-xs select-text whitespace-nowrap ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                                  -{(() => {
+                                    const originalSubtotal = selectedDoc.items && selectedDoc.items.length > 0
+                                      ? selectedDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
+                                      : (selectedDoc.totalAmount || 0);
+                                    const whtRate = selectedDoc.withholdingTaxRate || 1;
+                                    const whtAmount = (originalSubtotal * whtRate) / 100;
+                                    return whtAmount.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                  })()} {selectedDoc.currency || 'EGP'}
                                 </td>
                               </tr>
 
@@ -5499,10 +5730,22 @@ export default function App() {
                                   </td>
                                 )}
                                 <td colSpan={5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
-                                  {printDirection === 'rtl' ? 'صافي القيمة المستحقة للدفع (Net Payable)' : 'Net Payable'}
+                                  Net Payable
                                 </td>
-                                <td className={`py-2.5 w-28 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
-                                  {(selectedDoc.totalAmount - ((selectedDoc.totalAmount * (selectedDoc.withholdingTaxRate || 1)) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })} {selectedDoc.currency || 'EGP'}
+                                <td className={`py-2.5 w-32 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                                  {(() => {
+                                    const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
+                                    const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
+                                    const taxAddPercentRate = selectedDoc.taxAddPercentRate ?? 14;
+                                    const originalSubtotal = selectedDoc.items && selectedDoc.items.length > 0
+                                      ? selectedDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
+                                      : (selectedDoc.totalAmount || 0);
+                                    const itemsSubtotal = taxAddPercentEnabled ? originalSubtotal * (1 + taxAddPercentRate / 100) : originalSubtotal;
+                                    const whtRate = selectedDoc.withholdingTaxRate || 1;
+                                    const whtAmount = (originalSubtotal * whtRate) / 100;
+                                    const netPayable = itemsSubtotal - whtAmount;
+                                    return netPayable.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                  })()} {selectedDoc.currency || 'EGP'}
                                 </td>
                               </tr>
                             </>
@@ -5602,23 +5845,37 @@ export default function App() {
                           </div>
                           <div className="flex items-center gap-2 flex-wrap border-t border-dashed border-slate-200/60 pt-2 pb-1 no-print">
                             <span className="font-bold text-[#0000C8] shrink-0 w-3 text-[11px]">4.</span>
-                            <span className="text-[#0000C8] font-bold text-[10px] uppercase">Advance Payment (الدفعة المقدمة):</span>
+                            <span className="text-[#0000C8] font-bold text-[10px] uppercase">Advanced Payment:</span>
                             <input 
                               type="text"
                               value={selectedDoc.advancePayment || ""}
                               onChange={(e) => handleUpdateDrawerField('advancePayment', e.target.value)}
                               className="font-extrabold text-slate-850 bg-amber-50/50 hover:bg-amber-100/70 border border-amber-200 focus:ring-1 focus:ring-amber-500 text-xs px-2.5 py-1 rounded-md flex-1 max-w-sm outline-hidden font-sans"
-                              placeholder="مثال: دفعة مقدمة 20% (Advance payment of 20%)"
+                              placeholder="مثال: دفعة مقدمة 20% (Advanced Payment of 20%)"
                             />
                           </div>
-                          {selectedDoc.advancePayment && (
-                            <div className="hidden print:flex items-start gap-2">
-                              <span className="font-bold text-slate-500 shrink-0 w-3 text-[11px]">4.</span>
-                              <span className="font-bold text-slate-900">
-                                Advance payment: {selectedDoc.advancePayment}
-                              </span>
-                            </div>
-                          )}
+                          {(() => {
+                            const pctDetails = getAdvancePercentageDetails(selectedDoc.advancePayment, selectedDoc.totalAmount);
+                            if (!pctDetails) return null;
+                            return (
+                              <div className="text-[11px]" style={{ direction: 'ltr' }}>
+                                <div className="flex items-start gap-2 pt-1">
+                                  <span className="font-bold text-slate-500 shrink-0 w-3 border-t border-slate-100 mt-1">4.</span>
+                                  <span className="font-bold text-slate-900 mt-1">
+                                    Advanced Payment: {pctDetails.advanceStr}
+                                  </span>
+                                </div>
+                                {pctDetails.deliveryStr && (
+                                  <div className="flex items-start gap-2 pt-1 text-emerald-950 font-bold bg-emerald-50/30 p-1 rounded-md mt-1">
+                                    <span className="w-3 text-[11px]">5.</span>
+                                    <span>
+                                      Upon Delivery: {pctDetails.deliveryStr}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
