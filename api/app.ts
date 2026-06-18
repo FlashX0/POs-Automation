@@ -45,6 +45,12 @@ const projectSchema = new mongoose.Schema({
 });
 const Project = mongoose.model("Project", projectSchema);
 
+const appStateSchema = new mongoose.Schema({
+  key: { type: String, default: "global_state", unique: true },
+  data: { type: mongoose.Schema.Types.Mixed, required: true }
+});
+const AppState = mongoose.model("AppState", appStateSchema);
+
 // 3. مصفوفة المشاريع الافتراضية الخاصة بك بالكامل دون أي نقص
 const defaultProjects = [
   "Villette A&B",
@@ -94,6 +100,7 @@ async function seedDatabase() {
 // تشغيل الدالة بمجرد تمام الاتصال والمزامنة لضمان استرجاع كل المشاريع من أطلس
 mongoose.connection.once("open", async () => {
   await seedDatabase();
+  await fetchAndSyncDbFromMongo();
   try {
     const dbProjects = await Project.find({}, "name");
     const names = dbProjects.map(p => p.name);
@@ -473,6 +480,47 @@ function saveDb(data: any) {
   } catch (err) {
     console.warn("Could not save to database file (expected in read-only Vercel serverless environments):", err);
   }
+
+  // Push to MongoDB Atlas asynchronously to keep all instances entirely in sync
+  if (mongoose.connection.readyState === 1) {
+    AppState.updateOne(
+      { key: "global_state" },
+      { data: data },
+      { upsert: true }
+    ).catch((err) => {
+      console.error("Could not background save AppState to MongoDB:", err.message);
+    });
+  }
+}
+
+async function fetchAndSyncDbFromMongo() {
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const dbDoc = await AppState.findOne({ key: "global_state" });
+      if (dbDoc && dbDoc.data) {
+        memoryDb = dbDoc.data;
+        try {
+          fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+        } catch {}
+        console.log("Successfully loaded database state from MongoDB Atlas!");
+        return memoryDb;
+      } else {
+        // First run: save current local db.json/getDb state to Atlas
+        const localDb = getDb();
+        if (localDb) {
+          await AppState.updateOne(
+            { key: "global_state" },
+            { data: localDb },
+            { upsert: true }
+          );
+          console.log("Seeded empty MongoDB Atlas with active local db.json data!");
+        }
+      }
+    } catch (err: any) {
+      console.warn("Could not load AppState from MongoDB Atlas, using fallback:", err.message);
+    }
+  }
+  return getDb();
 }
 
 // Initialize Gemini Client
@@ -609,20 +657,33 @@ async function extractDataFromDocument(fileBuffer: Buffer, mimeType: string, fil
   const base64Data = fileBuffer.toString("base64");
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const systemInstruction = `You are a professional AI accountant and data classification bot.
-Analyze the provided document (which may be a Purchase Order [PO - أمر شراء] or Quote [عرض سعر], written in Arabic or English).
+  const systemInstruction = `You are a professional AI accountant and bilingual data extraction/OCR expert.
+Analyze the provided document (which may be a Purchase Order [PO - أمر شراء] or Quote [عرض سعر], written in Arabic or English, or containing a mix of both).
 Extract key structural items and format them accurately as JSON.
 
 Core Parsing Guidelines:
-1. Identify Vendor/Seller Name (اسم البائع والمورد): This is the name of the supplier, seller or company we are buying from (اسم البائع أو المورد). In a Purchase Order ('أمر شراء'), this is the vendor whom the order is addressed to. In a Quote ('عرض سعر'), this is the company issuing/authoring the quote. Do NOT extract our company name (e.g. Delta Group) or client name unless they are the actual supplier. You MUST refer to the 'Known Client/Supplier names' list below. If any known vendor/supplier name is present, mentioned, or strongly suggested in the document (e.g. 'Yet Trace', 'Huda Lighting', '3BROTHERS', 'النيل للتوريدات المعمارية' etc.), you MUST choose that exact spelling as the clientName. Maintain proper Arabic spelling if written in Arabic.
-2. Identify Document Date: Format as YYYY-MM-DD. Use today's date (${todayStr}) if not clearly specified or found.
-3. Identify Document Type: Determine if 'po' (Purchase Order / أمر شراء) or 'quote' (Quote / Proposal / Price Offer / عرض سعر). Default to 'unknown' only if absolutely neither.
-4. Extract list of items/lines: Each item must contain a description, quantity, unitPrice, cumulative line total, brand (manufacturer/brand name of the item, e.g., HP, Samsung, LG or supply brand, default empty. Note: 'اليزية' / 'اليزيه' / 'Elysee' / 'Elise' is a brand name/type; always extract it under the 'brand' field and not as part of the raw description), and unit (unit of measurement, e.g., عدد, متر, طن, لتر, علبة, Pcs, Unit, default 'عدد'). NOTE ON DESCRIPTION: If the item description on the invoice/document contains mixed Arabic and English text (e.g., brand names, technical abbreviations, codes, numbers, specifications), you MUST extract and copy it EXACTLY as written, word-for-word, retaining both the Arabic and English words identically without omitting, translating, or summarizing them.
-5. Extract totalAmount and currency (e.g., EGP, USD, SAR, AED, EUR).
-6. Provide a concise 1-sentence Arabic summary of the transaction.
-7. Identify Project Name: Look for project fields or indicators like 'Project:', 'المشروع:', 'اسم المشروع:', 'عملية:', 'بخصوص عملية:', 'موقع العمل:', etc.. You MUST refer to the Known Projects list below. If any known project name is present/mentioned in the document, or if anything in the document strongly suggests one of those projects (e.g., 'Villette A&B', 'Azalia', 'Al-brouj', 'THE ESTATE', etc.), you MUST choose that exact spelling as the projectName. If not found or unclear, default to 'عام'.
-8. Identify Due Date / Payment Deadline: Look for payment terms, due date, 'Due Date:', 'تاريخ الاستحقاق', 'يسدد قبل', 'تاريخ السداد', etc. Format as YYYY-MM-DD. If not explicitly found, calculate it if possible or leave empty if completely unavailable.
-9. COPIED DESCRIPTION INTEGRITY (مطابقة وصف البنود): If a line item's description in the table contains both Arabic and English words, or brand serial codes/technical numbers, do NOT attempt to translate or simplify them. Extract the text exactly as it appears in the document, ensuring complete match of both Arabic and English text blocks. We want absolute literal and word-for-word matching list translation items.
+1. Bilingual OCR Support (دعم كامل ومتوازي للغتين العربية والإنجليزية):
+   - You MUST extract all Arabic and English text with absolute high accuracy.
+   - Never omit, translate, summarize, or shorten any descriptive text or words, especially long technical specifications in Arabic (such as complex descriptions of steel bridges, architectural dimensions, item grades, fittings, etc.) or in English. 
+   - Keep both languages intact; copy and extract description details word-for-word exactly as printed in the document.
+
+2. Page Boundaries & Split Rows (معالجة صفوف البنود المقطوعة بين الصفحات):
+   - Multi-page documents often split a single table row across physical page breaks (e.g., the description of "Item 4" starts at the bottom of Page 1 and carries over to the top of Page 2, with prices or quantities appearing on one side of the break).
+   - You MUST identify split rows and intelligently MERGE them back into a single, cohesive, logical row in the "items" array. 
+   - Never output a split row as two separate/duplicate rows, and never discard/omit either part of the split text. Combine the descriptions from both pages seamlessly (maintaining proper logical text flow) and associate them with the single correct quantity, unit price, and total.
+
+3. Complete Table Cohesiveness (هيكلية متماسكة للجداول والصفحات المنتشرة):
+   - Treat the entire document as a continuous logical table from the first page until the last page. Ignore repeating headers, footers, page numbers, or signature blocks when assembling the "items" catalog.
+   - Ensure that the Description strictly correlates with its corresponding Unit, Quantity, Unit Price, and Total.
+
+4. Identify Vendor/Seller Name (اسم البائع والمورد): This is the name of the supplier, seller or company we are buying from (اسم البائع أو المورد). In a Purchase Order ('أمر شراء'), this is the vendor whom the order is addressed to. In a Quote ('عرض سعر'), this is the company issuing/authoring the quote. Do NOT extract our company name (e.g. Delta Group) or client name unless they are the actual supplier. You MUST refer to the 'Known Client/Supplier names' list below. If any known vendor/supplier name is present, mentioned, or strongly suggested in the document (e.g. 'Yet Trace', 'Huda Lighting', '3BROTHERS', 'النيل للتوريدات المعمارية' etc.), you MUST choose that exact spelling as the clientName. Maintain proper Arabic spelling if written in Arabic.
+5. Identify Document Date: Format as YYYY-MM-DD. Use today's date (${todayStr}) if not clearly specified or found.
+6. Identify Document Type: Determine if 'po' (Purchase Order / أمر شراء) or 'quote' (Quote / Proposal / Price Offer / عرض سعر). Default to 'unknown' only if absolutely neither.
+7. Extract list of items/lines: Each item must contain a description, quantity, unitPrice, cumulative line total, brand (manufacturer/brand name of the item, e.g., HP, Samsung, LG or supply brand, default empty. Note: 'اليزية' / 'اليزيه' / 'Elysee' / 'Elise' is a brand name/type; always extract it under the 'brand' field and not as part of the raw description), and unit (unit of measurement, e.g., عدد, متر, طن, لتر, علبة, Pcs, Unit, default 'عدد').
+8. Extract totalAmount and currency (e.g., EGP, USD, SAR, AED, EUR).
+9. Provide a concise 1-sentence Arabic summary of the transaction.
+10. Identify Project Name: Look for project fields or indicators like 'Project:', 'المشروع:', 'اسم المشروع:', 'عملية:', 'بخصوص عملية:', 'موقع العمل:', etc.. You MUST refer to the Known Projects list below. If any known project name is present/mentioned in the document, or if anything in the document strongly suggests one of those projects (e.g., 'Villette A&B', 'Azalia', 'Al-brouj', 'THE ESTATE', etc.), you MUST choose that exact spelling as the projectName. If not found or unclear, default to 'عام'.
+11. Identify Due Date / Payment Deadline: Look for payment terms, due date, 'Due Date:', 'تاريخ الاستحقاق', 'يسدد قبل', 'تاريخ السداد', etc. Format as YYYY-MM-DD. If not explicitly found, calculate it if possible or leave empty if completely unavailable.
 
 CRITICAL ADAPTIVE / SELF-LEARNING RULE (قاعدة التكيف والتعلم الذاتي المستمر):
 To keep the system highly reliable and fully aligned with the user's specific business vocabulary, you MUST match existing nomenclature. If the parsed client/vendor name or any item description/brand/unit in the new document matches or strongly resembles any of the previously saved values below, you MUST automatically use the existing exact spelling/naming from this prior knowledge:
@@ -815,16 +876,22 @@ function classifyAndStoreFile(fileBuffer: Buffer, parsedData: any, originalName:
 // REST API ENDPOINTS
 
 // 1. Fetch system statistics & document list
-app.get("/api/documents", (req, res) => {
-  checkForUpcomingDueDates();
-  const db = getDb();
-  res.json({
-    documents: db.documents || [],
-    notifications: db.notifications || [],
-    telegramConfig: db.telegramConfig || { botToken: "", isWebhookSet: false, botUsername: null, webhookUrl: "" },
-    projects: db.projects || [],
-    suppliers: db.suppliers || []
-  });
+app.get("/api/documents", async (req, res) => {
+  try {
+    await fetchAndSyncDbFromMongo();
+    checkForUpcomingDueDates();
+    const db = getDb();
+    res.json({
+      documents: db.documents || [],
+      notifications: db.notifications || [],
+      telegramConfig: db.telegramConfig || { botToken: "", isWebhookSet: false, botUsername: null, webhookUrl: "" },
+      projects: db.projects || [],
+      suppliers: db.suppliers || []
+    });
+  } catch (err: any) {
+    console.error("Fetch documents error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/projects/add", async (req, res) => {
@@ -834,6 +901,7 @@ app.post("/api/projects/add", async (req, res) => {
       return res.status(400).json({ error: "اسم المشروع مطلوب" });
     }
     const cleanName = name.trim();
+    await fetchAndSyncDbFromMongo();
     const db = getDb();
     const projects = db.projects || [];
     if (!projects.some((p: string) => p.toLowerCase() === cleanName.toLowerCase())) {
@@ -872,6 +940,7 @@ app.post("/api/projects/rename", async (req, res) => {
       return res.status(400).json({ error: "الأسماء غير صالحة" });
     }
     
+    await fetchAndSyncDbFromMongo();
     const db = getDb();
     
     // Rename in list
@@ -913,6 +982,7 @@ app.post("/api/projects/delete", async (req, res) => {
       return res.status(400).json({ error: "اسم المشروع مطلوب" });
     }
     const cleanName = name.trim();
+    await fetchAndSyncDbFromMongo();
     const db = getDb();
     
     // Remove from projects list
@@ -963,13 +1033,14 @@ app.post("/api/projects/delete", async (req, res) => {
   }
 });
 
-app.post("/api/suppliers/add", (req, res) => {
+app.post("/api/suppliers/add", async (req, res) => {
   try {
     const { name } = req.body;
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ error: "اسم المورد مطلوب" });
     }
     const cleanName = name.trim();
+    await fetchAndSyncDbFromMongo();
     const db = getDb();
     const suppliers = db.suppliers || [];
     if (!suppliers.some((s: string) => s.toLowerCase() === cleanName.toLowerCase())) {
@@ -1029,6 +1100,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "لم يتم تحديد أي ملف للرفع." });
     }
 
+    await fetchAndSyncDbFromMongo();
     const { buffer, mimetype, originalname } = req.file;
     const userInstructions = req.body.instructions || req.body.notes || "";
     
@@ -1141,13 +1213,14 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 });
 
 // 2b. Confirm potential duplicate (proceed or merge)
-app.post("/api/upload/confirm", (req, res) => {
+app.post("/api/upload/confirm", async (req, res) => {
   try {
     const { action, proposedDocument, existingId } = req.body;
     if (!action || !proposedDocument) {
       return res.status(400).json({ error: "البيانات المدخلة غير كاملة للتأكيد." });
     }
 
+    await fetchAndSyncDbFromMongo();
     const db = getDb();
 
     if (action === "proceed") {
@@ -1221,12 +1294,13 @@ app.get("/api/documents/download", (req, res) => {
 });
 
 // 4. Manual database edits (Add/Update/Delete rows inline like Excel)
-app.post("/api/documents/update", (req, res) => {
+app.post("/api/documents/update", async (req, res) => {
   try {
     const { documents } = req.body;
     if (!Array.isArray(documents)) {
       return res.status(400).json({ error: "تنسيق البيانات غير صحيح." });
     }
+    await fetchAndSyncDbFromMongo();
     const db = getDb();
     const oldDocs = db.documents || [];
     
@@ -1319,8 +1393,9 @@ app.post("/api/documents/update", (req, res) => {
 });
 
 // 5. Clear notifications
-app.post("/api/notifications/clear", (req, res) => {
+app.post("/api/notifications/clear", async (req, res) => {
   try {
+    await fetchAndSyncDbFromMongo();
     const db = getDb();
     db.notifications = [];
     saveDb(db);

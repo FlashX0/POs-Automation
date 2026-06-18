@@ -374,6 +374,7 @@ export default function App() {
     });
   }, []);
   const documents = rawDocuments;
+  const isInitialFetchCompleted = useRef(false);
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [projectsList, setProjectsList] = useState<string[]>([]);
@@ -503,6 +504,7 @@ export default function App() {
       setNotifications(data.notifications || []);
       setProjectsList(data.projects || []);
       setSuppliersList(data.suppliers || []);
+      isInitialFetchCompleted.current = true;
  
       // Trigger instant audio notification if new documents are received in background (polling)
       if (lastDocCountRef.current !== null && (data.documents?.length || 0) > lastDocCountRef.current) {
@@ -686,10 +688,13 @@ export default function App() {
 
   // Reactive backups to localStorage to prevent data loss across server restarts/container deletions
   useEffect(() => {
-    if (!loading && rawDocuments && rawDocuments.length > 0) {
+    if (!loading && isInitialFetchCompleted.current) {
+      if (rawDocuments.length === 0 && hasBackupToRestore) {
+        return;
+      }
       localStorage.setItem('delta_documents_backup', JSON.stringify(rawDocuments));
     }
-  }, [loading, rawDocuments]);
+  }, [loading, rawDocuments, hasBackupToRestore]);
 
   useEffect(() => {
     if (projectsList && projectsList.length > 0) {
@@ -2945,24 +2950,26 @@ export default function App() {
                               )}
 
                               {/* 3. Final Net Payable Row */}
-                              <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none font-sans">
-                                {showExcelGrid && (
-                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
-                                    {12 + printTotalBaseCount}
+                              {printDoc.withholdingTaxEnabled && (
+                                <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none font-sans">
+                                  {showExcelGrid && (
+                                    <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                      {12 + printTotalBaseCount}
+                                    </td>
+                                  )}
+                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
+                                    Net Payable
                                   </td>
-                                )}
-                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
-                                  Net Payable
-                                </td>
-                                <td className={`py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap ${
-                                  tableAlignment === 'center' ? 'text-center px-3' :
-                                  tableAlignment === 'left' ? 'text-left pl-3' :
-                                  tableAlignment === 'right' ? 'text-right pr-3' :
-                                  printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
-                                }`}>
-                                  {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
-                                </td>
-                              </tr>
+                                  <td className={`py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap ${
+                                    tableAlignment === 'center' ? 'text-center px-3' :
+                                    tableAlignment === 'left' ? 'text-left pl-3' :
+                                    tableAlignment === 'right' ? 'text-right pr-3' :
+                                    printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
+                                  }`}>
+                                    {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                                  </td>
+                                </tr>
+                              )}
                             </>
                           );
                         })()}
@@ -3082,13 +3089,21 @@ export default function App() {
           <div className="flex flex-col md:flex-row justify-between items-center py-4 md:py-0 md:h-20 gap-4">
             
             {/* Title & Brand */}
-            <div className="flex items-center gap-3 text-center md:text-right">
-              <div className="p-2.5 bg-sky-600 text-white rounded-xl shadow-md shadow-sky-600/10 shrink-0">
-                <FileText className="w-6 h-6" />
+            <div className="flex items-center gap-3 text-right">
+              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-sky-500/50 shadow-md shadow-sky-600/10 shrink-0">
+                <img 
+                  src="/src/assets/images/delta_road_logo_1781798697279.jpg" 
+                  alt="Delta For Road Construction Logo" 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <div>
-                <h1 className="text-lg md:text-xl font-bold tracking-tight text-white">نظام الأتمتة المالي الذكي</h1>
-                <p className="text-[11px] md:text-xs text-slate-400">تحليل وتصنيف تلقائي لعروض الأسعار وأوامر الشراء بواسطة الـ AI (مظهر داكن)</p>
+                <h1 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                  <span>Delta For Road Construction</span>
+                  <span className="text-xs bg-sky-600 text-white px-2 py-0.5 rounded-full font-normal">نظام أتمتة الفواتير</span>
+                </h1>
+                <p className="text-[11px] md:text-xs text-slate-400">التحليل والتصنيف التلقائي الذكي لعروض الأسعار وأوامر الشراء (POs) بواسطة الـ AI</p>
               </div>
             </div>
 
@@ -3843,7 +3858,7 @@ export default function App() {
                           </td>
 
                           {/* Amount */}
-                          <td className="py-3 px-4 font-bold text-sm text-emerald-400 font-mono text-left">
+                          <td className="py-3 px-4 font-bold text-sm text-emerald-700 font-mono text-left">
                             {isEditing ? (
                               <input
                                 type="number"
@@ -3854,7 +3869,7 @@ export default function App() {
                                   draft[idx].totalAmount = Number(e.target.value);
                                   setEditDocs(draft);
                                 }}
-                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-850 text-left"
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-800 text-left"
                               />
                             ) : (
                               getDocNetSpent(doc).toLocaleString(undefined, { minimumFractionDigits: 2 })
@@ -3862,7 +3877,7 @@ export default function App() {
                           </td>
 
                           {/* Currency */}
-                          <td className="py-3 px-4 font-semibold text-slate-300">
+                          <td className="py-3 px-4 font-semibold text-slate-500">
                             {isEditing ? (
                               <input
                                 type="text"
@@ -3873,7 +3888,7 @@ export default function App() {
                                   draft[idx].currency = e.target.value;
                                   setEditDocs(draft);
                                 }}
-                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-850"
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-800"
                               />
                             ) : (
                               doc.currency
@@ -3881,7 +3896,7 @@ export default function App() {
                           </td>
 
                           {/* Mini summary sentence */}
-                          <td className="py-3 px-4 text-slate-350 max-w-xs truncate" title={doc.summary}>
+                          <td className="py-3 px-4 text-slate-500 max-w-xs truncate" title={doc.summary}>
                             {isEditing ? (
                               <input
                                 type="text"
@@ -3892,7 +3907,7 @@ export default function App() {
                                   draft[idx].summary = e.target.value;
                                   setEditDocs(draft);
                                 }}
-                                className="w-full px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-850"
+                                className="w-full px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-800"
                               />
                             ) : (
                               doc.summary || 'توريد بنود تجارية مباشرة'
@@ -3907,13 +3922,13 @@ export default function App() {
                                   e.stopPropagation();
                                   triggerFileDownload(doc);
                                 }}
-                                className="text-sky-400 hover:text-sky-350 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                                className="text-sky-600 hover:text-sky-800 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
                               >
                                 <Download className="w-3.5 h-3.5" />
                                 <span>تحميل</span>
                               </button>
                             ) : (
-                              <span className="text-slate-500">-</span>
+                              <span className="text-slate-400">-</span>
                             )}
                           </td>
 
@@ -3924,7 +3939,7 @@ export default function App() {
                                 e.stopPropagation();
                                 setCustomDocDeleteModal({ isOpen: true, docId: doc.id });
                               }}
-                              className="p-1 px-2 text-rose-450 hover:text-rose-600 hover:bg-rose-950/20 rounded-lg transition-colors cursor-pointer"
+                              className="p-1 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                               title="حذف البند نهائيا"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -4371,6 +4386,15 @@ export default function App() {
                                             <Download className="w-3.5 h-3.5" />
                                           </button>
                                         )}
+                                        <button 
+                                          onClick={() => {
+                                            setCustomDocDeleteModal({ isOpen: true, docId: doc.id });
+                                          }}
+                                          className="p-1 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded border border-rose-200 cursor-pointer"
+                                          title="حذف البند نهائيا"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
                                       </div>
                                     </td>
                                   </tr>
