@@ -431,6 +431,11 @@ export default function App() {
   const [proposedDuplicateDoc, setProposedDuplicateDoc] = useState<ProcessedDocument | null>(null);
   const [confirmingAction, setConfirmingAction] = useState<boolean>(false);
 
+  // Custom premium modal/dialog states to bypass iframe confirm/prompt browser locks
+  const [customProjectDeleteModal, setCustomProjectDeleteModal] = useState<{ isOpen: boolean; projectName: string }>({ isOpen: false, projectName: '' });
+  const [customProjectRenameModal, setCustomProjectRenameModal] = useState<{ isOpen: boolean; projectName: string; inputValue: string }>({ isOpen: false, projectName: '', inputValue: '' });
+  const [customDocDeleteModal, setCustomDocDeleteModal] = useState<{ isOpen: boolean; docId: string }>({ isOpen: false, docId: '' });
+
   // Decoupled window/tab print routing detection
   const [printDocId, setPrintDocId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -589,25 +594,29 @@ export default function App() {
             setSelectedFolderProject(newName.trim());
           }
           await fetchData(false);
+          triggerNotificationToast('success', 'تم تعديل اسم المشروع بنجاح', `تم تعديل "${oldName}" إلى "${newName.trim()}" وتحديث كافة الوثائق بنصيبها`);
         }
       } else {
         const errorData = await res.json();
-        alert(errorData.error || 'فشل تعديل الاسم');
+        triggerNotificationToast('error', 'فشل تعديل الاسم', errorData.error || 'فشل تعديل اسم المشروع');
       }
     } catch (err) {
       console.error('Error renaming project:', err);
+      triggerNotificationToast('error', 'خطأ في الاتصال بالخادم', 'فشل تعديل الاسم بسبب خطأ تقني في الشبكة');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteProject = async (projectName: string, deleteDocuments: boolean = false) => {
+  const handleDeleteProject = async (projectName: string, deleteDocuments: boolean = false, bypassConfirm: boolean = false) => {
     if (!projectName) return;
-    const confirmMsg = deleteDocuments 
-      ? `هل أنت متأكد تماماً من حذف مشروع "${projectName}" وحذف جميع ملفاته ومستنداته المرفقة بشكل نهائي؟` 
-      : `هل تريد إزالة مشروع "${projectName}" من قائمة المراجع وتحويل جميع معاملاته ومستنداته المسجلة إلى مشروع "عام"؟`;
-    
-    if (!window.confirm(confirmMsg)) return;
+    if (!bypassConfirm) {
+      const confirmMsg = deleteDocuments 
+        ? `هل أنت متأكد تماماً من حذف مشروع "${projectName}" وحذف جميع ملفاته ومستنداته المرفقة بشكل نهائي؟` 
+        : `هل تريد إزالة مشروع "${projectName}" من قائمة المراجع وتحويل جميع معاملاته ومستنداته المسجلة إلى مشروع "عام"؟`;
+      
+      if (!window.confirm(confirmMsg)) return;
+    }
 
     try {
       setLoading(true);
@@ -624,13 +633,15 @@ export default function App() {
             setSelectedFolderProject(null);
           }
           await fetchData(false);
+          triggerNotificationToast('success', 'تم حذف المشروع بنجاح', `تم إزالة مشروع "${projectName}" من قائمة المراجع وتحديث الوثائق بنجاح.`);
         }
       } else {
         const errorData = await res.json();
-        alert(errorData.error || 'فشل حذف المشروع');
+        triggerNotificationToast('error', 'فشل حذف المشروع', errorData.error || 'يرجى مراجعة إدارة العمليات');
       }
     } catch (err) {
       console.error('Error deleting project:', err);
+      triggerNotificationToast('error', 'خطأ في الاتصال بالخادم', 'فشل حذف المشروع بسبب عطل بالاتصال بالخادم');
     } finally {
       setLoading(false);
     }
@@ -1066,9 +1077,11 @@ export default function App() {
   };
 
   // Delete document record
-  const handleDeleteDoc = async (id: string, event: MouseEvent) => {
-    event.stopPropagation();
-    if (!confirm('هل أنت متأكد من حذف هذا السجل والمستند نهائياً؟')) return;
+  const handleDeleteDoc = async (id: string, event?: any, bypassConfirm: boolean = false) => {
+    if (event) event.stopPropagation();
+    if (!bypassConfirm) {
+      if (!confirm('هل أنت متأكد من حذف هذا السجل والمستند نهائياً؟')) return;
+    }
 
     const remaining = documents.filter(d => d.id !== id);
     try {
@@ -1079,10 +1092,16 @@ export default function App() {
       });
       if (res.ok) {
         setDocuments(remaining);
+        if (isEditing) {
+          setEditDocs(remaining);
+        }
         if (selectedDoc?.id === id) setSelectedDoc(null);
+        triggerNotificationToast('success', 'تم حذف السجل بنجاح', 'تم إزالة البند وتحديث الملفات النشطة على الفور.');
+      } else {
+        triggerNotificationToast('error', 'فشل الحذف', 'الخادم لم يرخص عملية الحذف في الوقت الحالي.');
       }
     } catch (e) {
-      alert('فشل الاتصال بالخادم لحذف السجل.');
+      triggerNotificationToast('error', 'خطأ في الشبكة', 'فشل الاتصال بالخادم لحذف السجل.');
     }
   };
 
@@ -3824,7 +3843,7 @@ export default function App() {
                           </td>
 
                           {/* Amount */}
-                          <td className="py-3 px-4 font-bold text-sm text-slate-900 font-mono text-left">
+                          <td className="py-3 px-4 font-bold text-sm text-emerald-400 font-mono text-left">
                             {isEditing ? (
                               <input
                                 type="number"
@@ -3835,7 +3854,7 @@ export default function App() {
                                   draft[idx].totalAmount = Number(e.target.value);
                                   setEditDocs(draft);
                                 }}
-                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-800 text-left"
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 font-mono text-xs text-slate-850 text-left"
                               />
                             ) : (
                               getDocNetSpent(doc).toLocaleString(undefined, { minimumFractionDigits: 2 })
@@ -3843,7 +3862,7 @@ export default function App() {
                           </td>
 
                           {/* Currency */}
-                          <td className="py-3 px-4 font-semibold text-slate-500">
+                          <td className="py-3 px-4 font-semibold text-slate-300">
                             {isEditing ? (
                               <input
                                 type="text"
@@ -3854,7 +3873,7 @@ export default function App() {
                                   draft[idx].currency = e.target.value;
                                   setEditDocs(draft);
                                 }}
-                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-800"
+                                className="px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-850"
                               />
                             ) : (
                               doc.currency
@@ -3862,7 +3881,7 @@ export default function App() {
                           </td>
 
                           {/* Mini summary sentence */}
-                          <td className="py-3 px-4 text-slate-400 max-w-xs truncate" title={doc.summary}>
+                          <td className="py-3 px-4 text-slate-350 max-w-xs truncate" title={doc.summary}>
                             {isEditing ? (
                               <input
                                 type="text"
@@ -3873,7 +3892,7 @@ export default function App() {
                                   draft[idx].summary = e.target.value;
                                   setEditDocs(draft);
                                 }}
-                                className="w-full px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-800"
+                                className="w-full px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-850"
                               />
                             ) : (
                               doc.summary || 'توريد بنود تجارية مباشرة'
@@ -3888,21 +3907,24 @@ export default function App() {
                                   e.stopPropagation();
                                   triggerFileDownload(doc);
                                 }}
-                                className="text-sky-600 hover:text-sky-800 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                                className="text-sky-400 hover:text-sky-350 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
                               >
                                 <Download className="w-3.5 h-3.5" />
                                 <span>تحميل</span>
                               </button>
                             ) : (
-                              <span className="text-slate-300">-</span>
+                              <span className="text-slate-500">-</span>
                             )}
                           </td>
 
                           {/* Delete Item action */}
                           <td className="py-3 px-4 text-center">
                             <button
-                              onClick={(e) => handleDeleteDoc(doc.id, e)}
-                              className="p-1 text-slate-300 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCustomDocDeleteModal({ isOpen: true, docId: doc.id });
+                              }}
+                              className="p-1 px-2 text-rose-450 hover:text-rose-600 hover:bg-rose-950/20 rounded-lg transition-colors cursor-pointer"
                               title="حذف البند نهائيا"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -4133,11 +4155,7 @@ export default function App() {
                             <>
                               <button
                                 onClick={() => {
-                                  const newName = prompt(`تعديل اسم المشروع "${projectName}" إلى:`, projectName);
-                                  if (newName && newName.trim() && newName.trim() !== projectName) {
-                                    handleRenameProject(projectName, newName.trim());
-                                    setSelectedFolderProject(newName.trim());
-                                  }
+                                  setCustomProjectRenameModal({ isOpen: true, projectName, inputValue: projectName });
                                 }}
                                 className="px-4 py-2 bg-amber-50 hover:bg-amber-105 active:scale-95 text-amber-700 font-extrabold rounded-xl text-xs border border-amber-200 cursor-pointer flex items-center gap-1.5 transition-all shadow-3xs"
                               >
@@ -4146,8 +4164,7 @@ export default function App() {
                               </button>
                               <button
                                 onClick={() => {
-                                  const choice = confirm(`هل تريد حذف ملفات المستندات المرفقة مع مشروع "${projectName}" أيضاً بشكل نهائي؟\n\n- موافق (OK): حذف المشروع مع جميع ملفاته المعلقة.\n- إلغاء (Cancel): حذف اسم المشروع من القائمة فقط ونقل معاملاته إلى مجلد "عام".`);
-                                  handleDeleteProject(projectName, choice);
+                                  setCustomProjectDeleteModal({ isOpen: true, projectName });
                                 }}
                                 className="px-4 py-2 bg-rose-50 hover:bg-rose-105 active:scale-95 text-rose-700 font-extrabold rounded-xl text-xs border border-rose-250 cursor-pointer flex items-center gap-1.5 transition-all shadow-3xs"
                               >
@@ -4979,10 +4996,7 @@ export default function App() {
                                   title="تعديل اسم المشروع"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const newName = prompt(`تعديل اسم المشروع "${projectName}" إلى:`, projectName);
-                                    if (newName && newName.trim() && newName.trim() !== projectName) {
-                                      handleRenameProject(projectName, newName.trim());
-                                    }
+                                    setCustomProjectRenameModal({ isOpen: true, projectName, inputValue: projectName });
                                   }}
                                   className="p-1.5 bg-white hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg border border-slate-200 hover:border-amber-200 transition-all shadow-3xs"
                                 >
@@ -4992,8 +5006,7 @@ export default function App() {
                                   title="حذف المشروع"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const choice = confirm(`هل تريد حذف ملفات المستندات المرفقة مع مشروع "${projectName}" أيضاً بشكل نهائي؟\n\n- موافق (OK): حذف المشروع مع جميع ملفاته المعلقة.\n- إلغاء (Cancel): حذف اسم المشروع من القائمة فقط ونقل معاملاته إلى مجلد "عام".`);
-                                    handleDeleteProject(projectName, choice);
+                                    setCustomProjectDeleteModal({ isOpen: true, projectName });
                                   }}
                                   className="p-1.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 hover:border-rose-250 transition-all shadow-3xs"
                                 >
@@ -6724,6 +6737,172 @@ export default function App() {
 
               </div>
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 9c. PREMIUM CUSTOM PROJECTS & DOCUMENTS OPERATIONS MODALS */}
+      <AnimatePresence>
+        {customProjectRenameModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-md w-full border border-slate-150 relative text-right"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 mb-4 text-amber-600 border-b border-amber-100 pb-3">
+                <Edit className="w-5.5 h-5.5 shrink-0" />
+                <h3 className="text-base font-black text-slate-900">
+                  تعديل اسم المشروع / المجلد
+                </h3>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 mb-2">الاسم الحالي للمشروع:</label>
+                <div className="px-3 py-2 bg-slate-50 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold mb-4">
+                  {customProjectRenameModal.projectName}
+                </div>
+
+                <label className="block text-xs font-bold text-slate-500 mb-2">الاسم الجديد للمشروع:</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={customProjectRenameModal.inputValue}
+                  onChange={(e) => setCustomProjectRenameModal(prev => ({ ...prev, inputValue: e.target.value }))}
+                  placeholder="ادخل الاسم الجديد هنا..."
+                  className="w-full px-4 py-2 text-sm text-slate-800 bg-[#FCFDFE] border border-slate-200 rounded-xl focus:outline-hidden focus:border-sky-500 focus:ring-2 focus:ring-sky-100 placeholder-slate-400 font-semibold"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 mt-4">
+                <button
+                  onClick={() => {
+                    if (customProjectRenameModal.inputValue.trim()) {
+                      handleRenameProject(customProjectRenameModal.projectName, customProjectRenameModal.inputValue.trim());
+                      setCustomProjectRenameModal({ isOpen: false, projectName: '', inputValue: '' });
+                    }
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  حفظ الاسم الجديد ✅
+                </button>
+                <button
+                  onClick={() => setCustomProjectRenameModal({ isOpen: false, projectName: '', inputValue: '' })}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                >
+                  إلغاء ❌
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {customProjectDeleteModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-lg w-full border border-slate-150 relative text-right"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 mb-4 text-rose-600 border-b border-rose-100 pb-3">
+                <AlertCircle className="w-5.5 h-5.5 shrink-0" />
+                <h3 className="text-base font-black text-slate-900">
+                  إجراء حذف مشروع: "{customProjectDeleteModal.projectName}"
+                </h3>
+              </div>
+
+              <p className="text-xs text-slate-600 mb-5 leading-relaxed font-bold">
+                لقد طالبت بإزالة المشروع <span className="text-rose-600">"{customProjectDeleteModal.projectName}"</span> من قائمة المشاريع النشطة. يرجى اختيار أحد الخيارين التاليين للتعامل مع المستندات المرفوعة مسبقاً والمنسوبة لهذا المشروع:
+              </p>
+
+              <div className="grid grid-cols-1 gap-3 mb-4">
+                <button
+                  onClick={() => {
+                    handleDeleteProject(customProjectDeleteModal.projectName, false, true);
+                    setCustomProjectDeleteModal({ isOpen: false, projectName: '' });
+                  }}
+                  className="p-4 bg-amber-50/50 hover:bg-amber-50 text-slate-800 border border-amber-150 hover:border-amber-300 rounded-2xl text-right transition-all flex items-start gap-3 cursor-pointer group"
+                >
+                  <div className="p-2 bg-amber-100 text-amber-700 rounded-xl shrink-0 group-hover:bg-amber-200 transition-colors">
+                    <Folder className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 mb-0.5 font-sans">حذف عنوان المشروع ونقل ملفاته إلى مجلد "عام" 📁</h4>
+                    <p className="text-[11px] text-slate-500 font-medium font-sans">سيتم تحويل ارتباط جميع الفواتير وعروض الأسعار المعلقة لهذا المشروع إلى المجلد العام للمحافظة على بياناتك المالية مجمعة.</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleDeleteProject(customProjectDeleteModal.projectName, true, true);
+                    setCustomProjectDeleteModal({ isOpen: false, projectName: '' });
+                  }}
+                  className="p-4 bg-rose-50/40 hover:bg-rose-50 text-slate-800 border border-rose-150 hover:border-rose-300 rounded-2xl text-right transition-all flex items-start gap-3 cursor-pointer group"
+                >
+                  <div className="p-2 bg-rose-100 text-rose-700 rounded-xl shrink-0 group-hover:bg-rose-200 transition-colors">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-rose-800 mb-0.5 font-sans">حذف المشروع مع جميع ملفاته المعلقة نهائياً ⚠️</h4>
+                    <p className="text-[11px] text-slate-500 font-medium font-sans">سيتم حذف هذا السجل نهائياً بالإضافة للقيام بعملية تدمير فعلية لكل المعاملات والمستندات الورقية والملفات المرفوعة المرتبطة به.</p>
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  onClick={() => setCustomProjectDeleteModal({ isOpen: false, projectName: '' })}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                >
+                  إلغاء التراجع ❌
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {customDocDeleteModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full border border-slate-150 relative text-right"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 mb-4 text-rose-600 border-b border-rose-100 pb-3">
+                <Trash2 className="w-5.5 h-5.5 shrink-0" />
+                <h3 className="text-base font-black text-slate-900">
+                  تأكيد حذف المستند / السجل
+                </h3>
+              </div>
+
+              <p className="text-xs text-slate-600 mb-5 leading-relaxed font-bold">
+                هل أنت متأكد تماماً من رغبتك في حذف هذا السجل والمستند المرتبط به نهائياً وبدون تراجع؟ لا يمكن استعراض البيانات المفقودة مرة أخرى بمجرد الحفظ.
+              </p>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 mt-4">
+                <button
+                  onClick={() => {
+                    handleDeleteDoc(customDocDeleteModal.docId, null, true);
+                    setCustomDocDeleteModal({ isOpen: false, docId: '' });
+                  }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  حذف السجل نهائياً 🗑️
+                </button>
+                <button
+                  onClick={() => setCustomDocDeleteModal({ isOpen: false, docId: '' })}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                >
+                  إلغاء ❌
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
