@@ -19,6 +19,8 @@ import {
   AlertCircle, 
   Trash2, 
   Plus, 
+  Edit,
+  Pencil,
   Search, 
   Send, 
   Bell, 
@@ -567,6 +569,70 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error adding project:', err);
+    }
+  };
+
+  const handleRenameProject = async (oldName: string, newName: string) => {
+    if (!oldName || !newName || !newName.trim()) return;
+    try {
+      setLoading(true);
+      const res = await fetch('/api/projects/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName: newName.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.projects) {
+          setProjectsList(data.projects);
+          if (selectedFolderProject === oldName) {
+            setSelectedFolderProject(newName.trim());
+          }
+          await fetchData(false);
+        }
+      } else {
+        const errorData = await res.json();
+        alert(errorData.error || 'فشل تعديل الاسم');
+      }
+    } catch (err) {
+      console.error('Error renaming project:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteProject = async (projectName: string, deleteDocuments: boolean = false) => {
+    if (!projectName) return;
+    const confirmMsg = deleteDocuments 
+      ? `هل أنت متأكد تماماً من حذف مشروع "${projectName}" وحذف جميع ملفاته ومستنداته المرفقة بشكل نهائي؟` 
+      : `هل تريد إزالة مشروع "${projectName}" من قائمة المراجع وتحويل جميع معاملاته ومستنداته المسجلة إلى مشروع "عام"؟`;
+    
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setLoading(true);
+      const res = await fetch('/api/projects/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: projectName, deleteDocuments })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.projects) {
+          setProjectsList(data.projects);
+          if (selectedFolderProject === projectName) {
+            setSelectedFolderProject(null);
+          }
+          await fetchData(false);
+        }
+      } else {
+        const errorData = await res.json();
+        alert(errorData.error || 'فشل حذف المشروع');
+      }
+    } catch (err) {
+      console.error('Error deleting project:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -4062,10 +4128,37 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          {projectName !== 'عام' && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  const newName = prompt(`تعديل اسم المشروع "${projectName}" إلى:`, projectName);
+                                  if (newName && newName.trim() && newName.trim() !== projectName) {
+                                    handleRenameProject(projectName, newName.trim());
+                                    setSelectedFolderProject(newName.trim());
+                                  }
+                                }}
+                                className="px-4 py-2 bg-amber-50 hover:bg-amber-105 active:scale-95 text-amber-700 font-extrabold rounded-xl text-xs border border-amber-200 cursor-pointer flex items-center gap-1.5 transition-all shadow-3xs"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                                <span>تعديل اسم المشروع</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const choice = confirm(`هل تريد حذف ملفات المستندات المرفقة مع مشروع "${projectName}" أيضاً بشكل نهائي؟\n\n- موافق (OK): حذف المشروع مع جميع ملفاته المعلقة.\n- إلغاء (Cancel): حذف اسم المشروع من القائمة فقط ونقل معاملاته إلى مجلد "عام".`);
+                                  handleDeleteProject(projectName, choice);
+                                }}
+                                className="px-4 py-2 bg-rose-50 hover:bg-rose-105 active:scale-95 text-rose-700 font-extrabold rounded-xl text-xs border border-rose-250 cursor-pointer flex items-center gap-1.5 transition-all shadow-3xs"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>حذف المشروع</span>
+                              </button>
+                            </>
+                          )}
                           <button 
                             onClick={() => setSelectedFolderProject(null)}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs border border-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors"
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-205 text-slate-700 font-extrabold rounded-xl text-xs border border-slate-250 cursor-pointer flex items-center gap-1.5 transition-colors"
                           >
                             <ArrowLeft className="w-3.5 h-3.5" />
                             <span>عرض جميع المجلدات</span>
@@ -4879,6 +4972,36 @@ export default function App() {
                             onClick={() => setSelectedFolderProject(projectName)}
                             className="group relative bg-[#FCFDFE] hover:bg-white border border-slate-150 hover:border-sky-500 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
                           >
+                            {/* View/Edit/Delete Overlay controls in the top-left */}
+                            {projectName !== 'عام' && (
+                              <div className="absolute top-2.5 left-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  title="تعديل اسم المشروع"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const newName = prompt(`تعديل اسم المشروع "${projectName}" إلى:`, projectName);
+                                    if (newName && newName.trim() && newName.trim() !== projectName) {
+                                      handleRenameProject(projectName, newName.trim());
+                                    }
+                                  }}
+                                  className="p-1.5 bg-white hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg border border-slate-200 hover:border-amber-200 transition-all shadow-3xs"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                                <button
+                                  title="حذف المشروع"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const choice = confirm(`هل تريد حذف ملفات المستندات المرفقة مع مشروع "${projectName}" أيضاً بشكل نهائي؟\n\n- موافق (OK): حذف المشروع مع جميع ملفاته المعلقة.\n- إلغاء (Cancel): حذف اسم المشروع من القائمة فقط ونقل معاملاته إلى مجلد "عام".`);
+                                    handleDeleteProject(projectName, choice);
+                                  }}
+                                  className="p-1.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 hover:border-rose-250 transition-all shadow-3xs"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+
                             {/* Visual Folder Tab-flap Overlay */}
                             <div className="absolute top-0 right-6 w-20 h-1.5 bg-amber-400 rounded-b group-hover:bg-sky-500 transition-all duration-300" />
                             

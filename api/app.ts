@@ -4,19 +4,19 @@ import fs from "fs";
 import multer from "multer";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
+import mongoose from "mongoose";
 
 // Load environment variables
 dotenv.config();
 
-const app = express();
-const PORT = 3000;
-
-// Set up directories for data storage and classified receipts/orders
-import mongoose from "mongoose";
-// حل أخطاء البناء السحابي وإعادة توجيه مجلدات الملفات المرفوعة إلى البيئة المؤقتة لـ Vercel
+// مجلدات تخزين البيانات وحل أخطاء البناء السحابي وإعادة توجيه مجلدات الملفات
 const DATA_DIR = "/tmp";
 const ORGANIZED_DIR = path.join(DATA_DIR, "organized");
 const DB_FILE = path.join(DATA_DIR, "db.json");
+const ORIGINAL_DB_FILE = path.join(process.cwd(), "data", "db.json");
+
+const app = express();
+const PORT = 3000;
 
 // التأكد من تهيئة المجلدات حتى لا تضرب الـ Routes المسؤولة عن معالجة الفواتير
 try {
@@ -25,15 +25,19 @@ try {
 } catch (e) {
   console.warn("Could not create directories in /tmp:", e);
 }
-// 1. الاتصال بقاعدة البيانات السحابية باستخدام الرابط من إعدادات Vercel
-const MONGODB_URI = process.env.MONGODB_URI;
-if (MONGODB_URI) {
-  mongoose.connect(MONGODB_URI)
-    .then(() => console.log("Connected to MongoDB Atlas successfully!"))
-    .catch((err) => console.error("MongoDB connection error:", err));
-} else {
-  console.warn("MONGODB_URI is not defined in environment variables.");
-}
+
+// 1. الاتصال بقاعدة البيانات السحابية مباشرة باستخدام رابط الاتصال الموفر
+const MONGODB_URI = "mongodb+srv://narutoluffy201_db_user:016135@cluster0.zlje0ku.mongodb.net/?appName=Cluster0";
+mongoose.connect(MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000, // حد أقصى للاتصال 5 ثوانٍ لمنع تعليق المشروع في حالة عدم إضافة الـ IP الصحيح لقائمة السماح
+  socketTimeoutMS: 10000,
+})
+  .then(() => console.log("Connected to MongoDB Atlas successfully!"))
+  .catch((err) => {
+    console.warn("⚠️ لم نتمكن من الاتصال بـ MongoDB Atlas (قد يكون سبب ذلك عدم إضافة عنوان IP إلى قائمة المسموح بهم):");
+    console.warn(err.message);
+    console.warn("📌 لا تقلق! الخدمة مبرمجة لتعمل تلقائياً وبكفاءة كاملة على التخزين المحلي الآمن (local db.json /tmp).");
+  });
 
 // 2. إنشاء الـ Schema والـ Model بدلاً من ملف db.json القديم
 const projectSchema = new mongoose.Schema({
@@ -41,30 +45,102 @@ const projectSchema = new mongoose.Schema({
 });
 const Project = mongoose.model("Project", projectSchema);
 
-// 3. مصفوفة المشاريع الافتراضية الخاصة بك
+// 3. مصفوفة المشاريع الافتراضية الخاصة بك بالكامل دون أي نقص
 const defaultProjects = [
-  "Villette A&B", "Villette C&D", "Azalia", "Block 39", "EDNC", 
-  "June - Main Gate Landscape", "June - Main Gate", "Al-brouj", "June",
-  "City Stars Al Sahel", "Allegria", "ETAPA", "Strip 2 Mall", "Training Pool", "THE ESTATE"
+  "Villette A&B",
+  "Villette C&D",
+  "Azalia",
+  "Block 39",
+  "EDNC",
+  "June - Main Gate Landscape",
+  "June - Main Gate",
+  "Al-brouj",
+  "June",
+  "City Stars Al Sahel",
+  "Allegria",
+  "ETAPA",
+  "Strip 2 Mall",
+  "Training Pool",
+  "Al Brouj - New Buffer",
+  "Hyde Park",
+  "Al-Brouj - CGP 1.14A",
+  "JUNE Parcel 01 - Maintrunk",
+  "THE ESTATES"
 ];
 
-// 4. دالة تلقائية لملء قاعدة البيانات بالمشاريع لأول مرة فقط
+// 4. دالة تلقائية لملء قاعدة البيانات بالمشاريع لأول مرة وتحديث المشاريع الناقصة
 async function seedDatabase() {
   try {
     if (mongoose.connection.readyState === 1) {
-      const count = await Project.countDocuments();
-      if (count === 0) {
-        await Project.insertMany(defaultProjects.map(name => ({ name })));
-        console.log("Database seeded with default projects successfully.");
+      // حذف المشاريع المكررة التي طلبها المستخدم نهائياً من MongoDB Atlas
+      const duplicatesToRemove = ["Al-brouj - New Buffer", "strip 2 Mall", "THE ESTATE"];
+      await Project.deleteMany({ name: { $in: duplicatesToRemove } });
+      console.log("Successfully removed duplicate projects from MongoDB Atlas.");
+
+      for (const name of defaultProjects) {
+        const exists = await Project.findOne({ name });
+        if (!exists) {
+          await Project.create({ name });
+          console.log(`Successfully added project to MongoDB: ${name}`);
+        }
       }
+      console.log("Database projects synchronized with default projects successfully.");
     }
   } catch (err) {
     console.error("Error seeding database:", err);
   }
 }
 
-// تشغيل الدالة بمجرد تمام الاتصال
-mongoose.connection.once("open", seedDatabase);
+// تشغيل الدالة بمجرد تمام الاتصال والمزامنة لضمان استرجاع كل المشاريع من أطلس
+mongoose.connection.once("open", async () => {
+  await seedDatabase();
+  try {
+    const dbProjects = await Project.find({}, "name");
+    const names = dbProjects.map(p => p.name);
+    if (names.length > 0) {
+      const db = getDb();
+      let changed = false;
+
+      // تهيئة وحذف المشاريع المكررة من قائمة المشاريع الفعالة الحالية ونقل وثائقها للأسماء النظيفة المقابلة
+      const duplicatesMap: { [key: string]: string } = {
+        "Al-brouj - New Buffer": "Al Brouj - New Buffer",
+        "strip 2 Mall": "Strip 2 Mall",
+        "THE ESTATE": "THE ESTATES"
+      };
+
+      if (db.projects) {
+        const originalLength = db.projects.length;
+        db.projects = db.projects.filter((p: string) => !["Al-brouj - New Buffer", "strip 2 Mall", "THE ESTATE"].includes(p));
+        if (db.projects.length !== originalLength) {
+          changed = true;
+        }
+      }
+
+      if (db.documents && Array.isArray(db.documents)) {
+        db.documents.forEach((doc: any) => {
+          if (doc.projectName && duplicatesMap[doc.projectName]) {
+            console.log(`Mapping document ${doc.id} project name from "${doc.projectName}" to "${duplicatesMap[doc.projectName]}"`);
+            doc.projectName = duplicatesMap[doc.projectName];
+            changed = true;
+          }
+        });
+      }
+
+      for (const name of names) {
+        if (!db.projects.includes(name)) {
+          db.projects.push(name);
+          changed = true;
+        }
+      }
+      if (changed) {
+        saveDb(db);
+        console.log("Synchronized missing projects from MongoDB Atlas to active local DB and cleaned duplicates.");
+      }
+    }
+  } catch (err) {
+    console.error("Error syncing projects from Atlas to active DB:", err);
+  }
+});
 
 const defaultSuppliers = [
   "النيل للتوريدات المعمارية",
@@ -122,10 +198,15 @@ const defaultDb = {
   suppliers: defaultSuppliers
 };
 
-// Populate initial default DB on disk if writable
+// Populate initial DB on disk from committed repository template if available
 try {
   if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(defaultDb, null, 2), "utf-8");
+    if (fs.existsSync(ORIGINAL_DB_FILE)) {
+      fs.copyFileSync(ORIGINAL_DB_FILE, DB_FILE);
+      console.log("Successfully copied original committed db.json to /tmp/db.json");
+    } else {
+      fs.writeFileSync(DB_FILE, JSON.stringify(defaultDb, null, 2), "utf-8");
+    }
   }
 } catch (e) {
   console.warn("Could not write initial default DB file (expected in read-only environments):", e);
@@ -135,8 +216,85 @@ try {
 let memoryDb: any = null;
 
 // Helpers to read/write database state
+function cleanDatabaseDiagnosticsInternal(db: any) {
+  if (!db) return;
+  let changed = false;
+
+  const duplicatesMap: { [key: string]: string } = {
+    "Al-brouj - New Buffer": "Al Brouj - New Buffer",
+    "Al-Brouj - New Buffer": "Al Brouj - New Buffer",
+    "al-brouj - new buffer": "Al Brouj - New Buffer",
+    "strip 2 Mall": "Strip 2 Mall",
+    "strip 2 mall": "Strip 2 Mall",
+    "THE ESTATE": "THE ESTATES",
+    "the estate": "THE ESTATES",
+    "THE ESTATES": "THE ESTATES"
+  };
+
+  const duplicatesToRemove = [
+    "Al-brouj - New Buffer", 
+    "Al-Brouj - New Buffer",
+    "al-brouj - new buffer",
+    "strip 2 Mall", 
+    "strip 2 mall",
+    "THE ESTATE",
+    "the estate"
+  ];
+
+  if (db.projects && Array.isArray(db.projects)) {
+    const originalCount = db.projects.length;
+    // 1. Filter out known duplicate names
+    db.projects = db.projects.filter((p: string) => {
+      if (!p) return false;
+      const trimmed = p.trim();
+      return !duplicatesToRemove.includes(trimmed);
+    });
+
+    // 2. Case-insensitive deduplication of existing projects:
+    const seen = new Set<string>();
+    const uniqueProjects: string[] = [];
+    db.projects.forEach((p: string) => {
+      if (!p) return;
+      const lowercase = p.trim().toLowerCase();
+      if (!seen.has(lowercase)) {
+        seen.add(lowercase);
+        uniqueProjects.push(p.trim());
+      }
+    });
+    db.projects = uniqueProjects;
+
+    if (db.projects.length !== originalCount) {
+      changed = true;
+    }
+  }
+
+  // 3. Update documents that might be assigned to duplicate names
+  if (db.documents && Array.isArray(db.documents)) {
+    db.documents.forEach((doc: any) => {
+      if (doc.projectName) {
+        const trimmed = doc.projectName.trim();
+        if (duplicatesMap[trimmed]) {
+          console.log(`[Auto-Clean] Redirecting doc ${doc.id} from "${doc.projectName}" to "${duplicatesMap[trimmed]}"`);
+          doc.projectName = duplicatesMap[trimmed];
+          changed = true;
+        }
+      }
+    });
+  }
+
+  if (changed) {
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+      console.log("[Auto-Clean] Database duplicates cleaned up and synchronized successfully.");
+    } catch (e) {
+      console.warn("Could not save auto-cleaned DB:", e);
+    }
+  }
+}
+
 function getDb() {
   if (memoryDb) {
+    cleanDatabaseDiagnosticsInternal(memoryDb);
     return memoryDb;
   }
   try {
@@ -146,9 +304,13 @@ function getDb() {
     if (!parsed.projects) {
       parsed.projects = [...defaultProjects];
       changed = true;
-    } else if (!parsed.projects.includes("THE ESTATE")) {
-      parsed.projects.push("THE ESTATE");
-      changed = true;
+    } else {
+      for (const p of defaultProjects) {
+        if (!parsed.projects.includes(p)) {
+          parsed.projects.push(p);
+          changed = true;
+        }
+      }
     }
     if (!parsed.suppliers) {
       parsed.suppliers = [...defaultSuppliers];
@@ -160,10 +322,12 @@ function getDb() {
       } catch (e) {}
     }
     memoryDb = parsed;
+    cleanDatabaseDiagnosticsInternal(memoryDb);
     return parsed;
   } catch (err) {
     const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
     memoryDb = fallback;
+    cleanDatabaseDiagnosticsInternal(memoryDb);
     return fallback;
   }
 }
@@ -663,7 +827,7 @@ app.get("/api/documents", (req, res) => {
   });
 });
 
-app.post("/api/projects/add", (req, res) => {
+app.post("/api/projects/add", async (req, res) => {
   try {
     const { name } = req.body;
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -675,10 +839,126 @@ app.post("/api/projects/add", (req, res) => {
     if (!projects.some((p: string) => p.toLowerCase() === cleanName.toLowerCase())) {
       db.projects = [...projects, cleanName];
       saveDb(db);
+
+      // Add to MongoDB Atlas as well if connected
+      if (mongoose.connection.readyState === 1) {
+        try {
+          const exists = await Project.findOne({ name: cleanName });
+          if (!exists) {
+            await Project.create({ name: cleanName });
+            console.log(`Successfully auto-added project to MongoDB: ${cleanName}`);
+          }
+        } catch (mErr: any) {
+          console.warn("MongoDB auto-update on project add failed:", mErr.message);
+        }
+      }
     }
     res.json({ success: true, projects: db.projects });
   } catch (error: any) {
     console.error("Add project error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/rename", async (req, res) => {
+  try {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName || typeof oldName !== "string" || typeof newName !== "string") {
+      return res.status(400).json({ error: "الاسم القديم والجديد مطلوبان" });
+    }
+    const cleanOld = oldName.trim();
+    const cleanNew = newName.trim();
+    if (!cleanOld || !cleanNew) {
+      return res.status(400).json({ error: "الأسماء غير صالحة" });
+    }
+    
+    const db = getDb();
+    
+    // Rename in list
+    if (db.projects) {
+      db.projects = db.projects.map((p: string) => p === cleanOld ? cleanNew : p);
+    }
+    
+    // Rename in documents
+    if (db.documents && Array.isArray(db.documents)) {
+      db.documents.forEach((doc: any) => {
+        if (doc.projectName === cleanOld) {
+          doc.projectName = cleanNew;
+        }
+      });
+    }
+    
+    saveDb(db);
+    
+    // Update in MongoDB if connected
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await Project.updateOne({ name: cleanOld }, { name: cleanNew });
+      } catch (err) {
+        console.error("MongoDB Project update error:", err);
+      }
+    }
+    
+    res.json({ success: true, projects: db.projects });
+  } catch (error: any) {
+    console.error("Rename project error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/delete", async (req, res) => {
+  try {
+    const { name, deleteDocuments } = req.body;
+    if (!name || typeof name !== "string") {
+      return res.status(400).json({ error: "اسم المشروع مطلوب" });
+    }
+    const cleanName = name.trim();
+    const db = getDb();
+    
+    // Remove from projects list
+    if (db.projects) {
+      db.projects = db.projects.filter((p: string) => p !== cleanName);
+    }
+    
+    // Handle associated documents
+    if (db.documents && Array.isArray(db.documents)) {
+      if (deleteDocuments === true) {
+        db.documents.forEach((doc: any) => {
+          if (doc.projectName === cleanName && doc.classifiedPath) {
+            try {
+              const absPath = path.join(DATA_DIR, doc.classifiedPath.replace(/^\/data\//, ""));
+              if (fs.existsSync(absPath)) {
+                fs.unlinkSync(absPath);
+              }
+            } catch (err) {
+              console.warn("Could not delete file associated with project:", err);
+            }
+          }
+        });
+        db.documents = db.documents.filter((doc: any) => doc.projectName !== cleanName);
+      } else {
+        db.documents.forEach((doc: any) => {
+          if (doc.projectName === cleanName) {
+            doc.projectName = "عام";
+          }
+        });
+      }
+    }
+    
+    saveDb(db);
+    
+    // Delete in MongoDB if connected
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await Project.deleteOne({ name: cleanName });
+      } catch (err) {
+        console.error("MongoDB Project delete error:", err);
+      }
+    }
+    
+    res.json({ success: true, projects: db.projects });
+  } catch (error: any) {
+    console.error("Delete project error:", error);
     res.status(500).json({ error: error.message });
   }
 });
