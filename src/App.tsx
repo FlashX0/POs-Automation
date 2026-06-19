@@ -383,6 +383,7 @@ export default function App() {
   const [newProjectInput, setNewProjectInput] = useState<string>('');
   const [suppliersList, setSuppliersList] = useState<string[]>([]);
   const [newSupplierInput, setNewSupplierInput] = useState<string>('');
+  const [logoError, setLogoError] = useState<boolean>(false);
   
   // Navigation & Control States
   const [activeTab, setActiveTab] = useState<'spreadsheet' | 'files' | 'projects'>('spreadsheet');
@@ -1838,6 +1839,44 @@ export default function App() {
     setDocuments(updatedDocsList);
   };
 
+  // Update a single field inside print document's line-items from the print sheet and sync with state
+  const handleUpdatePrintItem = (itemIdx: number, field: keyof LineItem | 'brand' | 'unit', value: any) => {
+    const docId = printDocId || (selectedDoc ? selectedDoc.id : null);
+    if (!docId) return;
+    
+    setDocuments(prevDocs => {
+      const currentDoc = prevDocs.find(d => d.id === docId);
+      if (!currentDoc) return prevDocs;
+      
+      const updatedDoc = { ...currentDoc };
+      const updatedItems = [...(updatedDoc.items || [])];
+      const updatedItem = { ...updatedItems[itemIdx] };
+      
+      if (field === 'quantity') {
+        updatedItem.quantity = Math.max(0, parseFloat(value) || 0);
+        updatedItem.total = updatedItem.quantity * (updatedItem.unitPrice || 0);
+      } else if (field === 'unitPrice') {
+        updatedItem.unitPrice = Math.max(0, parseFloat(value) || 0);
+        updatedItem.total = (updatedItem.quantity || 0) * updatedItem.unitPrice;
+      } else {
+        (updatedItem as any)[field] = value;
+      }
+      
+      updatedItems[itemIdx] = updatedItem;
+      updatedDoc.items = updatedItems;
+      
+      // Recalculate invoice overall totalAmount
+      updatedDoc.totalAmount = updatedItems.reduce((sum, pitem) => sum + Number(((pitem.quantity || 0) * (pitem.unitPrice || 0)).toFixed(2)), 0);
+      
+      // If this is also the selected document in the drawer, sync too!
+      if (selectedDoc && selectedDoc.id === docId) {
+        setSelectedDoc(updatedDoc);
+      }
+      
+      return prevDocs.map(d => d.id === docId ? updatedDoc : d);
+    });
+  };
+
   // Update a top-level field or multiple fields of the document inside the drawer and sync with state
   const handleUpdateDrawerField = (fieldOrFields: keyof ProcessedDocument | Partial<ProcessedDocument>, value?: any) => {
     setSelectedDoc(prev => {
@@ -2807,30 +2846,83 @@ export default function App() {
                                 <td className="border-e border-slate-200 py-3.5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] align-middle">{idx + 1}</td>
                                 <td className="border-e border-slate-200 py-3.5 px-3 min-w-[260px] align-middle text-center">
                                   <div 
-                                    dir={printDirectionParam === 'rtl' ? 'rtl' : 'ltr'}
-                                    className="font-bold text-black leading-relaxed text-[13px] whitespace-normal break-words w-full text-center align-middle" 
+                                    contentEditable={true}
+                                    suppressContentEditableWarning={true}
+                                    dir="auto"
+                                    className="font-bold text-black leading-relaxed text-[13px] whitespace-normal break-words w-full text-center align-middle focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1 transition-colors" 
                                     title={item.description}
+                                    onBlur={(e) => {
+                                      const text = e.currentTarget.innerText || "";
+                                      handleUpdatePrintItem(idx, 'description', text);
+                                    }}
                                   >
                                     {item.description ? convertEasternToWesternNumerals(item.description.replace(/\\"/g, '"').replace(/\\/g, '').trim()) : ""}
                                   </div>
                                 </td>
                                 {hasAnyBrand && (
                                   <td className="border-e border-slate-200 py-3.5 text-black font-bold w-24 min-w-[96px] max-w-[96px] break-words whitespace-normal font-sans text-center align-middle">
-                                    {item.brand ? convertEasternToWesternNumerals(item.brand) : "غير محدد"}
+                                    <div
+                                      contentEditable={true}
+                                      suppressContentEditableWarning={true}
+                                      dir="auto"
+                                      className="w-full text-center focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1"
+                                      onBlur={(e) => {
+                                        const text = e.currentTarget.innerText || "";
+                                        handleUpdatePrintItem(idx, 'brand', text);
+                                      }}
+                                    >
+                                      {item.brand ? convertEasternToWesternNumerals(item.brand) : "غير محدد"}
+                                    </div>
                                   </td>
                                 )}
                                 <td className="border-e border-slate-200 py-3.5 text-black font-bold w-16 min-w-[64px] max-w-[64px] break-words whitespace-normal text-center align-middle">
-                                  {item.unit ? convertEasternToWesternNumerals(item.unit) : "عدد"}
+                                  <div
+                                    contentEditable={true}
+                                    suppressContentEditableWarning={true}
+                                    dir="auto"
+                                    className="w-full text-center focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1"
+                                    onBlur={(e) => {
+                                      const text = e.currentTarget.innerText || "";
+                                      handleUpdatePrintItem(idx, 'unit', text);
+                                    }}
+                                  >
+                                    {item.unit ? convertEasternToWesternNumerals(item.unit) : "عدد"}
+                                  </div>
                                 </td>
                                 <td className="border-e border-slate-200 py-3.5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle">
-                                  {item.quantity || "1"}
+                                  <div
+                                    contentEditable={true}
+                                    suppressContentEditableWarning={true}
+                                    className="w-full text-center font-mono focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1"
+                                    onBlur={(e) => {
+                                      const cleanText = e.currentTarget.innerText.replace(/,/g, '').trim();
+                                      const val = parseFloat(cleanText) || 0;
+                                      handleUpdatePrintItem(idx, 'quantity', val);
+                                    }}
+                                  >
+                                    {item.quantity || "1"}
+                                  </div>
                                 </td>
                                 <td className="border-e border-slate-200 py-3.5 font-bold text-black w-24 min-w-[96px] max-w-[96px] text-center align-middle font-mono text-[12px]">
-                                  {(() => {
-                                    const basePrice = item.unitPrice || 0;
-                                    const displayedPrice = taxAddPercentEnabled ? basePrice * (1 + taxAddPercentRate / 100) : basePrice;
-                                    return displayedPrice.toLocaleString('en-US', { minimumFractionDigits: 2 });
-                                  })()}
+                                  <div
+                                    contentEditable={true}
+                                    suppressContentEditableWarning={true}
+                                    className="w-full text-center font-mono focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1"
+                                    onBlur={(e) => {
+                                      const cleanText = e.currentTarget.innerText.replace(/[^\d.]/g, '').trim();
+                                      let val = parseFloat(cleanText) || 0;
+                                      if (taxAddPercentEnabled) {
+                                        val = val / (1 + taxAddPercentRate / 100);
+                                      }
+                                      handleUpdatePrintItem(idx, 'unitPrice', val);
+                                    }}
+                                  >
+                                    {(() => {
+                                      const basePrice = item.unitPrice || 0;
+                                      const displayedPrice = taxAddPercentEnabled ? basePrice * (1 + taxAddPercentRate / 100) : basePrice;
+                                      return displayedPrice.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                    })()}
+                                  </div>
                                 </td>
                                 <td className="py-3.5 w-32 min-w-[128px] max-w-[128px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono">
                                   {(() => {
@@ -2866,7 +2958,7 @@ export default function App() {
                               {/* 1. Subtotal Row (Always shown, includes VAT directly if taxAddPercentEnabled) */}
                               <tr className="bg-[#F9FAFB] border-t border-slate-300 font-bold text-slate-900 text-center select-none animate-none">
                                 {showExcelGrid && (
-                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <td colSpan={2} className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {10 + printTotalBaseCount}
                                   </td>
                                 )}
@@ -2882,7 +2974,7 @@ export default function App() {
                               {printDoc.withholdingTaxEnabled && (
                                 <tr className="bg-[#FFFDF3] border-t border-slate-200 text-slate-700 text-center select-none font-semibold text-xs font-sans">
                                   {showExcelGrid && (
-                                    <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                    <td colSpan={2} className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                       {11 + printTotalBaseCount}
                                     </td>
                                   )}
@@ -2902,7 +2994,7 @@ export default function App() {
                               {printDoc.withholdingTaxEnabled && (
                                 <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none font-sans">
                                   {showExcelGrid && (
-                                    <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                    <td colSpan={2} className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                       {12 + printTotalBaseCount}
                                     </td>
                                   )}
@@ -3034,13 +3126,18 @@ export default function App() {
             
             {/* Title & Brand */}
             <div className="flex items-center gap-3 text-right">
-              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-sky-500/50 shadow-md shadow-sky-600/10 shrink-0">
-                <img 
-                  src={deltaLogo} 
-                  alt="Delta For Road Construction Logo" 
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
+              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-sky-500/50 shadow-md shadow-sky-600/10 shrink-0 bg-sky-950 flex items-center justify-center font-bold text-sky-400">
+                {!logoError ? (
+                  <img 
+                    src={deltaLogo} 
+                    alt="Delta For Road Construction Logo" 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={() => setLogoError(true)}
+                  />
+                ) : (
+                  <span className="text-sm font-black tracking-wider">DELTA</span>
+                )}
               </div>
               <div>
                 <h1 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
