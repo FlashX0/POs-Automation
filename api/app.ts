@@ -74,7 +74,8 @@ const defaultProjects = [
   "THE ESTATES"
 ];
 
-// 4. دالة تلقائية لملء قاعدة البيانات بالمشاريع لأول مرة وتحديث المشاريع الناقصة
+// 4. تم إيقاف الدالة التلقائية لملء قاعدة البيانات بناءً على طلب المستخدم لعدم تكرار المشاريع الافتراضية
+/*
 async function seedDatabase() {
   try {
     if (mongoose.connection.readyState === 1) {
@@ -96,10 +97,12 @@ async function seedDatabase() {
     console.error("Error seeding database:", err);
   }
 }
+*/
 
 // تشغيل الدالة بمجرد تمام الاتصال والمزامنة لضمان استرجاع كل المشاريع من أطلس
 mongoose.connection.once("open", async () => {
-  await seedDatabase();
+  // تم تعطيل seedDatabase لتجنب رفع مشاريع افتراضية تلقائياً بقاعدة البيانات
+  // await seedDatabase();
   await fetchAndSyncDbFromMongo();
   try {
     const dbProjects = await Project.find({}, "name");

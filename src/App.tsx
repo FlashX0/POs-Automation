@@ -2819,7 +2819,7 @@ export default function App() {
                             const taxAddPercentEnabled = !pricesIncludeTax && !!printDoc.taxAddPercentEnabled;
                             const taxAddPercentRate = printDoc.taxAddPercentRate ?? 14;
                             const isDescVeryLarge = item.description && (item.description.length > 100 || item.description.includes('\n') || item.description.includes('<br'));
-                            const shouldBreak = !!item.pageBreakBefore || (isDescVeryLarge && idx > 0);
+                            const shouldBreak = false; // تم إيقاف فصل الصفحات الإجباري بناءً على طلب المستخدم لتبدو البنود متتالية
                             return (
                               <tr 
                                 key={idx} 
@@ -2827,10 +2827,8 @@ export default function App() {
                                 style={{
                                   pageBreakInside: 'avoid',
                                   breakInside: 'avoid',
-                                  ...(shouldBreak ? {
-                                    pageBreakBefore: 'always',
-                                    breakBefore: 'page'
-                                  } : {})
+                                  pageBreakAfter: 'auto',
+                                  breakAfter: 'auto'
                                 }}
                               >
                                 {showExcelGrid && (

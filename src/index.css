@@ -245,6 +245,8 @@ html, body {
   tr {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
   }
   table {
     page-break-inside: auto !important;
@@ -253,7 +255,15 @@ html, body {
     vertical-align: middle !important;
   }
 
-  .print-me tr,
+  .print-me tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+    vertical-align: middle !important;
+  }
+
   .print-me td,
   .print-me th {
     page-break-inside: avoid !important;
