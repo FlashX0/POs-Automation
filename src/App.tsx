@@ -53,6 +53,8 @@ import {
 import * as XLSX from 'xlsx-js-style';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+// @ts-ignore
+import deltaLogo from './assets/images/delta_road_logo_1781798697279.jpg';
 
 // Helper function to convert OKLCH & OKLAB color strings (used by Tailwind v4) to standard RGB/RGBA.
 // This prevents html2canvas from failing with the: "Attempting to parse an unsupported color function" error.
@@ -3034,7 +3036,7 @@ export default function App() {
             <div className="flex items-center gap-3 text-right">
               <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-sky-500/50 shadow-md shadow-sky-600/10 shrink-0">
                 <img 
-                  src="/src/assets/images/delta_road_logo_1781798697279.jpg" 
+                  src={deltaLogo} 
                   alt="Delta For Road Construction Logo" 
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
