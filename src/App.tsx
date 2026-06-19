@@ -1443,7 +1443,7 @@ export default function App() {
 
       // 6. Table Total sum Row & Discount Rows
       if (discountOffset === 0) {
-        rows[totalRowIdx][1] = doc.withholdingTaxEnabled ? "Total Before Tax / الإجمالي قبل الخصم" : "Total";
+        rows[totalRowIdx][0] = doc.withholdingTaxEnabled ? "Total Before Tax / الإجمالي قبل الخصم" : "Total";
         // Excel formula: SUM of line items Amount cells (G9 to G[8 + itemsCount])
         rows[totalRowIdx][6] = { t: "n", f: `SUM(G9:G${8 + itemsCount})`, v: doc.totalAmount || 0 };
 
@@ -1453,17 +1453,17 @@ export default function App() {
           const netValue = doc.totalAmount - taxAmount;
 
           const totalRowExcelNum = totalRowIdx + 1; // 1-based Row Number for total cell
-          rows[totalRowIdx + 1][1] = `Commercial & Industrial Profits Tax (${rate}%) / خصم أ.ت.ص`;
+          rows[totalRowIdx + 1][0] = `Commercial & Industrial Profits Tax (${rate}%) / خصم أ.ت.ص`;
           rows[totalRowIdx + 1][6] = { t: "n", f: `-G${totalRowExcelNum}*${rate}/100`, v: -taxAmount };
 
-          rows[totalRowIdx + 2][1] = "Net Payable / صافي القيمة المستحقة";
+          rows[totalRowIdx + 2][0] = "Net Payable / صافي القيمة المستحقة";
           rows[totalRowIdx + 2][6] = { t: "n", f: `G${totalRowExcelNum}+G${totalRowExcelNum + 1}`, v: netValue };
         }
       } else {
         let currentIdx = totalRowIdx;
         
         // A) Subtotal Row
-        rows[currentIdx][1] = "Subtotal (Before Discount) / الإجمالي قبل التخفيض";
+        rows[currentIdx][0] = "Subtotal (Before Discount) / الإجمالي قبل التخفيض";
         rows[currentIdx][6] = { t: "n", f: `SUM(G9:G${8 + itemsCount})`, v: itemsSubtotal };
         const subtotalExcelNum = currentIdx + 1;
         currentIdx++;
@@ -1471,7 +1471,7 @@ export default function App() {
         // B) Discount Percentage Row
         let discPctExcelNum = 0;
         if (discPct > 0) {
-          rows[currentIdx][1] = `Discount Percentage (${discPct}%) / خصم نسبة مئوية`;
+          rows[currentIdx][0] = `Discount Percentage (${discPct}%) / خصم نسبة مئوية`;
           rows[currentIdx][6] = { t: "n", f: `-G${subtotalExcelNum}*${discPct}/100`, v: -pctDiscountVal };
           discPctExcelNum = currentIdx + 1;
           currentIdx++;
@@ -1480,14 +1480,14 @@ export default function App() {
         // C) Discount Amount Row
         let discAmtExcelNum = 0;
         if (discAmt > 0) {
-          rows[currentIdx][1] = "Discount Amount / تخفيض نقدي إضافي";
+          rows[currentIdx][0] = "Discount Amount / تخفيض نقدي إضافي";
           rows[currentIdx][6] = { t: "n", v: -flatDiscountVal };
           discAmtExcelNum = currentIdx + 1;
           currentIdx++;
         }
         
         // D) Total After Discount Row
-        rows[currentIdx][1] = doc.withholdingTaxEnabled ? "Total After Discount / الإجمالي بعد التخفيض" : "Total / الإجمالي النهائي";
+        rows[currentIdx][0] = doc.withholdingTaxEnabled ? "Total After Discount / الإجمالي بعد التخفيض" : "Total / الإجمالي النهائي";
         
         const formulaParts = [`G${subtotalExcelNum}`];
         if (discPct > 0) formulaParts.push(`G${discPctExcelNum}`);
@@ -1501,10 +1501,10 @@ export default function App() {
           const taxAmount = (finalTotalAmount * rate) / 100;
           const netValue = finalTotalAmount - taxAmount;
 
-          rows[currentIdx + 1][1] = `Commercial & Industrial Profits Tax (${rate}%) / خصم أ.ت.ص`;
+          rows[currentIdx + 1][0] = `Commercial & Industrial Profits Tax (${rate}%) / خصم أ.ت.ص`;
           rows[currentIdx + 1][6] = { t: "n", f: `-G${totalAfterDiscountExcelNum}*${rate}/100`, v: -taxAmount };
 
-          rows[currentIdx + 2][1] = "Net Payable / صافي القيمة المستحقة";
+          rows[currentIdx + 2][0] = "Net Payable / صافي القيمة المستحقة";
           rows[currentIdx + 2][6] = { t: "n", f: `G${totalAfterDiscountExcelNum}+G${totalAfterDiscountExcelNum + 1}`, v: netValue };
         }
       }
@@ -1546,8 +1546,8 @@ export default function App() {
         { wch: 26 },  // Column C: Description Part 2 (Merged with B)
         { wch: 12 },  // Column D: Unit
         { wch: 10 },  // Column E: Qty
-        { wch: 15 },  // Column F: Price
-        { wch: 18 },  // Column G: Amount
+        { wch: 22 },  // Column F: Price / Date
+        { wch: 24 },  // Column G: Amount / Total
         { wch: 10 }   // Column H: Outer spacing
       ];
 
@@ -1659,13 +1659,7 @@ export default function App() {
           cell.s = {
             font: { name: "Segoe UI", sz: 9.5, bold: true, color: { rgb: "FFFFFF" } },
             fill: { patternType: "solid", fgColor: { rgb: "0284C7" } }, // Matches modern primary highlights
-            alignment: { horizontal: "center", vertical: "center", wrapText: true },
-            border: {
-              top: { style: "thin", color: { rgb: "0284C7" } },
-              bottom: { style: "thin", color: { rgb: "0284C7" } },
-              left: { style: "thin", color: { rgb: "CBD5E1" } },
-              right: { style: "thin", color: { rgb: "CBD5E1" } }
-            }
+            alignment: { horizontal: "center", vertical: "center", wrapText: true }
           };
         }
         else if (r === 5) {
@@ -1674,13 +1668,7 @@ export default function App() {
           cell.s = {
             font: { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "0F172A" } },
             fill: { patternType: "solid", fgColor: { rgb: "F1F5F9" } },
-            alignment: { horizontal: "center", vertical: "center", wrapText: true },
-            border: {
-              top: { style: "thin", color: { rgb: "CBD5E1" } },
-              bottom: { style: "thin", color: { rgb: "CBD5E1" } },
-              left: { style: "thin", color: { rgb: "CBD5E1" } },
-              right: { style: "thin", color: { rgb: "CBD5E1" } }
-            }
+            alignment: { horizontal: "center", vertical: "center", wrapText: true }
           };
           if (c === 6) {
             cell.z = `#,##0.00 " ${doc.currency || 'EGP'}"`;
@@ -1754,7 +1742,7 @@ export default function App() {
               color: isFinalPayRow && c === 6 ? { rgb: "15803D" } : { rgb: "0F172A" } 
             },
             fill: { patternType: "solid", fgColor: { rgb: bgFillColor } },
-            alignment: { horizontal: "right", vertical: "center" },
+            alignment: { horizontal: "center", vertical: "center" },
             border: {
               top: { style: "thin", color: { rgb: "CBD5E1" } },
               bottom: { style: borderStyleBottom, color: { rgb: "475569" } },
@@ -1959,7 +1947,7 @@ export default function App() {
 
       // Render crisp canvas representation of printable sheet with oklch safety transform
       const canvas = await html2canvas(element, {
-        scale: 2.0, // High-fidelity print-quality resolution
+        scale: 4.0, // Ultra-high-fidelity resolution for perfect print crispness
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
@@ -2076,14 +2064,14 @@ export default function App() {
           );
         }
         
-        const sliceImgData = sliceCanvas.toDataURL('image/jpeg', 0.95);
+        const sliceImgData = sliceCanvas.toDataURL('image/png');
         
         if (pageCount > 0) {
           pdf.addPage();
         }
         
         const sliceHeightMm = (sliceHeight / imgWidth) * contentWidth;
-        pdf.addImage(sliceImgData, 'JPEG', margin, margin, contentWidth, sliceHeightMm);
+        pdf.addImage(sliceImgData, 'PNG', margin, margin, contentWidth, sliceHeightMm);
         
         sourceY += sliceHeight;
         pageCount++;
@@ -2854,37 +2842,6 @@ export default function App() {
                           })
                         ) : null}
 
-                        {/* Empty Spacer Rows to resemble Excel template structure - Disabled per user request */}
-                        {false && Array.from({ length: Math.max(0, 5 - printTotalBaseCount) }).map((_, emptyIdx) => {
-                          const actualIndex = printTotalBaseCount + emptyIdx;
-                          return (
-                            <tr key={`empty-${emptyIdx}`} className="border-b border-slate-150 select-none opacity-40">
-                              {showExcelGrid && (
-                                <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-300 py-3.5 w-12 min-w-[48px] max-w-[48px] select-none">
-                                  {actualIndex + 10}
-                                </td>
-                              )}
-                              {showExcelGrid && (
-                                <td className="border-e border-slate-150 py-3.5 text-center text-slate-300 font-mono font-semibold w-12 min-w-[48px] max-w-[48px]">
-                                  {actualIndex + 1}
-                                </td>
-                              )}
-                              <td className="border-e border-slate-200 py-3.5 text-center font-mono w-12 min-w-[48px] max-w-[48px]">-</td>
-                              <td className="border-e border-slate-200 py-3.5 px-3 text-slate-350 italic font-medium min-w-[180px]">سماحية سطر فارغ لتوسيع الفاتورة وكتابة الملاحظات</td>
-                              {hasAnyBrand && <td className="border-e border-slate-200 py-3.5 text-center text-slate-300 w-24 min-w-[96px] max-w-[96px]">-</td>}
-                              <td className="border-e border-slate-200 py-3.5 text-center text-slate-300 w-16 min-w-[64px] max-w-[64px]">-</td>
-                              <td className="border-e border-slate-200 py-3.5 text-center text-slate-300 w-16 min-w-[64px] max-w-[64px]">-</td>
-                              <td className="border-e border-slate-200 py-3.5 text-center text-slate-300 w-24 min-w-[96px] max-w-[96px]">-</td>
-                              <td className={`py-3.5 w-32 min-w-[128px] max-w-[128px] font-mono font-semibold text-slate-300 ${
-                                tableAlignment === 'center' ? 'text-center px-3' :
-                                tableAlignment === 'left' ? 'text-left pl-3' :
-                                tableAlignment === 'right' ? 'text-right pr-3' :
-                                printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
-                              }`}>-</td>
-                            </tr>
-                          );
-                        })}
-
                         {(() => {
                           const pricesIncludeTax = printDoc.pricesIncludeTax !== false;
                           const taxAddPercentEnabled = !pricesIncludeTax && !!printDoc.taxAddPercentEnabled;
@@ -2911,15 +2868,10 @@ export default function App() {
                                     {10 + printTotalBaseCount}
                                   </td>
                                 )}
-                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-slate-800 uppercase tracking-wide">
+                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-slate-800 uppercase tracking-wide">
                                   {printDirectionParam === 'rtl' ? 'الإجمالي (Total)' : 'Total'}
                                 </td>
-                                <td className={`py-2 w-32 min-w-[128px] max-w-[128px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap ${
-                                  tableAlignment === 'center' ? 'text-center px-3' :
-                                  tableAlignment === 'left' ? 'text-left pl-3' :
-                                  tableAlignment === 'right' ? 'text-right pr-3' :
-                                  printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
-                                }`}>
+                                <td className="py-2 w-32 min-w-[128px] max-w-[128px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
                                   {itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                 </td>
                               </tr>
@@ -2932,18 +2884,13 @@ export default function App() {
                                       {11 + printTotalBaseCount}
                                     </td>
                                   )}
-                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 text-amber-700 font-medium whitespace-nowrap">
+                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 text-amber-700 font-medium whitespace-nowrap">
                                     {printDirectionParam === 'rtl' 
                                       ? `خصم ضريبة الأرباح التجارية والصناعية (${printDoc.withholdingTaxRate || 1}%)` 
                                       : `Commercial & Industrial Profits Tax Discount (${printDoc.withholdingTaxRate || 1}%)`
                                     }
                                   </td>
-                                  <td className={`py-2 w-32 min-w-[128px] max-w-[128px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap ${
-                                    tableAlignment === 'center' ? 'text-center px-3' :
-                                    tableAlignment === 'left' ? 'text-left pl-3' :
-                                    tableAlignment === 'right' ? 'text-right pr-3' :
-                                    printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
-                                  }`}>
+                                  <td className="py-2 w-32 min-w-[128px] max-w-[128px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
                                     -{withholdingTaxAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                   </td>
                                 </tr>
@@ -2957,15 +2904,10 @@ export default function App() {
                                       {12 + printTotalBaseCount}
                                     </td>
                                   )}
-                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
+                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-[#DC2626] uppercase tracking-wide">
                                     Net Payable
                                   </td>
-                                  <td className={`py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap ${
-                                    tableAlignment === 'center' ? 'text-center px-3' :
-                                    tableAlignment === 'left' ? 'text-left pl-3' :
-                                    tableAlignment === 'right' ? 'text-right pr-3' :
-                                    printDirectionParam === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'
-                                  }`}>
+                                  <td className="py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
                                     {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                   </td>
                                 </tr>
@@ -5835,14 +5777,14 @@ export default function App() {
                               </td>
                             )}
                             {/* Centered Total Label Spanning Column A-E */}
-                            <td colSpan={5} className="border-e border-slate-200 text-center py-2 font-bold text-slate-800 uppercase tracking-wide">
+                            <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-slate-800 uppercase tracking-wide">
                               {selectedDoc.withholdingTaxEnabled 
                                 ? (printDirection === 'rtl' ? 'الإجمالي قبل الخصم (Total)' : 'Total Before Tax')
                                 : 'Total'
                               }
                             </td>
                             {/* Total Amount in Column F */}
-                            <td className={`py-2 w-32 font-extrabold text-[#DC2626] font-mono text-xs select-text whitespace-nowrap ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                            <td className="py-2 w-32 font-extrabold text-[#DC2626] font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
                               {(() => {
                                 const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
                                 const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
@@ -5865,13 +5807,13 @@ export default function App() {
                                     {11 + (selectedDoc.items?.length || 0)}
                                   </td>
                                 )}
-                                <td colSpan={5} className="border-e border-slate-200 text-center py-2 text-red-700 font-medium whitespace-nowrap">
+                                <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 text-red-700 font-medium whitespace-nowrap">
                                   {printDirection === 'rtl' 
                                     ? `خصم ضريبة الأرباح التجارية والصناعية (${selectedDoc.withholdingTaxRate || 1}%)` 
                                     : `Commercial & Industrial Profits Tax Discount (${selectedDoc.withholdingTaxRate || 1}%)`
                                   }
                                 </td>
-                                <td className={`py-2 w-32 font-bold text-red-600 font-mono text-xs select-text whitespace-nowrap ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                                <td className="py-2 w-32 font-bold text-red-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
                                   -{(() => {
                                     const originalSubtotal = selectedDoc.items && selectedDoc.items.length > 0
                                       ? selectedDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
@@ -5889,10 +5831,10 @@ export default function App() {
                                     {12 + (selectedDoc.items?.length || 0)}
                                   </td>
                                 )}
-                                <td colSpan={5} className="border-e border-slate-200 text-center py-2 font-bold text-[#DC2626] uppercase tracking-wide">
+                                <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-[#DC2626] uppercase tracking-wide">
                                   Net Payable
                                 </td>
-                                <td className={`py-2.5 w-32 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>
+                                <td className="py-2.5 w-32 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
                                   {(() => {
                                     const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
                                     const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
