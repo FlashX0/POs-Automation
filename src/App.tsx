@@ -2866,14 +2866,14 @@ export default function App() {
                               {/* 1. Subtotal Row (Always shown, includes VAT directly if taxAddPercentEnabled) */}
                               <tr className="bg-[#F9FAFB] border-t border-slate-300 font-bold text-slate-900 text-center select-none animate-none">
                                 {showExcelGrid && (
-                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {10 + printTotalBaseCount}
                                   </td>
                                 )}
-                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-slate-800 uppercase tracking-wide">
+                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-slate-800 uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {printDirectionParam === 'rtl' ? 'الإجمالي (Total)' : 'Total'}
                                 </td>
-                                <td className="py-2 w-32 min-w-[128px] max-w-[128px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
+                                <td className="py-2 w-32 min-w-[128px] max-w-[128px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                 </td>
                               </tr>
@@ -2882,17 +2882,17 @@ export default function App() {
                               {printDoc.withholdingTaxEnabled && (
                                 <tr className="bg-[#FFFDF3] border-t border-slate-200 text-slate-700 text-center select-none font-semibold text-xs font-sans">
                                   {showExcelGrid && (
-                                    <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12">
+                                    <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                       {11 + printTotalBaseCount}
                                     </td>
                                   )}
-                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 text-amber-700 font-medium whitespace-nowrap">
+                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 text-amber-700 font-medium whitespace-nowrap" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {printDirectionParam === 'rtl' 
                                       ? `خصم ضريبة الأرباح التجارية والصناعية (${printDoc.withholdingTaxRate || 1}%)` 
                                       : `Commercial & Industrial Profits Tax Discount (${printDoc.withholdingTaxRate || 1}%)`
                                     }
                                   </td>
-                                  <td className="py-2 w-32 min-w-[128px] max-w-[128px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
+                                  <td className="py-2 w-32 min-w-[128px] max-w-[128px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     -{withholdingTaxAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                   </td>
                                 </tr>
@@ -2902,14 +2902,14 @@ export default function App() {
                               {printDoc.withholdingTaxEnabled && (
                                 <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none font-sans">
                                   {showExcelGrid && (
-                                    <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                    <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                       {12 + printTotalBaseCount}
                                     </td>
                                   )}
-                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-[#DC2626] uppercase tracking-wide">
+                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-[#DC2626] uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     Net Payable
                                   </td>
-                                  <td className="py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
+                                  <td className="py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                   </td>
                                 </tr>
@@ -5779,14 +5779,14 @@ export default function App() {
                               </td>
                             )}
                             {/* Centered Total Label Spanning Column A-E */}
-                            <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-slate-800 uppercase tracking-wide">
+                            <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-slate-800 uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                               {selectedDoc.withholdingTaxEnabled 
                                 ? (printDirection === 'rtl' ? 'الإجمالي قبل الخصم (Total)' : 'Total Before Tax')
                                 : 'Total'
                               }
                             </td>
                             {/* Total Amount in Column F */}
-                            <td className="py-2 w-32 font-extrabold text-[#DC2626] font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
+                            <td className="py-2 w-32 font-extrabold text-[#DC2626] font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                               {(() => {
                                 const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
                                 const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
@@ -5805,17 +5805,17 @@ export default function App() {
                             <>
                               <tr className="bg-[#FFFDF3] border-t border-slate-200 text-slate-700 text-center select-none font-semibold text-xs">
                                 {showExcelGrid && (
-                                  <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12">
+                                  <td className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-12" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {11 + (selectedDoc.items?.length || 0)}
                                   </td>
                                 )}
-                                <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 text-red-700 font-medium whitespace-nowrap">
+                                <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 text-red-700 font-medium whitespace-nowrap" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {printDirection === 'rtl' 
                                     ? `خصم ضريبة الأرباح التجارية والصناعية (${selectedDoc.withholdingTaxRate || 1}%)` 
                                     : `Commercial & Industrial Profits Tax Discount (${selectedDoc.withholdingTaxRate || 1}%)`
                                   }
                                 </td>
-                                <td className="py-2 w-32 font-bold text-red-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
+                                <td className="py-2 w-32 font-bold text-red-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   -{(() => {
                                     const originalSubtotal = selectedDoc.items && selectedDoc.items.length > 0
                                       ? selectedDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
@@ -5829,14 +5829,14 @@ export default function App() {
 
                               <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none">
                                 {showExcelGrid && (
-                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12">
+                                  <td className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-12" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {12 + (selectedDoc.items?.length || 0)}
                                   </td>
                                 )}
-                                <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-[#DC2626] uppercase tracking-wide">
+                                <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-[#DC2626] uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   Net Payable
                                 </td>
-                                <td className="py-2.5 w-32 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3">
+                                <td className="py-2.5 w-32 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {(() => {
                                     const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
                                     const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;

@@ -242,12 +242,24 @@ html, body {
   }
 
   /* Prevent page breaks inside table rows, cells, and headers */
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  table {
+    page-break-inside: auto !important;
+  }
+  th, td {
+    vertical-align: middle !important;
+  }
+
   .print-me tr,
   .print-me td,
   .print-me th {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
     break-inside: avoid-page !important;
+    vertical-align: middle !important;
   }
 
   /* Ensure division wrappers inside cells cannot get split across pages */
