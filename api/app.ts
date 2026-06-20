@@ -52,27 +52,7 @@ const appStateSchema = new mongoose.Schema({
 const AppState = mongoose.model("AppState", appStateSchema);
 
 // 3. مصفوفة المشاريع الافتراضية الخاصة بك بالكامل دون أي نقص
-const defaultProjects = [
-  "Villette A&B",
-  "Villette C&D",
-  "Azalia",
-  "Block 39",
-  "EDNC",
-  "June - Main Gate Landscape",
-  "June - Main Gate",
-  "Al-brouj",
-  "June",
-  "City Stars Al Sahel",
-  "Allegria",
-  "ETAPA",
-  "Strip 2 Mall",
-  "Training Pool",
-  "Al Brouj - New Buffer",
-  "Hyde Park",
-  "Al-Brouj - CGP 1.14A",
-  "JUNE Parcel 01 - Maintrunk",
-  "THE ESTATES"
-];
+const defaultProjects: string[] = [];
 
 // 4. تم إيقاف الدالة التلقائية لملء قاعدة البيانات بناءً على طلب المستخدم لعدم تكرار المشاريع الافتراضية
 /*
@@ -101,6 +81,75 @@ async function seedDatabase() {
 
 // تشغيل الدالة بمجرد تمام الاتصال والمزامنة لضمان استرجاع كل المشاريع من أطلس
 mongoose.connection.once("open", async () => {
+  try {
+    // 1. تنظيف المشاريع الافتراضية الثلاثة والمستندات الافتراضية من MongoDB Atlas نهائياً لتبدأ لوحة التحكم فارغة 100%
+    const targetDocIds = ["doc_1781725768123", "doc_1781722362282", "doc_1781722025253"];
+    
+    // تنظيف المستندات المحفوظة مسبقاً في الـ AppState ضمن السحابة
+    const dbDoc = await AppState.findOne({ key: "global_state" });
+    if (dbDoc && dbDoc.data) {
+      let updatedState = false;
+      
+      // إزالة الفواتير والمستندات الافتراضية القديمة
+      if (Array.isArray(dbDoc.data.documents)) {
+        const prevLen = dbDoc.data.documents.length;
+        dbDoc.data.documents = dbDoc.data.documents.filter((d: any) => d && !targetDocIds.includes(d.id));
+        if (dbDoc.data.documents.length !== prevLen) {
+          updatedState = true;
+        }
+      }
+      
+      // تصفية التنبيهات أيضاً
+      if (Array.isArray(dbDoc.data.notifications)) {
+        const prevLen = dbDoc.data.notifications.length;
+        dbDoc.data.notifications = dbDoc.data.notifications.filter((n: any) => n && !targetDocIds.some(id => n.id && n.id.includes(id)));
+        if (dbDoc.data.notifications.length !== prevLen) {
+          updatedState = true;
+        }
+      }
+
+      // تصفية المشاريع الافتراضية القديمة من القائمة المدمجة في db
+      const oldProjectsList = [
+        "Villette A&B", "Villette C&D", "Azalia", "Block 39", "EDNC", 
+        "June - Main Gate Landscape", "June - Main Gate", "Al-brouj", "June", 
+        "City Stars Al Sahel", "Allegria", "ETAPA", "Strip 2 Mall", 
+        "Training Pool", "Al Brouj - New Buffer", "Hyde Park", 
+        "Al-Brouj - CGP 1.14A", "JUNE Parcel 01 - Maintrunk", "THE ESTATES"
+      ];
+      if (Array.isArray(dbDoc.data.projects)) {
+        const prevLen = dbDoc.data.projects.length;
+        dbDoc.data.projects = dbDoc.data.projects.filter((p: string) => !oldProjectsList.includes(p));
+        if (dbDoc.data.projects.length !== prevLen) {
+          updatedState = true;
+        }
+      }
+
+      // تصفية الموردين الافتراضيين القدامى لتبدأ فارغة أيضاً
+      if (Array.isArray(dbDoc.data.suppliers)) {
+        dbDoc.data.suppliers = [];
+        updatedState = true;
+      }
+
+      if (updatedState) {
+        await AppState.updateOne({ key: "global_state" }, { data: dbDoc.data });
+        console.log("Successfully cleaned up all target default documents and metrics from Mongo global_state!");
+      }
+    }
+
+    // 2. تنظيف الـ collection الخاص بالمشاريع الفردية
+    const oldProjectsList = [
+      "Villette A&B", "Villette C&D", "Azalia", "Block 39", "EDNC", 
+      "June - Main Gate Landscape", "June - Main Gate", "Al-brouj", "June", 
+      "City Stars Al Sahel", "Allegria", "ETAPA", "Strip 2 Mall", 
+      "Training Pool", "Al Brouj - New Buffer", "Hyde Park", 
+      "Al-Brouj - CGP 1.14A", "JUNE Parcel 01 - Maintrunk", "THE ESTATES"
+    ];
+    await Project.deleteMany({ name: { $in: oldProjectsList } });
+    console.log("Successfully deleted individual old default projects from MongoDB Collection!");
+  } catch (err: any) {
+    console.error("Error executing custom clean-up script on MongoDB Atlas:", err.message);
+  }
+
   // تم تعطيل seedDatabase لتجنب رفع مشاريع افتراضية تلقائياً بقاعدة البيانات
   // await seedDatabase();
   await fetchAndSyncDbFromMongo();
@@ -152,48 +201,7 @@ mongoose.connection.once("open", async () => {
   }
 });
 
-const defaultSuppliers = [
-  "النيل للتوريدات المعمارية",
-  "Yet Trace",
-  "الشركة الدولية لأعمال الكهروميكانيك والحماية الكهربائية (أبكو)",
-  "القاهرة للمنتجات الخرسانية",
-  "ام جى للتنميه الزراعيه",
-  "رواد للتوكيلات التجارية",
-  "بروتك للتجارة",
-  "المصرية للتوريدات والاستيراد والتصدير",
-  "توكل للصناعات المعدنية",
-  "Shira Trade & Agencies",
-  "اوركيدا",
-  "Liteway",
-  "مكارم تكس",
-  "alamein",
-  "Egy - Crete",
-  "الكترو للصناعات الكهربية والمقاولات",
-  "السويدي باور للكابلات",
-  "شركة الشوربجي",
-  "المتحدة للكهرباء",
-  "Aimex Egypt",
-  "Smart System Gate",
-  "الرحاب للصناعات الكهربائية",
-  "MK For Engenering",
-  "ثري إس ريدى ميكس للخرسانة الجاهزة",
-  "Kemet",
-  "Red Sea Pipes & Fittings",
-  "الاندلس لانظمة التيار الخفيف وكاميرات المراقبة",
-  "مكتب افق للمقاولات الزراعية",
-  "بولي تانك لصناعات التنكات",
-  "بيكو للخدمات الصناعية",
-  "خدمات المياه الحديثة",
-  "هاى تك نور للأنظمة الأمنية المتكاملة",
-  "شركة مارموكس مصر",
-  "إمداد للتجارة والتوكيلات",
-  "ArabTech",
-  "Huda Lighting",
-  "3BROTHERS",
-  "روك ارت للمنتجات الاسمنتية والديكور",
-  "كيان ستون جروب للمقاولات العامة",
-  "مظلوم للتجاره والتوكيلات"
-];
+const defaultSuppliers: string[] = [];
 
 const defaultDb = {
   documents: [] as any[],
