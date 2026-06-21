@@ -358,12 +358,35 @@ html, body {
 
   /* Crisp high-contrast professional borders for print */
   .print-me,
-  .print-me table,
-  .print-me th,
-  .print-me td,
   .print-me div {
     border-color: #000000 !important; /* Force deep black on print output */
   }
+
+  /* 1. إجبار المتصفح على طباعة الألوان والحدود والخلفيات كاملة */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 2. رسم حدود سوداء صريحة وحادة للجدول والخلايا */
+  .print-me table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    border: 2px solid #000000 !important; /* إطار خارجي أسود */
+  }
+
+  .print-me th, .print-me td {
+    border: 1px solid #000000 !important; /* فواصل داخلية سوداء واضحة */
+    padding: 8px 12px !important; /* حشو داخلي مريح للعين */
+  }
+
+  /* 3. الالتزام بنسب أعمدة الـ Preview ومنع التمدد العشوائي */
+  .print-me th:nth-child(1), .print-me td:nth-child(1) { width: 5% !important; }   /* No */
+  .print-me th:nth-child(2), .print-me td:nth-child(2) { width: 55% !important; }  /* Description */
+  .print-me th:nth-child(3), .print-me td:nth-child(3) { width: 10% !important; }  /* Unit */
+  .print-me th:nth-child(4), .print-me td:nth-child(4) { width: 10% !important; }  /* Qty */
+  .print-me th:nth-child(5), .print-me td:nth-child(5) { width: 10% !important; }  /* Price */
+  .print-me th:nth-child(6), .print-me td:nth-child(6) { width: 10% !important; }  /* Amount */
 
   /* Solid professional gray header background + black text */
   .excel-header-banner {

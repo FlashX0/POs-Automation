@@ -1654,12 +1654,12 @@ export default function App() {
       // Define static column sizes matching visual aspect ratio
       ws['!cols'] = [
         { wch: 8 },   // Column A: No.
-        { wch: 26 },  // Column B: Description Part 1
-        { wch: 26 },  // Column C: Description Part 2 (Merged with B)
-        { wch: 12 },  // Column D: Unit
+        { wch: 28 },  // Column B: Description Part 1 [Widened for descriptions]
+        { wch: 28 },  // Column C: Description Part 2 (Merged with B)
+        { wch: 11 },  // Column D: Unit
         { wch: 10 },  // Column E: Qty
-        { wch: 22 },  // Column F: Price / Date
-        { wch: 24 },  // Column G: Amount / Total
+        { wch: 15 },  // Column F: Price / Date [Shrunk to match 12% ratio]
+        { wch: 16 },  // Column G: Amount / Total [Shrunk to match 12% ratio]
         { wch: 10 }   // Column H: Outer spacing
       ];
 
@@ -2841,7 +2841,7 @@ export default function App() {
                   <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
                     {printDirectionParam === 'rtl' ? 'تاريخ المستند' : (printDoc.docType === 'quote' ? 'Quote Date' : 'Order Date')}
                   </span>
-                  <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-words">
+                  <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-nowrap">
                     {printDoc.receiptDate || ""}
                   </span>
                 </div>
@@ -2955,10 +2955,10 @@ export default function App() {
                     <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Qty
                     </th>
-                    <th className="border-e border-slate-300 py-4 w-36 min-w-[144px] max-w-[144px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-slate-300 py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Price
                     </th>
-                    <th className="py-4 w-40 min-w-[160px] max-w-[160px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Amount
                     </th>
                   </tr>
@@ -3065,7 +3065,7 @@ export default function App() {
                                     {item.quantity || "1"}
                                   </div>
                                 </td>
-                                <td className="border-e border-slate-200 py-5 font-bold text-black w-36 min-w-[144px] max-w-[144px] text-center align-middle font-mono text-[12px] whitespace-nowrap text-nowrap" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className="border-e border-slate-200 py-5 font-bold text-black w-28 min-w-[112px] max-w-[112px] text-center align-middle font-mono text-[12px] whitespace-nowrap text-nowrap" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -3086,7 +3086,7 @@ export default function App() {
                                     })()}
                                   </div>
                                 </td>
-                                <td className="py-5 w-40 min-w-[160px] max-w-[160px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono whitespace-nowrap text-nowrap" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className="py-5 w-28 min-w-[112px] max-w-[112px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono whitespace-nowrap text-nowrap" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div className="whitespace-nowrap text-nowrap text-center w-full">
                                     {(() => {
                                       const baseTotal = item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0));
@@ -3129,7 +3129,7 @@ export default function App() {
                                 <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-5 font-bold text-slate-800 uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {printDirectionParam === 'rtl' ? 'الإجمالي (Total)' : 'Total'}
                                 </td>
-                                <td className="py-5 w-40 min-w-[160px] max-w-[160px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                <td className="py-5 w-28 min-w-[112px] max-w-[112px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                 </td>
                               </tr>
@@ -3148,7 +3148,7 @@ export default function App() {
                                       : `Commercial & Industrial Profits Tax Discount (${printDoc.withholdingTaxRate || 1}%)`
                                     }
                                   </td>
-                                  <td className="py-5 w-40 min-w-[160px] max-w-[160px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <td className="py-5 w-28 min-w-[112px] max-w-[112px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     -{withholdingTaxAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                   </td>
                                 </tr>
@@ -3165,7 +3165,7 @@ export default function App() {
                                   <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-5 font-bold text-[#DC2626] uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     Net Payable
                                   </td>
-                                  <td className="py-5 w-40 min-w-[160px] max-w-[160px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <td className="py-5 w-28 min-w-[112px] max-w-[112px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                   </td>
                                 </tr>
@@ -6001,8 +6001,8 @@ export default function App() {
                             <th className={`border-e border-[#B0B0B0] py-2 px-3 ${printDirection === 'rtl' ? 'text-right' : 'text-left'}`}>Describtion</th>
                             <th className="border-e border-[#B0B0B0] py-2 w-16 min-w-[64px] max-w-[64px]">Unit</th>
                             <th className="border-e border-[#B0B0B0] py-2 w-16 min-w-[64px] max-w-[64px]">Qty</th>
-                            <th className="border-e border-[#B0B0B0] py-2 w-24 min-w-[96px] max-w-[96px]">Price</th>
-                            <th className={`py-2 w-32 min-w-[128px] max-w-[128px] ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>Amount</th>
+                            <th className="border-e border-[#B0B0B0] py-2 w-28 min-w-[112px] max-w-[112px]">Price</th>
+                            <th className={`py-2 w-28 min-w-[112px] max-w-[112px] ${printDirection === 'rtl' ? 'pr-3 text-left' : 'pl-3 text-right'}`}>Amount</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
@@ -6100,7 +6100,7 @@ export default function App() {
                                 </td>
 
                                 {/* Price */}
-                                <td className="border-e border-slate-200 py-2 text-center font-mono w-24 min-w-[96px] max-w-[96px]">
+                                <td className="border-e border-slate-200 py-2 text-center font-mono w-28 min-w-[112px] max-w-[112px]">
                                   <input 
                                     type="number"
                                     value={item.unitPrice || 0}
@@ -6164,7 +6164,7 @@ export default function App() {
                               }
                             </td>
                             {/* Total Amount in Column F */}
-                            <td className="py-2 w-32 font-extrabold text-[#DC2626] font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                            <td className="py-2 w-28 font-extrabold text-[#DC2626] font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                               {(() => {
                                 const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
                                 const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
@@ -6193,7 +6193,7 @@ export default function App() {
                                     : `Commercial & Industrial Profits Tax Discount (${selectedDoc.withholdingTaxRate || 1}%)`
                                   }
                                 </td>
-                                <td className="py-2 w-32 font-bold text-red-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                <td className="py-2 w-28 font-bold text-red-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   -{(() => {
                                     const originalSubtotal = selectedDoc.items && selectedDoc.items.length > 0
                                       ? selectedDoc.items.reduce((sum, item) => sum + (item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0))), 0)
@@ -6214,7 +6214,7 @@ export default function App() {
                                 <td colSpan={5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-[#DC2626] uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   Net Payable
                                 </td>
-                                <td className="py-2.5 w-32 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                <td className="py-2.5 w-28 font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {(() => {
                                     const pricesIncludeTax = selectedDoc.pricesIncludeTax !== false;
                                     const taxAddPercentEnabled = !pricesIncludeTax && !!selectedDoc.taxAddPercentEnabled;
