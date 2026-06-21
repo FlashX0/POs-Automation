@@ -423,6 +423,86 @@ function convertEasternToWesternNumerals(str: any): string {
   return result;
 }
 
+function cleanBidiText(str: string): string {
+  if (str === null || str === undefined) return "";
+  let text = String(str).trim();
+  
+  // Rule 1: Replace common reversed or misplaced brackets often extracted by OCR in Arabic/English bidi layouts.
+  // When an English term (e.g., Chevron, Sign) is surrounded by mismatched brackets:
+  // E.g., ")Chevron(" or "(Chevron" or ")Chevron)" -> should safely become "(Chevron)".
+  text = text.replace(/\)\s*([A-Za-z0-9_\-\s.&]+)\s*\(/gi, " ($1) ");
+  text = text.replace(/\(\s*([A-Za-z0-9_\-\s.&]+)\s*\(/gi, " ($1) ");
+  text = text.replace(/\)\s*([A-Za-z0-9_\-\s.&]+)\s*\)/gi, " ($1) ");
+  
+  // Rule 2: General cleanup of double or stray brackets/parentheses
+  text = text.replace(/\s+/g, ' ').trim();
+  
+  return text;
+}
+
+function parseSafePrecisionNumber(val: any): number {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') {
+    if (isNaN(val)) return 0;
+    return val;
+  }
+  
+  let str = String(val).trim();
+  str = convertEasternToWesternNumerals(str);
+  
+  // Remove spaces and keep only numbers, dots, commas, negative signs
+  str = str.replace(/[^0-9.,\-]/g, '');
+  
+  // If there are multiple dots, e.g., "285.600.00"
+  if ((str.match(/\./g) || []).length > 1) {
+    const parts = str.split('.');
+    const lastPart = parts[parts.length - 1];
+    if (lastPart.length === 2 || lastPart.length === 1) {
+      // Last dot is the decimal point, other dots are thousands
+      const integerPart = parts.slice(0, parts.length - 1).join('');
+      str = integerPart + '.' + lastPart;
+    } else {
+      // All dots are thousands, e.g. "285.600" becomes "285600"
+      str = parts.join('');
+    }
+  }
+  
+  // Standard bidi/european number notation handling
+  if (str.includes('.') && str.includes(',')) {
+    if (str.indexOf('.') < str.indexOf(',')) {
+      // Dot is thousands, comma is decimal: "285.600,00" -> "285600.00"
+      str = str.replace(/\./g, '').replace(/,/g, '.');
+    } else {
+      // Comma is thousands, dot is decimal: "285,600.00" -> "285600.00"
+      str = str.replace(/,/g, '');
+    }
+  } else if (str.includes(',')) {
+    // Check if the comma is a decimal or thousand separator. E.g., "285,600" vs "1500,50"
+    const parts = str.split(',');
+    const lastPart = parts[parts.length - 1];
+    if (parts.length === 2 && lastPart.length <= 2) {
+      str = parts[0] + '.' + lastPart;
+    } else {
+      str = str.replace(/,/g, '');
+    }
+  }
+  
+  // Special case: Single dot with exactly 3 digits after it at the end of the string in large financial numbers
+  // Example: "285.600" often is typed instead of "285600" (two hundred eighty-five thousand).
+  // If it's a number >= 100 with a dot followed by exactly three digits, e.g. "285.600", and no other dot is present
+  // we check if we should treat it as 285600.
+  if (str.includes('.') && (str.match(/\.\d{3}$/) !== null)) {
+    const parts = str.split('.');
+    if (parts.length === 2 && parts[0].length >= 2) {
+      // It's likely a thousands separator dot masquerading as a decimal point!
+      str = parts.join('');
+    }
+  }
+
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+}
+
 // Helper to extract brands from description and recalculate math-accurate totalAmount
 function sanitizeAndExtractBrands(docs: any[]): any[] {
   if (!docs) return [];
@@ -508,8 +588,8 @@ function sanitizeAndExtractBrands(docs: any[]): any[] {
         }
       }
       
-      const q = Number(item.quantity) || 0;
-      const p = Number(item.unitPrice) || 0;
+      const q = parseSafePrecisionNumber(item.quantity);
+      const p = parseSafePrecisionNumber(item.unitPrice);
       const tot = Number((q * p).toFixed(2));
 
       let clean = desc;
@@ -519,11 +599,14 @@ function sanitizeAndExtractBrands(docs: any[]): any[] {
       clean = clean.replace(/^[-\s,\.\/—\|_]+/, '').replace(/[-\s,\.\/—\|_]+$/, '').trim();
       
       const brandVal = item.brand && item.brand.trim() !== "" ? item.brand : foundBrand;
+      const finalBrand = cleanBidiText(convertEasternToWesternNumerals(brandVal || ""));
+      const rawFinalDesc = brandVal ? (clean || desc) : desc;
+      const finalDesc = cleanBidiText(convertEasternToWesternNumerals(rawFinalDesc));
       
       return {
         ...item,
-        brand: convertEasternToWesternNumerals(brandVal || ""),
-        description: convertEasternToWesternNumerals(brandVal ? (clean || desc) : desc),
+        brand: finalBrand,
+        description: finalDesc,
         unit: convertEasternToWesternNumerals(item.unit || "عدد"),
         quantity: q,
         unitPrice: p,
@@ -729,43 +812,60 @@ async function extractDataFromDocument(fileBuffer: Buffer, mimeType: string, fil
   const base64Data = fileBuffer.toString("base64");
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const systemInstruction = `You are a professional AI accountant and bilingual data extraction/OCR expert.
-Analyze the provided document (which may be a Purchase Order [PO - أمر شراء] or Quote [عرض سعر], written in Arabic or English, or containing a mix of both).
-Extract key structural items and format them accurately as JSON.
+  const systemInstruction = `You are an elite professional AI accountant, multimodal visual processor, and billing OCR expert.
+Analyze the provided document (which may be a scanned or digital PDF, a JPEG/PNG photo of a Purchase Order [PO - أمر شراء], an Invoice, or a Quotation [عرض سعر] written in Arabic, English, or a bidi combination of both).
 
-Core Parsing Guidelines:
-1. Bilingual OCR Support (دعم كامل ومتوازي للغتين العربية والإنجليزية):
-   - You MUST extract all Arabic and English text with absolute high accuracy.
-   - Never omit, translate, summarize, or shorten any descriptive text or words, especially long technical specifications in Arabic (such as complex descriptions of steel bridges, architectural dimensions, item grades, fittings, etc.) or in English. 
-   - Keep both languages intact; copy and extract description details word-for-word exactly as printed in the document.
+You MUST perform advanced visual OCR and document structure analysis, extracting key structural items and header meta-data accurately as JSON.
 
-2. Page Boundaries & Split Rows (معالجة صفوف البنود المقطوعة بين الصفحات):
-   - Multi-page documents often split a single table row across physical page breaks (e.g., the description of "Item 4" starts at the bottom of Page 1 and carries over to the top of Page 2, with prices or quantities appearing on one side of the break).
-   - You MUST identify split rows and intelligently MERGE them back into a single, cohesive, logical row in the "items" array. 
-   - Never output a split row as two separate/duplicate rows, and never discard/omit either part of the split text. Combine the descriptions from both pages seamlessly (maintaining proper logical text flow) and associate them with the single correct quantity, unit price, and total.
+Core Extraction & Parsing Guidelines:
 
-3. Complete Table Cohesiveness (هيكلية متماسكة للجداول والصفحات المنتشرة):
-   - Treat the entire document as a continuous logical table from the first page until the last page. Ignore repeating headers, footers, page numbers, or signature blocks when assembling the "items" catalog.
-   - Ensure that the Description strictly correlates with its corresponding Unit, Quantity, Unit Price, and Total.
+1. Support Scanned Documents & Images (دعم كامل وكامل للملفات الممسوحة والصور والموديلات البصرية):
+   - You act as a high-fidelity Vision Model and Advanced OCR engine. You can read, map, and align tabular content from skewed photos, scanned PDFs, or low-quality screenshots of POs/Invoices.
+   - Detect grid cells, horizontal rows, line lines, and field columns, keeping the alignment between description, quantity, unit price, and total intact.
 
-4. Identify Vendor/Seller Name (اسم البائع والمورد): This is the name of the supplier, seller or company we are buying from (اسم البائع أو المورد). In a Purchase Order ('أمر شراء'), this is the vendor whom the order is addressed to. In a Quote ('عرض سعر'), this is the company issuing/authoring the quote. Do NOT extract our company name (e.g. Delta Group) or client name unless they are the actual supplier. You MUST refer to the 'Known Client/Supplier names' list below. If any known vendor/supplier name is present, mentioned, or strongly suggested in the document (e.g. 'Yet Trace', 'Huda Lighting', '3BROTHERS', 'النيل للتوريدات المعمارية' etc.), you MUST choose that exact spelling as the clientName. Maintain proper Arabic spelling if written in Arabic.
-5. Identify Document Date: Format as YYYY-MM-DD. Use today's date (${todayStr}) if not clearly specified or found.
-6. Identify Document Type: Determine if 'po' (Purchase Order / أمر شراء) or 'quote' (Quote / Proposal / Price Offer / عرض سعر). Default to 'unknown' only if absolutely neither.
-7. Extract list of items/lines: Each item must contain a description, quantity, unitPrice, cumulative line total, brand (manufacturer/brand name of the item, e.g., HP, Samsung, LG or supply brand, default empty. Note: 'اليزية' / 'اليزيه' / 'Elysee' / 'Elise' is a brand name/type; always extract it under the 'brand' field and not as part of the raw description), and unit (unit of measurement, e.g., عدد, متر, طن, لتر, علبة, Pcs, Unit, default 'عدد').
-8. Extract totalAmount and currency (e.g., EGP, USD, SAR, AED, EUR).
-9. Provide a concise 1-sentence Arabic summary of the transaction.
-10. Identify Project Name: Look for project fields or indicators like 'Project:', 'المشروع:', 'اسم المشروع:', 'عملية:', 'بخصوص عملية:', 'موقع العمل:', etc.. You MUST refer to the Known Projects list below. If any known project name is present/mentioned in the document, or if anything in the document strongly suggests one of those projects (e.g., 'Villette A&B', 'Azalia', 'Al-brouj', 'THE ESTATE', etc.), you MUST choose that exact spelling as the projectName. If not found or unclear, default to 'عام'.
-11. Identify Due Date / Payment Deadline: Look for payment terms, due date, 'Due Date:', 'تاريخ الاستحقاق', 'يسدد قبل', 'تاريخ السداد', etc. Format as YYYY-MM-DD. If not explicitly found, calculate it if possible or leave empty if completely unavailable.
+2. Merge Split & Hanging Lines (منع تقطيع الوصف ودمج الأسطر المتتالية):
+   - In financial documents and PO tables, long description cells often stretch over multiple physical lines, or single table rows may be split across pages.
+   - Often, technical extensions, dimensions (e.g., "مقاس " or "60x60 سم"), colors (e.g., "خلفية صفراء..."), or technical specifications stream onto successive lines immediately under the main item name.
+   - You MUST intelligently MERGE all consecutive/hanging lines that belong to the same item into a single, continuous, logical "description" field!
+   - You are STRICTLY FORBIDDEN from creating separate/blank rows in the items array representing these hanging specifications/extensions. Every line item MUST have a physical row representing the actual item, with its full description compiled and joined with spaces.
 
-CRITICAL ADAPTIVE / SELF-LEARNING RULE (قاعدة التكيف والتعلم الذاتي المستمر):
-To keep the system highly reliable and fully aligned with the user's specific business vocabulary, you MUST match existing nomenclature. If the parsed client/vendor name or any item description/brand/unit in the new document matches or strongly resembles any of the previously saved values below, you MUST automatically use the existing exact spelling/naming from this prior knowledge:
-- Known Client/Supplier names (الموردين والعملاء الحاليين للشركات): ${JSON.stringify(learnedSuppliers)}
-- Known common item descriptions (البنود والخدمات المجلوبة مسبقاً): ${JSON.stringify(learnedItems)}
-- Known Brands (الماركات): ${JSON.stringify(learnedBrands)}
-- Known Units (الوحدات القياسية): ${JSON.stringify(learnedUnits)}
-- Known Projects / Sites (المشاريع المعتمدة والعمليات): ${JSON.stringify(learnedProjects)}
+3. Complete Visual OCR & Absolute Rich Description (الاستخراج الكامل والدقيق للوصف):
+   - Read and extract every word, detail, dimension, technical type, spec, and code printed in the description section.
+   - Do not summarize, truncate, or omit any visual text under the "description" field.
 
-If there is a slight spelling variation or minor difference in the vendor name or item, standardize it to the exact matched term from the lists above to avoid duplicating vendors or items!`;
+4. Clear Header Layout Segregation (تنظيف وفصل بيانات الهيدر):
+   - Isolate the true Supplying Supplier/Vendor name from receiver/ship-to names.
+   - Vendor Name (clientName): Select ONLY the actual third-party company selling/supplying the items (e.g., '3BROTHERS', 'Huda Lighting', 'النيل للتوريدات'). Do NOT use the company address of the recipient (e.g., Delta Group or our construction site addresses) as the clientName.
+   - Project/Site Name (projectName): Look for target site indicators, project fields, or ship-to keywords. Prioritize known projects.
+   - PO/Doc Number (docNumber): Extract the clean document identifier. Strip any nearby overlapping lines or label remnants.
+
+5. Bilingual Bracket Alignment & Text Direction (إصلاح اتجاه النصوص العربية والإنجليزية والأقواس):
+   - For items with mixed Arabic and English terms (such as: 'لوحة إرشادية (Chevron)' or 'يافطة (Sign)'), ensure parenthesis/bracket characters are balanced, correctly opened/closed, and not scrambled in order. E.g. Output standard parenthesized words '(Chevron)' directly adjacent to the Arabic text without reversed characters.
+
+6. Strict Mathematical Number Formats (توحيد صيغ الأرقام):
+   - Extract numerical properties ("quantity", "unitPrice", "total", "totalAmount") strictly as JS/JSON numbers.
+   - Never inject periods/dots as thousand separators inside JSON numbers. Ensure the numbers keep standard precision decimals (e.g., output 285600.00 instead of 285.600.00).
+
+7. Identify Project Name: Look for indicators like Project, المشروع, عملية, موقع العمل. Fallback to 'عام' if not found.
+8. Extract list of items: Each item must contain:
+   - description (Clean, merged full description text)
+   - quantity (number)
+   - unitPrice (number)
+   - total (number, qty * unitPrice)
+   - brand (Manufacturer/brand name of the item. 'اليزية' / 'اليزيه' / 'Elysee' is a brand, extract it in the brand field rather than description)
+   - unit (default 'عدد' if missing)
+9. Extract totalAmount and currency (e.g., EGP, USD, SAR, AED, EUR).
+10. Return a brief 1-sentence Arabic summary of the document.
+
+CRITICAL ADAPTIVE / SELF-LEARNING RULE:
+To prevent duplication and maintain pristine catalog nomenclature, prioritize matching previous data:
+- Known Client/Supplier names: ${JSON.stringify(learnedSuppliers)}
+- Known common item descriptions: ${JSON.stringify(learnedItems)}
+- Known Brands: ${JSON.stringify(learnedBrands)}
+- Known Units: ${JSON.stringify(learnedUnits)}
+- Known Projects: ${JSON.stringify(learnedProjects)}
+
+If any extracted term matches or strongly resembles a known term, use its EXACT catalog spelling.`;;
 
   try {
     const documentPart = {
@@ -889,15 +989,45 @@ If there is a slight spelling variation or minor difference in the vendor name o
 
     const parsedText = response?.text || "{}";
     const data = JSON.parse(parsedText.trim());
-    if (data && Array.isArray(data.items)) {
-      data.items.forEach((item: any) => {
-        if (item.unit) {
-          const trimmed = item.unit.trim();
-          if (trimmed === 'عئد' || trimmed === 'عئد.' || trimmed.includes('عئد')) {
+    if (data) {
+      if (data.clientName) {
+        data.clientName = cleanBidiText(data.clientName);
+      }
+      if (data.projectName) {
+        data.projectName = cleanBidiText(data.projectName);
+      }
+      if (data.docNumber) {
+        data.docNumber = cleanBidiText(data.docNumber).replace(/^(PO|Quote|أمر شراء|عرض سعر|No\.?|Num\.?)\s*[:-]?\s*/i, '');
+      }
+      if (data.totalAmount !== undefined && data.totalAmount !== null) {
+        data.totalAmount = parseSafePrecisionNumber(data.totalAmount);
+      }
+      
+      if (Array.isArray(data.items)) {
+        data.items.forEach((item: any) => {
+          if (item.description) {
+            item.description = cleanBidiText(item.description);
+          }
+          if (item.brand) {
+            item.brand = cleanBidiText(item.brand);
+          }
+          
+          item.quantity = parseSafePrecisionNumber(item.quantity);
+          item.unitPrice = parseSafePrecisionNumber(item.unitPrice);
+          item.total = parseSafePrecisionNumber(item.total || (item.quantity * item.unitPrice));
+          
+          if (item.unit) {
+            const trimmed = String(item.unit).trim();
+            if (trimmed === 'عئد' || trimmed === 'عئد.' || trimmed.includes('عئد')) {
+              item.unit = 'عدد';
+            } else {
+              item.unit = trimmed;
+            }
+          } else {
             item.unit = 'عدد';
           }
-        }
-      });
+        });
+      }
     }
     return data;
   } catch (error: any) {
@@ -990,24 +1120,36 @@ async function uploadToSupabaseStorage(
   
   if (supabaseClient) {
     try {
-      console.log(`Uploading file ${supabasePath} to Supabase bucket "pos-files"...`);
-      const { data, error } = await supabaseClient.storage
-        .from("pos-files")
+      let bucketName = "POs Files";
+      console.log(`Uploading file ${supabasePath} to Supabase bucket "${bucketName}"...`);
+      let { data, error } = await supabaseClient.storage
+        .from(bucketName)
         .upload(supabasePath, processedBuffer, {
           contentType: processedMimetype,
           upsert: true
         });
         
       if (error) {
-        throw error;
+        console.warn(`Upload to bucket "${bucketName}" failed: ${error.message}. Retrying with backup "pos-files"...`);
+        bucketName = "pos-files";
+        const retryResult = await supabaseClient.storage
+          .from(bucketName)
+          .upload(supabasePath, processedBuffer, {
+            contentType: processedMimetype,
+            upsert: true
+          });
+        if (retryResult.error) {
+          throw retryResult.error;
+        }
+        data = retryResult.data;
       }
       
       // Get Public URL
       const { data: publicUrlData } = supabaseClient.storage
-        .from("pos-files")
+        .from(bucketName)
         .getPublicUrl(supabasePath);
         
-      console.log(`Successfully uploaded to Supabase Storage! Public URL: ${publicUrlData.publicUrl}`);
+      console.log(`Successfully uploaded to Supabase Storage inside bucket "${bucketName}"! Public URL: ${publicUrlData.publicUrl}`);
       return {
         path: publicUrlData.publicUrl,
         isCloud: true
@@ -1202,6 +1344,139 @@ app.post("/api/suppliers/add", async (req, res) => {
     res.json({ success: true, suppliers: db.suppliers });
   } catch (error: any) {
     console.error("Add supplier error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/suppliers/rename", async (req, res) => {
+  try {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName || typeof oldName !== "string" || typeof newName !== "string") {
+      return res.status(400).json({ error: "الاسم القديم والجديد مطلوبان" });
+    }
+    const cleanOld = oldName.trim();
+    const cleanNew = newName.trim();
+    if (!cleanOld || !cleanNew) {
+      return res.status(400).json({ error: "الأسماء غير صالحة" });
+    }
+    
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    // Rename in suppliers list
+    if (db.suppliers) {
+      // replace or filter out oldName and insert newName if not already present
+      let updated = db.suppliers.map((s: string) => s === cleanOld ? cleanNew : s);
+      // Ensure uniqueness
+      updated = updated.filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
+      db.suppliers = updated;
+    } else {
+      db.suppliers = [cleanNew];
+    }
+    
+    // Rename clientName in documents
+    if (db.documents && Array.isArray(db.documents)) {
+      db.documents.forEach((doc: any) => {
+        if (doc.clientName === cleanOld) {
+          doc.clientName = cleanNew;
+        }
+      });
+    }
+    
+    saveDb(db);
+    res.json({ success: true, suppliers: db.suppliers });
+  } catch (error: any) {
+    console.error("Rename supplier error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/suppliers/delete", async (req, res) => {
+  try {
+    const { name, deleteDocuments } = req.body;
+    if (!name || typeof name !== "string") {
+      return res.status(400).json({ error: "اسم المورد مطلوب" });
+    }
+    const cleanName = name.trim();
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    // Remove from suppliers list
+    if (db.suppliers) {
+      db.suppliers = db.suppliers.filter((s: string) => s !== cleanName);
+    }
+    
+    // Handle associated documents
+    if (db.documents && Array.isArray(db.documents)) {
+      if (deleteDocuments === true) {
+        db.documents.forEach((doc: any) => {
+          if (doc.clientName === cleanName && doc.classifiedPath) {
+            try {
+              const absPath = path.join(DATA_DIR, doc.classifiedPath.replace(/^\/data\//, ""));
+              if (fs.existsSync(absPath)) {
+                fs.unlinkSync(absPath);
+              }
+            } catch (err) {
+              console.warn("Could not delete file associated with supplier:", err);
+            }
+          }
+        });
+        db.documents = db.documents.filter((doc: any) => doc.clientName !== cleanName);
+      } else {
+        db.documents.forEach((doc: any) => {
+          if (doc.clientName === cleanName) {
+            doc.clientName = "غير محدد";
+          }
+        });
+      }
+    }
+    
+    saveDb(db);
+    res.json({ success: true, suppliers: db.suppliers });
+  } catch (error: any) {
+    console.error("Delete supplier error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/units/rename", async (req, res) => {
+  try {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName || typeof oldName !== "string" || typeof newName !== "string") {
+      return res.status(400).json({ error: "الاسم القديم والجديد مطلوبان" });
+    }
+    const cleanOld = oldName.trim();
+    let cleanNew = newName.trim();
+    if (cleanNew === 'عئد' || cleanNew === 'عئد.' || cleanNew.includes('عئد')) {
+      cleanNew = 'عدد';
+    }
+    if (!cleanOld || !cleanNew) {
+      return res.status(400).json({ error: "الأسماء غير صالحة" });
+    }
+    
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    // Rename unit in all items of documents
+    let updatedCount = 0;
+    if (db.documents && Array.isArray(db.documents)) {
+      db.documents.forEach((doc: any) => {
+        if (Array.isArray(doc.items)) {
+          doc.items.forEach((item: any) => {
+            const itemUnit = (item.unit || "").trim();
+            if (itemUnit === cleanOld || itemUnit === 'عئد' || itemUnit === 'عئد.' || itemUnit.includes('عئد')) {
+              item.unit = cleanNew;
+              updatedCount++;
+            }
+          });
+        }
+      });
+    }
+    
+    saveDb(db);
+    res.json({ success: true, updatedCount });
+  } catch (error: any) {
+    console.error("Rename unit error:", error);
     res.status(500).json({ error: error.message });
   }
 });

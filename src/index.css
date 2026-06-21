@@ -362,13 +362,22 @@ html, body {
   .print-me th,
   .print-me td,
   .print-me div {
-    border-color: #4B5563 !important; /* Clear dark-gray lines for gorgeous crisp outlines */
+    border-color: #000000 !important; /* Force deep black on print output */
   }
 
   /* Solid professional gray header background + black text */
   .excel-header-banner {
-    background-color: #CCCCCC !important;
+    background-color: #B2B2B2 !important;
     color: #000000 !important;
   }
+}
+
+/* Global deep crisp black borders for the virtual excel view and print layouts */
+#printable-excel-sheet-delta-isolated,
+#printable-excel-sheet-delta-isolated table,
+#printable-excel-sheet-delta-isolated th,
+#printable-excel-sheet-delta-isolated td,
+#printable-excel-sheet-delta-isolated tr {
+  border-color: #000000 !important;
 }
 

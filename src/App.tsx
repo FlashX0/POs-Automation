@@ -47,7 +47,9 @@ import {
   PlusCircle,
   Users,
   Truck,
-  Database
+  Database,
+  Scale,
+  Sliders
 } from 'lucide-react';
 // @ts-ignore
 import * as XLSX from 'xlsx-js-style';
@@ -404,7 +406,7 @@ export default function App() {
   const [selectedFolderProject, setSelectedFolderProject] = useState<string | null>(null);
 
   // Projects Budget & Spending analytics states
-  const [projectSubTab, setProjectSubTab] = useState<'folders' | 'charts' | 'suppliers'>('folders');
+  const [projectSubTab, setProjectSubTab] = useState<'folders' | 'charts' | 'suppliers' | 'units'>('folders');
   const [chartSelectedProject, setChartSelectedProject] = useState<string>('all');
   const [chartSelectedCurrency, setChartSelectedCurrency] = useState<string>('EGP');
   const [chartSelectedDocType, setChartSelectedDocType] = useState<'po' | 'quote' | 'all'>('po');
@@ -438,6 +440,9 @@ export default function App() {
   // Custom premium modal/dialog states to bypass iframe confirm/prompt browser locks
   const [customProjectDeleteModal, setCustomProjectDeleteModal] = useState<{ isOpen: boolean; projectName: string }>({ isOpen: false, projectName: '' });
   const [customProjectRenameModal, setCustomProjectRenameModal] = useState<{ isOpen: boolean; projectName: string; inputValue: string }>({ isOpen: false, projectName: '', inputValue: '' });
+  const [customSupplierDeleteModal, setCustomSupplierDeleteModal] = useState<{ isOpen: boolean; supplierName: string }>({ isOpen: false, supplierName: '' });
+  const [customSupplierRenameModal, setCustomSupplierRenameModal] = useState<{ isOpen: boolean; supplierName: string; inputValue: string }>({ isOpen: false, supplierName: '', inputValue: '' });
+  const [customUnitRenameModal, setCustomUnitRenameModal] = useState<{ isOpen: boolean; unitName: string; inputValue: string }>({ isOpen: false, unitName: '', inputValue: '' });
   const [customDocDeleteModal, setCustomDocDeleteModal] = useState<{ isOpen: boolean; docId: string }>({ isOpen: false, docId: '' });
 
   // Decoupled window/tab print routing detection
@@ -608,6 +613,87 @@ export default function App() {
     } catch (err) {
       console.error('Error renaming project:', err);
       triggerNotificationToast('error', 'خطأ في الاتصال بالخادم', 'فشل تعديل الاسم بسبب خطأ تقني في الشبكة');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRenameSupplier = async (oldName: string, newName: string) => {
+    if (!oldName || !newName || !newName.trim()) return;
+    try {
+      setLoading(true);
+      const res = await fetch('/api/suppliers/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName: newName.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.suppliers) {
+          setSuppliersList(data.suppliers);
+          await fetchData(false);
+          triggerNotificationToast('success', 'تم تعديل اسم المورد بنجاح', `تم تعديل "${oldName}" إلى "${newName.trim()}"`);
+        }
+      } else {
+        const errorData = await res.json();
+        triggerNotificationToast('error', 'فشل تعديل الاسم', errorData.error || 'فشل تعديل اسم المورد');
+      }
+    } catch (err) {
+      console.error('Error renaming supplier:', err);
+      triggerNotificationToast('error', 'خطأ في الاتصال بالخادم', 'فشل تعديل الاسم بسبب خطأ تقني في الشبكة');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteSupplier = async (supplierName: string, deleteDocuments: boolean = false) => {
+    if (!supplierName) return;
+    try {
+      setLoading(true);
+      const res = await fetch('/api/suppliers/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: supplierName, deleteDocuments })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.suppliers) {
+          setSuppliersList(data.suppliers);
+          await fetchData(false);
+          triggerNotificationToast('success', 'تم حذف المورد بنجاح', `تم إزالة المورد "${supplierName}" وتحديث الوثائق بنجاح.`);
+        }
+      } else {
+        const errorData = await res.json();
+        triggerNotificationToast('error', 'فشل حذف المورد', errorData.error || 'فشل حذف المورد');
+      }
+    } catch (err) {
+      console.error('Error deleting supplier:', err);
+      triggerNotificationToast('error', 'خطأ في الاتصال بالخادم', 'فشل عملية حذف المورد');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRenameUnit = async (oldName: string, newName: string) => {
+    if (!oldName || !newName || !newName.trim()) return;
+    try {
+      setLoading(true);
+      const res = await fetch('/api/units/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName: newName.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await fetchData(false);
+        triggerNotificationToast('success', 'تم تعديل اسم الوحدة بنجاح', `تم تعديل "${oldName}" إلى "${newName.trim()}" في ${data.updatedCount || 0} بنود.`);
+      } else {
+        const errorData = await res.json();
+        triggerNotificationToast('error', 'فشل تعديل اسم الوحدة', errorData.error || 'خطأ أثناء المعالجة');
+      }
+    } catch (err) {
+      console.error('Error renaming unit:', err);
+      triggerNotificationToast('error', 'خطأ في الاتصال بالخادم', 'فشل عملية تعديل اسم الوحدة');
     } finally {
       setLoading(false);
     }
@@ -902,13 +988,36 @@ export default function App() {
   }, [documents]);
 
   const uniqueItemUnits = useMemo(() => {
-    const list: string[] = [];
+    const defaultUnits = ["عدد", "متر", "طن", "كغم", "متر مربع", "متر مكعب", "ساعة", "يوم"];
+    const list: string[] = [...defaultUnits];
     documents.forEach(d => {
       d.items?.forEach(item => {
-        if (item.unit?.trim()) list.push(item.unit.trim());
+        let u = item.unit?.trim();
+        if (u) {
+          if (u === 'عئد' || u === 'عئد.' || u.includes('عئد')) {
+            u = 'عدد';
+          }
+          list.push(u);
+        }
       });
     });
-    return Array.from(new Set(list));
+    return Array.from(new Set(list)).filter(Boolean);
+  }, [documents]);
+
+  const unitUsageCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    documents.forEach(d => {
+      d.items?.forEach(item => {
+        let u = item.unit?.trim();
+        if (u) {
+          if (u === 'عئد' || u === 'عئد.' || u.includes('عئد')) {
+            u = 'عدد';
+          }
+          counts[u] = (counts[u] || 0) + 1;
+        }
+      });
+    });
+    return counts;
   }, [documents]);
 
   // 2. Calculated Dashboard Statistics
@@ -1877,6 +1986,26 @@ export default function App() {
     });
   };
 
+  // Update a single top-level field inside print document's metadata from the print sheet and sync with state
+  const handleUpdatePrintDocField = (field: keyof ProcessedDocument, value: any) => {
+    const docId = printDocId || (selectedDoc ? selectedDoc.id : null);
+    if (!docId) return;
+    
+    setDocuments(prevDocs => {
+      const currentDoc = prevDocs.find(d => d.id === docId);
+      if (!currentDoc) return prevDocs;
+      
+      const updatedDoc = { ...currentDoc, [field]: value };
+      
+      // If this is also the selected document in the drawer, sync too!
+      if (selectedDoc && selectedDoc.id === docId) {
+        setSelectedDoc(updatedDoc);
+      }
+      
+      return prevDocs.map(d => d.id === docId ? updatedDoc : d);
+    });
+  };
+
   // Update a top-level field or multiple fields of the document inside the drawer and sync with state
   const handleUpdateDrawerField = (fieldOrFields: keyof ProcessedDocument | Partial<ProcessedDocument>, value?: any) => {
     setSelectedDoc(prev => {
@@ -2553,7 +2682,13 @@ export default function App() {
               type="button"
               onClick={() => {
                 setPrintDocId(null);
-                try { window.close(); } catch {}
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('print')) {
+                  url.searchParams.delete('print');
+                  url.searchParams.delete('dir');
+                  url.searchParams.delete('align');
+                  window.location.href = url.pathname;
+                }
               }}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer hover:scale-[1.02]"
             >
@@ -2645,17 +2780,17 @@ export default function App() {
               printDirectionParam === 'rtl' ? 'print-rtl' : 'print-ltr'
             }`}
           >
-            {/* Header Banner Block */}
-            <div className="excel-header-banner border-b border-slate-350 p-4 flex justify-between items-center bg-[#CCCCCC]">
-              <div className={`${printDirectionParam === 'rtl' ? 'text-right' : 'text-left'} font-sans`}>
-                <div className="text-xl font-black text-black tracking-tight leading-none">DELTA</div>
-                <div className="text-[10px] font-black text-black mt-1.5 tracking-wider">FOR ROAD CONSTRUCTION</div>
+            {/* Header Banner Block with dark blue top bar */}
+            <div className="excel-header-banner border-t-[5px] border-[#0000FF] border-b border-black py-4 px-4 flex justify-between items-center bg-[#B2B2B2]">
+              <div className="text-left font-sans">
+                <div className="text-xl font-bold text-black tracking-tight leading-none">DELTA</div>
+                <div className="text-[10px] md:text-xs font-bold text-black mt-1.5 tracking-wider uppercase">FOR ROAD CONSTRUCTION</div>
               </div>
-              <div className={`${printDirectionParam === 'rtl' ? 'text-left' : 'text-right'} border-s-2 border-dashed border-black/40 ps-4 font-sans`}>
-                <div className="text-sm font-black text-black tracking-wider leading-none">
+              <div className="text-right font-sans">
+                <div className="text-base font-bold text-black tracking-wider leading-none uppercase">
                   PURCHASE
                 </div>
-                <div className="text-sm font-black text-black tracking-wider leading-none mt-1">
+                <div className="text-base font-bold text-black tracking-wider leading-none mt-1 uppercase">
                   ORDER
                 </div>
               </div>
@@ -2668,9 +2803,17 @@ export default function App() {
                   <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
                     {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
                   </span>
-                  <span className="font-black text-black text-[14px] mt-1 leading-snug w-full text-center block whitespace-normal break-words">
+                  <div
+                    contentEditable={true}
+                    suppressContentEditableWarning={true}
+                    className="font-black text-black text-[14px] mt-1 leading-snug w-full text-center block whitespace-normal break-words focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1 transition-colors"
+                    onBlur={(e) => {
+                      const text = e.currentTarget.innerText || "";
+                      handleUpdatePrintDocField('clientName', text.trim());
+                    }}
+                  >
                     {printDoc.clientName || "غير محدد"}
-                  </span>
+                  </div>
                 </div>
 
                 {/* Column 2: Ship to */}
@@ -2723,9 +2866,17 @@ export default function App() {
                     <span className="text-[10px] font-bold text-slate-450 mb-1">
                       {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
                     </span>
-                    <span className="font-extrabold text-slate-800 text-xs">
+                    <div
+                      contentEditable={true}
+                      suppressContentEditableWarning={true}
+                      className="font-extrabold text-slate-800 text-xs focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1"
+                      onBlur={(e) => {
+                        const text = e.currentTarget.innerText || "";
+                        handleUpdatePrintDocField('clientName', text.trim());
+                      }}
+                    >
                       {printDoc.clientName || "غير محدد"}
-                    </span>
+                    </div>
                   </div>
                   <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
                     <span className="text-[10px] font-bold text-slate-450 mb-1">
@@ -2888,11 +3039,16 @@ export default function App() {
                                     dir="auto"
                                     className="w-full text-center focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1"
                                     onBlur={(e) => {
-                                      const text = e.currentTarget.innerText || "";
+                                      let text = e.currentTarget.innerText || "";
+                                      text = text.trim();
+                                      if (text === 'عئد' || text === 'عئد.' || text.includes('عئد')) {
+                                        text = 'عدد';
+                                        e.currentTarget.innerText = 'عدد';
+                                      }
                                       handleUpdatePrintItem(idx, 'unit', text);
                                     }}
                                   >
-                                    {item.unit ? convertEasternToWesternNumerals(item.unit) : "عدد"}
+                                    {item.unit && !item.unit.includes('عئد') && item.unit !== 'عئد.' && item.unit !== 'عئد' ? convertEasternToWesternNumerals(item.unit) : "عدد"}
                                   </div>
                                 </td>
                                 <td className="border-e border-slate-200 py-5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
@@ -4030,13 +4186,31 @@ export default function App() {
                       
                       {/* Customer folder title */}
                       <div className="bg-slate-100 p-4 border-b border-slate-150 flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-sky-200 text-sky-800 rounded-lg">
+                        <div className="flex items-center gap-2 max-w-[70%]">
+                          <div className="p-1.5 bg-sky-200 text-sky-800 rounded-lg flex-shrink-0">
                             <FolderOpen className="w-4 h-4" />
                           </div>
-                          <span className="font-bold text-slate-800 text-sm">{clientName}</span>
+                          <span className="font-bold text-slate-800 text-sm truncate" title={clientName}>{clientName}</span>
+                          <button
+                            onClick={() => {
+                              setCustomSupplierRenameModal({ isOpen: true, supplierName: clientName, inputValue: clientName });
+                            }}
+                            className="p-1 hover:bg-slate-250 text-slate-500 hover:text-sky-600 rounded-md transition-colors cursor-pointer flex-shrink-0"
+                            title="تعديل اسم المورد"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCustomSupplierDeleteModal({ isOpen: true, supplierName: clientName });
+                            }}
+                            className="p-1 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer flex-shrink-0"
+                            title="حذف المورد"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         </div>
-                        <span className="px-2 py-0.5 bg-white text-slate-600 rounded-md text-[10px] font-bold border border-slate-150 font-mono">
+                        <span className="px-2 py-0.5 bg-white text-slate-600 rounded-md text-[10px] font-bold border border-slate-150 font-mono flex-shrink-0">
                           {docs.length} ملفات
                         </span>
                       </div>
@@ -4131,6 +4305,17 @@ export default function App() {
                   >
                     <Truck className="w-4 h-4 text-emerald-600" />
                     <span>سجل الموردين المعتمدين ({uniqueClientsList.length})</span>
+                  </button>
+                  <button
+                    onClick={() => setProjectSubTab('units')}
+                    className={`px-4 py-2.5 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                      projectSubTab === 'units'
+                        ? 'border-sky-600 text-sky-700 font-extrabold pb-2'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 pb-2'
+                    }`}
+                  >
+                    <Scale className="w-4 h-4 text-sky-600" />
+                    <span>دليل وحدات القياس المعتمدة ({uniqueItemUnits.length})</span>
                   </button>
                 </div>
               )}
@@ -4942,7 +5127,28 @@ export default function App() {
                                   <span className="text-[9.5px] bg-emerald-50 text-emerald-700 font-black px-2 py-0.5 rounded border border-emerald-100">
                                     مورد نشط
                                   </span>
-                                  <Truck className="w-4 h-4 text-slate-400" />
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      title="تعديل اسم المورد"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCustomSupplierRenameModal({ isOpen: true, supplierName: supplier, inputValue: supplier });
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-amber-600 rounded-md hover:bg-slate-100 transition-all cursor-pointer"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      title="حذف المورد"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCustomSupplierDeleteModal({ isOpen: true, supplierName: supplier });
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50 transition-all cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
                                 <h5 className="text-[12px] font-black text-slate-800 line-clamp-2 leading-relaxed" title={supplier}>
                                   {supplier}
@@ -4975,6 +5181,73 @@ export default function App() {
                       </div>
                     );
                   })()}
+
+                </div>
+              ) : projectSubTab === 'units' ? (
+                // ------------------ REFERENCE UNITS DIRECTORY & MANAGEMENT ------------------
+                <div className="space-y-6 flex-grow flex flex-col pt-2 text-right font-sans" dir="rtl">
+                  
+                  {/* Alert and System Reference Policy */}
+                  <div className="bg-[#FAFBFD] border border-sky-150 rounded-2xl p-5 text-right flex flex-col lg:flex-row justify-between gap-5 items-start lg:items-center">
+                    <div className="space-y-1.5">
+                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                        <Scale className="w-5 h-5 text-sky-650" />
+                        دليل الوحدات المرجعية والقياسية لعمليات التوريد
+                      </h4>
+                      <p className="text-xs text-slate-500 leading-relaxed max-w-3xl">
+                        يحتوي هذا القسم على سجل بكافة الوحدات المستخدمة لتحديد كميات المواد والتوريدات. 
+                        يقوم محرّك الفواتير الذكي بالتبديل التلقائي لمدخلات الوحدات الشائعة التي يتم استخراجها مشوهة باللغة العربية (مثل تحويل كلمة <span className="font-extrabold text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">"عئد"</span> إلى الفصيحة <span className="font-extrabold text-teal-600 bg-teal-50 px-1 py-0.5 rounded border border-teal-200">"عدد"</span>) وتعديلها ينعكس فوراً وشاملاً في كامل قاعدة البيانات.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 bg-sky-50 text-sky-900 rounded-2xl border border-sky-100/60 font-medium text-xs space-y-1 text-center shrink-0">
+                      <div className="font-extrabold text-sm font-mono text-sky-950">{(uniqueItemUnits || []).length}</div>
+                      <div>وحدة قياس معتمدة</div>
+                    </div>
+                  </div>
+
+                  {/* Units dynamic Grid layout */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {uniqueItemUnits.map((unit) => {
+                      const count = unitUsageCounts[unit] || 0;
+                      return (
+                        <motion.div
+                          layout
+                          key={unit}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="bg-white border border-slate-150 hover:border-sky-500 rounded-2xl p-4 shadow-3xs hover:shadow-xs transition-all flex flex-col justify-between"
+                        >
+                          <div className="flex justify-between items-start gap-4">
+                            <div className="space-y-1">
+                              <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded border border-slate-150">
+                                وحدة قياس
+                              </span>
+                              <h5 className="text-xs font-bold text-slate-800 pt-1.5">{unit}</h5>
+                            </div>
+
+                            <button
+                              title="تعديل اسم الوحدة وتحديث الكل"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCustomUnitRenameModal({ isOpen: true, unitName: unit, inputValue: unit });
+                              }}
+                              className="p-1 px-1.5 hover:bg-slate-100 text-slate-400 hover:text-sky-600 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="mt-4 pt-3 border-t border-slate-100/60 flex justify-between items-center text-xs">
+                            <span className="text-slate-400 font-bold">مرات الاستخدام في الفواتير:</span>
+                            <span className="font-mono font-black text-slate-800 bg-sky-50 border border-sky-100/50 px-2.5 py-0.5 rounded-full text-[11px]">
+                              {count} مرات
+                            </span>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
 
                 </div>
               ) : (
@@ -5552,17 +5825,17 @@ export default function App() {
                     }`}
                   >
                     
-                    {/* Header Banner Block */}
-                    <div className="excel-header-banner border-b border-slate-350 p-4 flex justify-between items-center bg-[#CCCCCC]">
-                      <div className={`${printDirection === 'rtl' ? 'text-right' : 'text-left'} font-sans`}>
-                        <div className="text-xl font-black text-black tracking-tight leading-none">DELTA</div>
-                        <div className="text-[10px] font-black text-black mt-1.5 tracking-wider">FOR ROAD CONSTRUCTION</div>
+                    {/* Header Banner Block with dark blue top bar */}
+                    <div className="excel-header-banner border-t-[5px] border-[#0000FF] border-b border-black py-4 px-4 flex justify-between items-center bg-[#B2B2B2]">
+                      <div className="text-left font-sans">
+                        <div className="text-xl font-bold text-black tracking-tight leading-none">DELTA</div>
+                        <div className="text-[10px] md:text-xs font-bold text-black mt-1.5 tracking-wider uppercase">FOR ROAD CONSTRUCTION</div>
                       </div>
-                      <div className={`${printDirection === 'rtl' ? 'text-left' : 'text-right'} border-s-2 border-dashed border-black/40 ps-4 font-sans`}>
-                        <div className="text-sm font-black text-black tracking-wider leading-none">
+                      <div className="text-right font-sans">
+                        <div className="text-base font-bold text-black tracking-wider leading-none uppercase">
                           PURCHASE
                         </div>
-                        <div className="text-sm font-black text-black tracking-wider leading-none mt-1">
+                        <div className="text-base font-bold text-black tracking-wider leading-none mt-1 uppercase">
                           ORDER
                         </div>
                       </div>
@@ -6971,6 +7244,188 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setCustomDocDeleteModal({ isOpen: false, docId: '' })}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                >
+                  إلغاء ❌
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {customSupplierRenameModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-md w-full border border-slate-150 relative text-right"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 mb-4 text-amber-600 border-b border-amber-100 pb-3">
+                <Edit className="w-5.5 h-5.5 shrink-0" />
+                <h3 className="text-base font-black text-slate-900">
+                  تعديل اسم المورد
+                </h3>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 mb-2">الاسم الحالي للمورد:</label>
+                <div className="px-3 py-2 bg-slate-50 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold mb-4">
+                  {customSupplierRenameModal.supplierName}
+                </div>
+
+                <label className="block text-xs font-bold text-slate-500 mb-2">الاسم الجديد للمورد:</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={customSupplierRenameModal.inputValue}
+                  onChange={(e) => setCustomSupplierRenameModal(prev => ({ ...prev, inputValue: e.target.value }))}
+                  placeholder="ادخل اسم المورد الجديد هنا..."
+                  className="w-full px-4 py-2 text-sm text-slate-800 bg-[#FCFDFE] border border-slate-200 rounded-xl focus:outline-hidden focus:border-sky-500 focus:ring-2 focus:ring-sky-100 placeholder-slate-400 font-semibold"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 mt-4">
+                <button
+                  onClick={() => {
+                    if (customSupplierRenameModal.inputValue.trim()) {
+                      handleRenameSupplier(customSupplierRenameModal.supplierName, customSupplierRenameModal.inputValue.trim());
+                      setCustomSupplierRenameModal({ isOpen: false, supplierName: '', inputValue: '' });
+                    }
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  حفظ الاسم الجديد ✅
+                </button>
+                <button
+                  onClick={() => setCustomSupplierRenameModal({ isOpen: false, supplierName: '', inputValue: '' })}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                >
+                  إلغاء ❌
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {customSupplierDeleteModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-lg w-full border border-slate-150 relative text-right"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 mb-4 text-rose-600 border-b border-rose-100 pb-3">
+                <AlertCircle className="w-5.5 h-5.5 shrink-0" />
+                <h3 className="text-base font-black text-slate-900">
+                  إجراء حذف المورد: "{customSupplierDeleteModal.supplierName}"
+                </h3>
+              </div>
+
+              <p className="text-xs text-slate-600 mb-5 leading-relaxed font-bold">
+                لقد طالبت بإزالة المورد <span className="text-rose-600">"{customSupplierDeleteModal.supplierName}"</span> من قائمة الموردين النشطة. يرجى اختيار أحد الخيارين للتعامل مع الفواتير وعروض الأسعار المرتبطة به:
+              </p>
+
+              <div className="grid grid-cols-1 gap-3 mb-4">
+                <button
+                  onClick={() => {
+                    handleDeleteSupplier(customSupplierDeleteModal.supplierName, false);
+                    setCustomSupplierDeleteModal({ isOpen: false, supplierName: '' });
+                  }}
+                  className="p-4 bg-amber-50/50 hover:bg-amber-50 text-slate-800 border border-amber-150 hover:border-amber-300 rounded-2xl text-right transition-all flex items-start gap-3 cursor-pointer group"
+                >
+                  <div className="p-2 bg-amber-100 text-amber-700 rounded-xl shrink-0 group-hover:bg-amber-200 transition-colors">
+                    <FolderOpen className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 mb-0.5 font-sans">حذف المورد وتحويل ارتباط ملفاته إلى "غير محدد" 📁</h4>
+                    <p className="text-[11px] text-slate-500 font-medium font-sans">سيتم سحب ارتباط الفواتير من هذا المورد لتصبح مصنفة ضمن "غير محدد" للحفاظ على سجلاتك المالية آمنة.</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleDeleteSupplier(customSupplierDeleteModal.supplierName, true);
+                    setCustomSupplierDeleteModal({ isOpen: false, supplierName: '' });
+                  }}
+                  className="p-4 bg-rose-50/40 hover:bg-rose-50 text-slate-800 border border-rose-150 hover:border-rose-300 rounded-2xl text-right transition-all flex items-start gap-3 cursor-pointer group"
+                >
+                  <div className="p-2 bg-rose-100 text-rose-700 rounded-xl shrink-0 group-hover:bg-rose-200 transition-colors">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-rose-800 mb-0.5 font-sans">حذف المورد بشكل نهائي وتدمير كافة ملفاته ⚠️</h4>
+                    <p className="text-[11px] text-slate-500 font-medium font-sans">سيتم حذف هذا المورد وتدمير كافة الأوراق وعروض الأسعار والبنود المستخرجة المنسوبة له نهائياً ولا يمكن التراجع.</p>
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  onClick={() => setCustomSupplierDeleteModal({ isOpen: false, supplierName: '' })}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                >
+                  إلغاء التراجع ❌
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {customUnitRenameModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-md w-full border border-slate-150 relative text-right"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 mb-4 text-sky-600 border-b border-sky-100 pb-3">
+                <Edit className="w-5.5 h-5.5 shrink-0" />
+                <h3 className="text-base font-black text-slate-900">
+                  تعديل اسم الوحدة المرجعية
+                </h3>
+              </div>
+
+              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                تعديل اسم هذه الوحدة سيقوم بتحديثها بشكل فوري وشامل في كافة تفاصيل المعاملات والفواتير وعروض الأسعار المخزنة في النظام.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 mb-2">اسم الوحدة الحالي:</label>
+                <div className="px-3 py-2 bg-slate-50 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold mb-4">
+                  {customUnitRenameModal.unitName}
+                </div>
+
+                <label className="block text-xs font-bold text-slate-500 mb-2">الاسم البديل والجديد للوحدة:</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={customUnitRenameModal.inputValue}
+                  onChange={(e) => setCustomUnitRenameModal(prev => ({ ...prev, inputValue: e.target.value }))}
+                  placeholder="مثال: عدد، متر، كرتونة، طن..."
+                  className="w-full px-4 py-2 text-sm text-slate-800 bg-[#FCFDFE] border border-slate-200 rounded-xl focus:outline-hidden focus:border-sky-500 focus:ring-2 focus:ring-sky-100 placeholder-slate-400 font-semibold"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 mt-4">
+                <button
+                  onClick={() => {
+                    if (customUnitRenameModal.inputValue.trim()) {
+                      handleRenameUnit(customUnitRenameModal.unitName, customUnitRenameModal.inputValue.trim());
+                      setCustomUnitRenameModal({ isOpen: false, unitName: '', inputValue: '' });
+                    }
+                  }}
+                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  تعديل وتعميم الوحدة الجديدة ✅
+                </button>
+                <button
+                  onClick={() => setCustomUnitRenameModal({ isOpen: false, unitName: '', inputValue: '' })}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
                 >
                   إلغاء ❌
