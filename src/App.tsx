@@ -2134,6 +2134,93 @@ export default function App() {
           const clonedElement = clonedDoc.getElementById("printable-excel-sheet-delta-isolated");
           if (!clonedElement) return;
 
+          // Force perfect desktop aspect-ratio geometry and size regardless of screen width
+          clonedElement.style.width = "900px";
+          clonedElement.style.minWidth = "900px";
+          clonedElement.style.maxWidth = "900px";
+          clonedElement.style.backgroundColor = "#ffffff";
+          clonedElement.style.boxSizing = "border-box";
+          clonedElement.style.border = "3px solid #000000";
+
+          // Unhide desktop metadata grid and hide mobile responsive details specifically for PDF screenshot logic
+          const desktopMetadataGrid = clonedElement.querySelector(".hidden.md\\:grid") as HTMLElement;
+          if (desktopMetadataGrid) {
+            desktopMetadataGrid.style.display = "grid";
+            desktopMetadataGrid.style.width = "100%";
+          }
+          const mobileMetadataBox = clonedElement.querySelector(".md\\:hidden") as HTMLElement;
+          if (mobileMetadataBox) {
+            mobileMetadataBox.style.display = "none";
+          }
+
+          // Apply solid, explicit, highly-visible black borders directly to the table and cells in DOM clone
+          const tables = clonedElement.getElementsByTagName("table");
+          Array.from(tables).forEach((table) => {
+            const t = table as HTMLTableElement;
+            t.style.borderCollapse = "collapse";
+            t.style.width = "100%";
+            t.style.border = "2px solid #000000";
+          });
+
+          // Style all cloned ths
+          const ths = clonedElement.getElementsByTagName("th");
+          Array.from(ths).forEach((th) => {
+            const cell = th as HTMLTableCellElement;
+            cell.style.border = "1px solid #000000";
+            cell.style.borderColor = "#000000";
+            cell.style.color = "#000000";
+            cell.style.padding = "10px 8px";
+            cell.style.verticalAlign = "middle";
+            cell.style.textAlign = "center";
+          });
+
+          // Style all cloned tds
+          const tds = clonedElement.getElementsByTagName("td");
+          Array.from(tds).forEach((td) => {
+            const cell = td as HTMLTableCellElement;
+            cell.style.border = "1px solid #000000";
+            cell.style.borderColor = "#000000";
+            cell.style.color = "#000000";
+            cell.style.padding = "10px 8px";
+            cell.style.verticalAlign = "middle";
+          });
+
+          // Force column widths precisely for each table row
+          const rows = clonedElement.getElementsByTagName("tr");
+          Array.from(rows).forEach((row) => {
+            const tr = row as HTMLTableRowElement;
+            const cells = Array.from(tr.cells);
+            
+            // Adjust individual columns for actual table items
+            const startIndex = showExcelGrid ? 2 : 0;
+            const actualCells = cells.slice(startIndex);
+            if (actualCells.length >= 6) {
+              if (hasAnyBrand) {
+                if (actualCells[0]) { actualCells[0].style.width = "5%"; actualCells[0].style.textAlign = "center"; }
+                if (actualCells[1]) { actualCells[1].style.width = "43%"; actualCells[1].style.textAlign = printDirectionParam === 'rtl' ? "right" : "left"; }
+                if (actualCells[2]) { actualCells[2].style.width = "10%"; actualCells[2].style.textAlign = "center"; }
+                if (actualCells[3]) { actualCells[3].style.width = "10%"; actualCells[3].style.textAlign = "center"; }
+                if (actualCells[4]) { actualCells[4].style.width = "8%";  actualCells[4].style.textAlign = "center"; }
+                if (actualCells[5]) { actualCells[5].style.width = "12%"; actualCells[5].style.textAlign = "center"; actualCells[5].style.whiteSpace = "nowrap"; }
+                if (actualCells[6]) { actualCells[6].style.width = "12%"; actualCells[6].style.textAlign = "center"; actualCells[6].style.whiteSpace = "nowrap"; }
+              } else {
+                if (actualCells[0]) { actualCells[0].style.width = "5%"; actualCells[0].style.textAlign = "center"; }
+                if (actualCells[1]) { actualCells[1].style.width = "53%"; actualCells[1].style.textAlign = printDirectionParam === 'rtl' ? "right" : "left"; }
+                if (actualCells[2]) { actualCells[2].style.width = "10%"; actualCells[2].style.textAlign = "center"; }
+                if (actualCells[3]) { actualCells[3].style.width = "8%";  actualCells[3].style.textAlign = "center"; }
+                if (actualCells[4]) { actualCells[4].style.width = "12%"; actualCells[4].style.textAlign = "center"; actualCells[4].style.whiteSpace = "nowrap"; }
+                if (actualCells[5]) { actualCells[5].style.width = "12%"; actualCells[5].style.textAlign = "center"; actualCells[5].style.whiteSpace = "nowrap"; }
+              }
+            }
+          });
+
+          // Prevent wrapping inside date-container and date-texts in the clone
+          const dateTexts = clonedElement.querySelectorAll(".date-text, .date-container") as NodeListOf<HTMLElement>;
+          Array.from(dateTexts).forEach((dt) => {
+            dt.style.whiteSpace = "nowrap";
+            dt.style.wordBreak = "keep-all";
+          });
+
           const allElements = clonedElement.getElementsByTagName("*");
           const elementsList = [clonedElement, ...Array.from(allElements)];
 
@@ -2837,11 +2924,11 @@ export default function App() {
                 </div>
 
                 {/* Column 4: Date */}
-                <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center">
+                <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center date-container">
                   <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
                     {printDirectionParam === 'rtl' ? 'تاريخ المستند' : (printDoc.docType === 'quote' ? 'Quote Date' : 'Order Date')}
                   </span>
-                  <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-nowrap">
+                  <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-nowrap date-text">
                     {printDoc.receiptDate || ""}
                   </span>
                 </div>
@@ -2894,9 +2981,9 @@ export default function App() {
                       #{printDoc.docNumber || "31"}
                     </span>
                   </div>
-                  <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                  <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center date-container">
                     <span className="text-[10px] font-bold text-slate-450 mb-1">تاريخ المعاملة</span>
-                    <span className="font-mono font-bold text-slate-800 text-[11px] mt-0.5">
+                    <span className="font-mono font-bold text-slate-800 text-[11px] mt-0.5 whitespace-nowrap date-text">
                       {printDoc.receiptDate || ""}
                     </span>
                   </div>

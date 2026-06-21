@@ -404,3 +404,46 @@ html, body {
   border-color: #000000 !important;
 }
 
+@media print {
+  /* 1. إجبار المتصفح على إظهار الألوان والحدود والخلفيات كما هي في الـ Preview */
+  html, body, div, table, tr, th, td {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* 2. ضبط إعدادات الصفحة وهوامشها لمنع التمدد */
+  @page {
+    size: A4 portrait;
+    margin: 15mm 10mm 15mm 10mm; /* هوامش مناسبة تمنع قطع الجدول */
+  }
+
+  /* 3. رسم حدود سوداء حادة وصريحة جداً لا يمكن للمتصفح إخفائها */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    border: 2px solid #000000 !important; /* إطار خارجي أسود داكن */
+    margin-top: 20px !important;
+  }
+
+  th, td {
+    border: 1px solid #000000 !important; /* خطوط وفواصل داخلية سوداء واضحة */
+    padding: 10px 8px !important; /* حشو داخلي مريح للعين */
+    text-align: center !important; /* توسيط النصوص أفقياً */
+    vertical-align: middle !important; /* توسيط النصوص عمودياً */
+  }
+
+  /* 4. تثبيت نسب الأعمدة بدقة كربونية لمنع اتساع خانات الأسعار */
+  th:nth-child(1), td:nth-child(1) { width: 5% !important; }   /* رقم البند No */
+  th:nth-child(2), td:nth-child(2) { width: 53% !important; text-align: right !important; }  /* الوصف Description مع محاذاة لليمين */
+  th:nth-child(3), td:nth-child(3) { width: 10% !important; }  /* الوحدة Unit */
+  th:nth-child(4), td:nth-child(4) { width: 8% !important; }   /* الكمية Qty */
+  th:nth-child(5), td:nth-child(5) { width: 12% !important; whitespace: nowrap !important; }  /* السعر Price */
+  th:nth-child(6), td:nth-child(6) { width: 12% !important; whitespace: nowrap !important; }  /* الإجمالي Amount */
+
+  /* 5. منع انقسام التاريخ وجعله في سطر واحد */
+  .date-container, .date-text {
+    white-space: nowrap !important;
+  }
+}
+
