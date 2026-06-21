@@ -888,7 +888,18 @@ If there is a slight spelling variation or minor difference in the vendor name o
     }
 
     const parsedText = response?.text || "{}";
-    return JSON.parse(parsedText.trim());
+    const data = JSON.parse(parsedText.trim());
+    if (data && Array.isArray(data.items)) {
+      data.items.forEach((item: any) => {
+        if (item.unit) {
+          const trimmed = item.unit.trim();
+          if (trimmed === 'عئد' || trimmed === 'عئد.' || trimmed.includes('عئد')) {
+            item.unit = 'عدد';
+          }
+        }
+      });
+    }
+    return data;
   } catch (error: any) {
     console.error("Gemini Extraction Error:", error);
     throw new Error(`تعذر استخراج البيانات بواسطة الذكاء الاصطناعي: ${error.message}`);

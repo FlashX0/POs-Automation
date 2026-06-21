@@ -1362,9 +1362,9 @@ export default function App() {
 
       // 1. Title Banner BLOCK
       rows[1][0] = "DELTA";
-      rows[1][6] = isQuote ? "PRICE" : "PURCHASE";
+      rows[1][6] = "PURCHASE";
       rows[2][0] = "FOR ROAD CONSTRUCTION";
-      rows[2][6] = isQuote ? "OFFER" : "ORDER";
+      rows[2][6] = "ORDER";
 
       // 2. Metadata Labels Headers
       rows[4][0] = isQuote ? "Seller / البائع" : "Vendor / البائع";
@@ -2444,19 +2444,9 @@ export default function App() {
     return documents.find(d => d.id === printDocId);
   }, [printDocId, documents]);
 
-  // Print trigger auto-opens browser dialog when in independent print window mode
+  // Print trigger auto-opens browser dialog disabled to prevent infinite print loops and support manual clicks
   useEffect(() => {
-    if (printDocId && !loading && printDoc) {
-      const timer = setTimeout(() => {
-        try {
-          window.focus();
-          window.print();
-        } catch (e) {
-          console.warn("Auto-print block:", e);
-        }
-      }, 750);
-      return () => clearTimeout(timer);
-    }
+    // Disabled auto window.print() trigger to prevent endless loops and respect direct button interactions
   }, [printDocId, loading, printDoc]);
 
   if (printDocId) {
@@ -2663,10 +2653,10 @@ export default function App() {
               </div>
               <div className={`${printDirectionParam === 'rtl' ? 'text-left' : 'text-right'} border-s-2 border-dashed border-black/40 ps-4 font-sans`}>
                 <div className="text-sm font-black text-black tracking-wider leading-none">
-                  {printDoc.docType === 'quote' ? 'PRICE' : 'PURCHASE'}
+                  PURCHASE
                 </div>
                 <div className="text-sm font-black text-black tracking-wider leading-none mt-1">
-                  {printDoc.docType === 'quote' ? 'OFFER' : 'ORDER'}
+                  ORDER
                 </div>
               </div>
             </div>
@@ -2787,21 +2777,39 @@ export default function App() {
               <table className="w-full border-collapse border-b border-slate-300 text-sm text-slate-800 table-fixed">
                 <thead>
                   <tr className="bg-[#EFEFEF] border-b border-slate-300 font-extrabold text-black text-center select-none text-xs align-middle">
-                    {showExcelGrid && <th className="border-e border-slate-300 w-12 min-w-[48px] max-w-[48px] font-mono text-[10px] align-middle text-center font-bold">-</th>}
-                    {showExcelGrid && <th className="border-e border-slate-300 py-2.5 w-12 min-w-[48px] max-w-[48px] font-mono text-[10px] align-middle text-center font-bold">Row No.</th>}
-                    <th className="border-e border-[#B0B0B0] py-2.5 w-12 min-w-[48px] max-w-[48px] font-sans text-center select-none align-middle font-bold text-black">No</th>
-                    <th className="border-e border-[#B0B0B0] py-2.5 px-3 min-w-[260px] text-center align-middle font-bold text-black">
+                    {showExcelGrid && (
+                      <th className="border-e border-slate-300 py-4 w-12 min-w-[48px] max-w-[48px] font-mono text-[10px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                        -
+                      </th>
+                    )}
+                    {showExcelGrid && (
+                      <th className="border-e border-slate-300 py-4 w-12 min-w-[48px] max-w-[48px] font-mono text-[10px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                        Row No.
+                      </th>
+                    )}
+                    <th className="border-e border-[#B0B0B0] py-4 w-12 min-w-[48px] max-w-[48px] font-sans text-center select-none align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                      No
+                    </th>
+                    <th className="border-e border-[#B0B0B0] py-4 px-3 min-w-[260px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       {printDirectionParam === 'rtl' ? 'الوصف التفصيلي (Description)' : 'Description'}
                     </th>
                     {hasAnyBrand && (
-                      <th className="border-e border-slate-300 py-2.5 w-24 min-w-[96px] max-w-[96px] font-sans text-center align-middle font-bold text-black">
+                      <th className="border-e border-slate-300 py-4 w-24 min-w-[96px] max-w-[96px] font-sans text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                         {printDirectionParam === 'rtl' ? 'البراند (Brand)' : 'Brand'}
                       </th>
                     )}
-                    <th className="border-e border-slate-300 py-2.5 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black">Unit</th>
-                    <th className="border-e border-slate-300 py-2.5 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black">Qty</th>
-                    <th className="border-e border-slate-300 py-2.5 w-24 min-w-[96px] max-w-[96px] text-center align-middle font-bold text-black">Price</th>
-                    <th className="py-2.5 w-32 min-w-[128px] max-w-[128px] text-center align-middle font-bold text-black">Amount</th>
+                    <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                      Unit
+                    </th>
+                    <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                      Qty
+                    </th>
+                    <th className="border-e border-slate-300 py-4 w-36 min-w-[144px] max-w-[144px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                      Price
+                    </th>
+                    <th className="py-4 w-40 min-w-[160px] max-w-[160px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                      Amount
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2832,17 +2840,17 @@ export default function App() {
                                 }}
                               >
                                 {showExcelGrid && (
-                                  <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-400 py-3.5 w-12 min-w-[48px] max-w-[48px] select-none align-middle">
+                                  <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-400 py-5 w-12 min-w-[48px] max-w-[48px] select-none align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                     {rowNo}
                                   </td>
                                 )}
                                 {showExcelGrid && (
-                                  <td className="border-e border-slate-200 py-3.5 text-center text-slate-500 font-mono font-semibold w-12 min-w-[48px] max-w-[48px] select-none align-middle">
+                                  <td className="border-e border-slate-200 py-5 text-center text-slate-500 font-mono font-semibold w-12 min-w-[48px] max-w-[48px] select-none align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                     {sequenceNo}
                                   </td>
                                 )}
-                                <td className="border-e border-slate-200 py-3.5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] align-middle">{idx + 1}</td>
-                                <td className="border-e border-slate-200 py-3.5 px-3 min-w-[260px] align-middle text-center">
+                                <td className="border-e border-slate-200 py-5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{idx + 1}</td>
+                                <td className="border-e border-slate-200 py-5 px-3 min-w-[260px] align-middle text-center" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div 
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -2858,7 +2866,7 @@ export default function App() {
                                   </div>
                                 </td>
                                 {hasAnyBrand && (
-                                  <td className="border-e border-slate-200 py-3.5 text-black font-bold w-24 min-w-[96px] max-w-[96px] break-words whitespace-normal font-sans text-center align-middle">
+                                  <td className="border-e border-slate-200 py-5 text-black font-bold w-24 min-w-[96px] max-w-[96px] break-words whitespace-normal font-sans text-center align-middle" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                     <div
                                       contentEditable={true}
                                       suppressContentEditableWarning={true}
@@ -2873,7 +2881,7 @@ export default function App() {
                                     </div>
                                   </td>
                                 )}
-                                <td className="border-e border-slate-200 py-3.5 text-black font-bold w-16 min-w-[64px] max-w-[64px] break-words whitespace-normal text-center align-middle">
+                                <td className="border-e border-slate-200 py-5 text-black font-bold w-16 min-w-[64px] max-w-[64px] break-words whitespace-normal text-center align-middle" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -2887,7 +2895,7 @@ export default function App() {
                                     {item.unit ? convertEasternToWesternNumerals(item.unit) : "عدد"}
                                   </div>
                                 </td>
-                                <td className="border-e border-slate-200 py-3.5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle">
+                                <td className="border-e border-slate-200 py-5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -2901,11 +2909,11 @@ export default function App() {
                                     {item.quantity || "1"}
                                   </div>
                                 </td>
-                                <td className="border-e border-slate-200 py-3.5 font-bold text-black w-24 min-w-[96px] max-w-[96px] text-center align-middle font-mono text-[12px]">
+                                <td className="border-e border-slate-200 py-5 font-bold text-black w-36 min-w-[144px] max-w-[144px] text-center align-middle font-mono text-[12px] whitespace-nowrap text-nowrap" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
-                                    className="w-full text-center font-mono focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1"
+                                    className="w-full text-center font-mono focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1 whitespace-nowrap text-nowrap"
                                     onBlur={(e) => {
                                       const cleanText = e.currentTarget.innerText.replace(/[^\d.]/g, '').trim();
                                       let val = parseFloat(cleanText) || 0;
@@ -2922,12 +2930,14 @@ export default function App() {
                                     })()}
                                   </div>
                                 </td>
-                                <td className="py-3.5 w-32 min-w-[128px] max-w-[128px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono">
-                                  {(() => {
-                                    const baseTotal = item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0));
-                                    const displayedTotal = taxAddPercentEnabled ? baseTotal * (1 + taxAddPercentRate / 100) : baseTotal;
-                                    return displayedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
-                                  })()}
+                                <td className="py-5 w-40 min-w-[160px] max-w-[160px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono whitespace-nowrap text-nowrap" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                  <div className="whitespace-nowrap text-nowrap text-center w-full">
+                                    {(() => {
+                                      const baseTotal = item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0));
+                                      const displayedTotal = taxAddPercentEnabled ? baseTotal * (1 + taxAddPercentRate / 100) : baseTotal;
+                                      return displayedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                    })()}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -2956,14 +2966,14 @@ export default function App() {
                               {/* 1. Subtotal Row (Always shown, includes VAT directly if taxAddPercentEnabled) */}
                               <tr className="bg-[#F9FAFB] border-t border-slate-300 font-bold text-slate-900 text-center select-none animate-none">
                                 {showExcelGrid && (
-                                  <td colSpan={2} className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <td colSpan={2} className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-5 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {10 + printTotalBaseCount}
                                   </td>
                                 )}
-                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-slate-800 uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-5 font-bold text-slate-800 uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {printDirectionParam === 'rtl' ? 'الإجمالي (Total)' : 'Total'}
                                 </td>
-                                <td className="py-2 w-32 min-w-[128px] max-w-[128px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                <td className="py-5 w-40 min-w-[160px] max-w-[160px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                   {itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                 </td>
                               </tr>
@@ -2972,17 +2982,17 @@ export default function App() {
                               {printDoc.withholdingTaxEnabled && (
                                 <tr className="bg-[#FFFDF3] border-t border-slate-200 text-slate-700 text-center select-none font-semibold text-xs font-sans">
                                   {showExcelGrid && (
-                                    <td colSpan={2} className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-2 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                    <td colSpan={2} className="border-e border-slate-150 bg-[#E8E8E8] text-center text-[10px] font-mono font-bold text-slate-400 py-5 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                       {11 + printTotalBaseCount}
                                     </td>
                                   )}
-                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 text-amber-700 font-medium whitespace-nowrap" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-5 text-amber-700 font-medium whitespace-nowrap" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {printDirectionParam === 'rtl' 
                                       ? `خصم ضريبة الأرباح التجارية والصناعية (${printDoc.withholdingTaxRate || 1}%)` 
                                       : `Commercial & Industrial Profits Tax Discount (${printDoc.withholdingTaxRate || 1}%)`
                                     }
                                   </td>
-                                  <td className="py-2 w-32 min-w-[128px] max-w-[128px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <td className="py-5 w-40 min-w-[160px] max-w-[160px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     -{withholdingTaxAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                   </td>
                                 </tr>
@@ -2992,14 +3002,14 @@ export default function App() {
                               {printDoc.withholdingTaxEnabled && (
                                 <tr className="bg-[#E5E7EB] border-t-2 border-slate-350 font-bold text-slate-950 text-center select-none font-sans">
                                   {showExcelGrid && (
-                                    <td colSpan={2} className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-2.5 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                    <td colSpan={2} className="border-e border-slate-200 bg-[#DEDEDE] text-center text-[10px] font-mono font-bold text-slate-500 py-5 w-24" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                       {12 + printTotalBaseCount}
                                     </td>
                                   )}
-                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-2 font-bold text-[#DC2626] uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <td colSpan={hasAnyBrand ? 6 : 5} className="border-e border-slate-200 text-center align-middle py-5 font-bold text-[#DC2626] uppercase tracking-wide" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     Net Payable
                                   </td>
-                                  <td className="py-2.5 w-32 min-w-[128px] max-w-[128px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <td className="py-5 w-40 min-w-[160px] max-w-[160px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                                     {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
                                   </td>
                                 </tr>
@@ -5550,10 +5560,10 @@ export default function App() {
                       </div>
                       <div className={`${printDirection === 'rtl' ? 'text-left' : 'text-right'} border-s-2 border-dashed border-black/40 ps-4 font-sans`}>
                         <div className="text-sm font-black text-black tracking-wider leading-none">
-                          {selectedDoc.docType === 'quote' ? 'PRICE' : 'PURCHASE'}
+                          PURCHASE
                         </div>
                         <div className="text-sm font-black text-black tracking-wider leading-none mt-1">
-                          {selectedDoc.docType === 'quote' ? 'OFFER' : 'ORDER'}
+                          ORDER
                         </div>
                       </div>
                     </div>
