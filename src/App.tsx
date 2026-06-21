@@ -3441,7 +3441,7 @@ export default function App() {
                       placeholder="البحث السريع (بالمورد، رقم المستند، اسم القطعة، أو السعر)..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-4 pr-10 py-1.5 bg-[#0b0f19] rounded-xl border border-slate-800 focus:outline-hidden focus:border-sky-500 text-slate-105 placeholder-slate-550 text-xs transition-all"
+                      className="w-full pl-4 pr-10 py-1.5 bg-[#0b0f19] rounded-xl border border-slate-800 focus:outline-hidden focus:border-blue-500 text-white placeholder-slate-400 text-xs font-semibold transition-all"
                     />
                   </div>
 
@@ -3451,19 +3451,19 @@ export default function App() {
                     <div className="flex bg-[#0b0f19] border border-slate-800 p-1 rounded-xl text-[11px] font-bold gap-1">
                       <button
                         onClick={() => setTypeFilter('all')}
-                        className={`px-3 py-1 rounded-lg transition-all ${typeFilter === 'all' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                        className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${typeFilter === 'all' ? 'bg-blue-600 text-white shadow-md font-extrabold' : 'text-slate-400 hover:text-white'}`}
                       >
                         الكل ({documents.length})
                       </button>
                       <button
                         onClick={() => setTypeFilter('po')}
-                        className={`px-3 py-1 rounded-lg transition-all ${typeFilter === 'po' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                        className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${typeFilter === 'po' ? 'bg-blue-600 text-white shadow-md font-extrabold' : 'text-slate-400 hover:text-white'}`}
                       >
                         أوامر شراء (PO) ({documents.filter(d => d.docType === 'po').length})
                       </button>
                       <button
                         onClick={() => setTypeFilter('quote')}
-                        className={`px-3 py-1 rounded-lg transition-all ${typeFilter === 'quote' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                        className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${typeFilter === 'quote' ? 'bg-blue-600 text-white shadow-md font-extrabold' : 'text-slate-400 hover:text-white'}`}
                       >
                         عروض أسعار ({documents.filter(d => d.docType === 'quote').length})
                       </button>
@@ -3472,9 +3472,9 @@ export default function App() {
                     {/* Manual addition direct trigger */}
                     <button
                       onClick={handleAddManualRow}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-[#1f2937] hover:bg-[#374151] text-slate-200 rounded-lg text-[11px] font-bold border border-slate-800 transition-all cursor-pointer"
+                      className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-lg text-[11px] font-bold border border-slate-750 transition-all cursor-pointer shadow-xs"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3.5 h-3.5 text-blue-400" />
                       <span>إضافة صف يدوي</span>
                     </button>
 
@@ -3489,33 +3489,33 @@ export default function App() {
                           setCompareDocAId(documents[0].id);
                         }
                       }}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs border border-indigo-500"
+                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-md border border-blue-500"
                     >
-                      <GitCompare className="w-3.5 h-3.5" />
+                      <GitCompare className="w-3.5 h-3.5 text-blue-200" />
                       <span>مقارنة بندين ومطابقة الأسعار</span>
                     </button>
 
                     {/* Export Excel button */}
                     <button
                       onClick={handleExportToExcel}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs"
+                      className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-105 rounded-lg text-[11px] font-bold border border-slate-750 transition-all cursor-pointer shadow-xs"
                     >
-                      <Download className="w-3.5 h-3.5" />
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
                       <span>تصدير إكسيل (.xlsx)</span>
                     </button>
 
                     {/* Spreadsheet Save/Edit triggers */}
                     {isEditing ? (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 animation-fade-in">
                         <button
                           onClick={handleSaveSpreadsheetEdits}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[11px] transition-all cursor-pointer shadow-xs"
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-lg text-[11px] transition-all cursor-pointer shadow-md border border-blue-500"
                         >
                           حفظ التعديلات بالشيت ({editDocs.length})
                         </button>
                         <button
                           onClick={() => setIsEditing(false)}
-                          className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-[11px] transition-all font-semibold cursor-pointer"
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-extrabold rounded-lg text-[11px] transition-all border border-slate-750 cursor-pointer"
                         >
                           إلغاء التعديل
                         </button>
@@ -3523,7 +3523,7 @@ export default function App() {
                     ) : (
                       <button
                         onClick={() => setIsEditing(true)}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs"
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-lg text-[11px] font-semibold border border-slate-750 transition-all cursor-pointer shadow-xs"
                       >
                         تعديل خلايا الشيت يدوياً
                       </button>
@@ -3542,7 +3542,7 @@ export default function App() {
                       placeholder="امثلة: 2026-06، 2026-06-13..."
                       value={filterDate}
                       onChange={(e) => setFilterDate(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-sky-500 font-mono text-slate-100 placeholder-slate-600"
+                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-blue-500 font-mono text-white placeholder-slate-500 font-semibold"
                     />
                   </div>
 
@@ -3554,7 +3554,7 @@ export default function App() {
                       placeholder="اسم المورد لـ PO..."
                       value={filterClient}
                       onChange={(e) => setFilterClient(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-sky-500 text-slate-100 placeholder-slate-600"
+                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-blue-500 text-white placeholder-slate-500 font-semibold"
                     />
                   </div>
 
@@ -3566,7 +3566,7 @@ export default function App() {
                       placeholder="مثال: 5000..."
                       value={filterAmount}
                       onChange={(e) => setFilterAmount(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-sky-500 font-mono text-slate-100 placeholder-slate-600"
+                      className="w-full px-2.5 py-1.5 bg-[#0b0f19] border border-slate-800 rounded-lg text-xs focus:outline-hidden focus:border-blue-500 font-mono text-white placeholder-slate-500 font-semibold"
                     />
                   </div>
 
@@ -3628,7 +3628,7 @@ export default function App() {
                   </div>
                 ) : (
                   <table className="w-full text-right text-xs border-collapse">
-                    <thead className="bg-[#1f2937] text-slate-350 sticky top-0 border-b border-slate-800">
+                    <thead className="bg-[#1f2937] text-white font-extrabold sticky top-0 border-b border-slate-700">
                       <tr>
                         <th className="py-4.5 px-4 font-bold">م</th>
                         <th className="py-4.5 px-4 font-bold">اسم المورد</th>
@@ -4855,7 +4855,7 @@ export default function App() {
                           placeholder="البحث أو تسجيل اسم شركة ومورد معتمد..."
                           value={newSupplierInput}
                           onChange={(e) => setNewSupplierInput(e.target.value)}
-                          className="w-full pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all shadow-xs text-right font-medium"
+                          className="w-full pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-xs text-right font-semibold text-slate-900"
                         />
                       </div>
                     </div>
@@ -4863,7 +4863,7 @@ export default function App() {
                     {/* Quick Add Supplier Input Form */}
                     <div className="border-t border-slate-200/60 pt-3 flex flex-col sm:flex-row items-center gap-3">
                       <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs shrink-0 self-start sm:self-center">
-                        <PlusCircle className="w-4 h-4 text-emerald-600" />
+                        <PlusCircle className="w-4 h-4 text-blue-600" />
                         <span>تسجيل مورد/شركة جديدة مباشرة:</span>
                       </div>
                       <div className="flex gap-2 w-full sm:max-w-md">
@@ -4878,14 +4878,14 @@ export default function App() {
                               setNewSupplierInput('');
                             }
                           }}
-                          className="flex-grow px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-hidden focus:ring-1 focus:ring-sky-500 focus:border-sky-500 text-right font-medium"
+                          className="flex-grow px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-hidden focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-right font-semibold text-slate-900"
                         />
                         <button
                           onClick={() => {
                             handleAddSupplier(newSupplierInput);
                             setNewSupplierInput('');
                           }}
-                          className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs cursor-pointer"
+                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs cursor-pointer"
                         >
                           إضافة المورد
                         </button>
@@ -4988,7 +4988,7 @@ export default function App() {
                           placeholder="البحث باسم المشروع أو بيانات البنود..."
                           value={projectSearchTerm}
                           onChange={(e) => setProjectSearchTerm(e.target.value)}
-                          className="w-full pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all shadow-xs"
+                          className="w-full pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-xs text-slate-900 font-semibold text-right"
                         />
                       </div>
                     </div>
@@ -4996,7 +4996,7 @@ export default function App() {
                     {/* Quick Add Project Form */}
                     <div className="border-t border-slate-200/60 pt-3 flex flex-col sm:flex-row items-center gap-3">
                       <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs shrink-0 self-start sm:self-center">
-                        <PlusCircle className="w-4 h-4 text-emerald-600" />
+                        <PlusCircle className="w-4 h-4 text-blue-600" />
                         <span>إضافة مشروع جديد كمرجع:</span>
                       </div>
                       <div className="flex gap-2 w-full sm:max-w-md">
@@ -5011,14 +5011,14 @@ export default function App() {
                               setNewProjectInput('');
                             }
                           }}
-                          className="flex-grow px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-hidden focus:ring-1 focus:ring-sky-500 focus:border-sky-500 text-right"
+                          className="flex-grow px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-hidden focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-right text-slate-900 font-semibold"
                         />
                         <button
                           onClick={() => {
                             handleAddProject(newProjectInput);
                             setNewProjectInput('');
                           }}
-                          className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs cursor-pointer"
+                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs cursor-pointer"
                         >
                           إضافة المشروع
                         </button>

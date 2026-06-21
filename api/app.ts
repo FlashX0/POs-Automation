@@ -5,9 +5,70 @@ import multer from "multer";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
 import mongoose from "mongoose";
+import { createClient } from "@supabase/supabase-js";
+import sharp from "sharp";
 
 // Load environment variables
 dotenv.config();
+
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
+
+let supabaseClient: any = null;
+if (supabaseUrl && supabaseAnonKey) {
+  try {
+    supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+    console.log("Supabase Client initialized successfully!");
+  } catch (err: any) {
+    console.error("Failed to initialize Supabase client:", err.message);
+  }
+} else {
+  console.warn("Supabase URL or Anon Key is missing! File uploads will automatically fallback to local storage simulation.");
+}
+
+/**
+ * Image compressor using sharp to compress image files below 300KB
+ */
+async function compressImageIfNeed(buffer: Buffer, mimetype: string): Promise<{ buffer: Buffer; mimetype: string }> {
+  if (mimetype.startsWith("image/")) {
+    try {
+      console.log(`Starting image compression. Original size: ${(buffer.length / 1024).toFixed(2)} KB`);
+      let sharpInstance = sharp(buffer);
+      const metadata = await sharpInstance.metadata();
+      
+      // Resize if image is too wide
+      if (metadata.width && metadata.width > 1200) {
+        sharpInstance = sharpInstance.resize(1200, null, { withoutEnlargement: true });
+      }
+      
+      // Convert to progressive jpeg with 75% quality for excellent compression
+      let compressedBuffer = await sharpInstance
+        .jpeg({ quality: 75, progressive: true })
+        .toBuffer();
+        
+      console.log(`Compressed image size: ${(compressedBuffer.length / 1024).toFixed(2)} KB`);
+      
+      // If it still exceeds 300KB, resize further or reduce quality
+      if (compressedBuffer.length > 300 * 1024) {
+        console.log("Image still exceeds 300KB, applying heavier compression...");
+        compressedBuffer = await sharp(compressedBuffer)
+          .resize(800, null, { withoutEnlargement: true })
+          .jpeg({ quality: 60, progressive: true })
+          .toBuffer();
+        console.log(`Heavily compressed image size: ${(compressedBuffer.length / 1024).toFixed(2)} KB`);
+      }
+      
+      return {
+        buffer: compressedBuffer,
+        mimetype: "image/jpeg"
+      };
+    } catch (err: any) {
+      console.error("Error during image compression:", err.message);
+      return { buffer, mimetype }; // fallback on error
+    }
+  }
+  return { buffer, mimetype };
+}
 
 // مجلدات تخزين البيانات وحل أخطاء البناء السحابي وإعادة توجيه مجلدات الملفات
 const DATA_DIR = "/tmp";
@@ -884,6 +945,75 @@ function classifyAndStoreFile(fileBuffer: Buffer, parsedData: any, originalName:
   };
 }
 
+/**
+ * Uploads a file to Supabase inside "pos-files" bucket, falling back to local file path
+ */
+async function uploadToSupabaseStorage(
+  fileBuffer: Buffer,
+  mimetype: string,
+  parsedData: any,
+  originalName: string
+): Promise<{ path: string; isCloud: boolean }> {
+  const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+  
+  const clientFolderName = sanitize(parsedData.clientName || "Unknown_Client");
+  let projectFolderName = sanitize(parsedData.projectName || "عام");
+  if (!projectFolderName || projectFolderName === "undefined" || projectFolderName === "null") {
+    projectFolderName = "عام";
+  }
+  const dateStr = parsedData.receiptDate || new Date().toISOString().split("T")[0];
+  const docTypeLabel = parsedData.docType === "po" ? "PO" : "Quote";
+  const docNumLabel = sanitize(parsedData.docNumber && parsedData.docNumber !== "N/A" ? parsedData.docNumber : "Ref_" + Math.random().toString(36).substr(2, 4));
+  
+  // Compress if image
+  const { buffer: processedBuffer, mimetype: processedMimetype } = await compressImageIfNeed(fileBuffer, mimetype);
+  
+  // Determine file extension
+  let fileExtension = path.extname(originalName) || ".pdf";
+  if (mimetype.startsWith("image/") && processedMimetype === "image/jpeg") {
+    fileExtension = ".jpg";
+  }
+  
+  const finalFilename = `${docTypeLabel}_${docNumLabel}__${clientFolderName}__${dateStr}${fileExtension}`;
+  const supabasePath = `${projectFolderName}/${finalFilename}`;
+  
+  if (supabaseClient) {
+    try {
+      console.log(`Uploading file ${supabasePath} to Supabase bucket "pos-files"...`);
+      const { data, error } = await supabaseClient.storage
+        .from("pos-files")
+        .upload(supabasePath, processedBuffer, {
+          contentType: processedMimetype,
+          upsert: true
+        });
+        
+      if (error) {
+        throw error;
+      }
+      
+      // Get Public URL
+      const { data: publicUrlData } = supabaseClient.storage
+        .from("pos-files")
+        .getPublicUrl(supabasePath);
+        
+      console.log(`Successfully uploaded to Supabase Storage! Public URL: ${publicUrlData.publicUrl}`);
+      return {
+        path: publicUrlData.publicUrl,
+        isCloud: true
+      };
+    } catch (err: any) {
+      console.error("Supabase Storage upload failed, falling back to local simulation:", err.message);
+    }
+  }
+  
+  // Fallback to local file simulation or storage
+  const localResult = classifyAndStoreFile(processedBuffer, parsedData, originalName);
+  return {
+    path: localResult.relativePath,
+    isCloud: false
+  };
+}
+
 // REST API ENDPOINTS
 
 // 1. Fetch system statistics & document list
@@ -1149,7 +1279,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
       resolvedDocNumber = getNextPoNumberForProject(db, extractedData.projectName || "عام");
     }
     
-    const fileStorage = classifyAndStoreFile(buffer, { ...extractedData, docNumber: resolvedDocNumber }, originalname);
+    const fileStorage = await uploadToSupabaseStorage(buffer, mimetype, { ...extractedData, docNumber: resolvedDocNumber }, originalname);
 
     const finalNotes = extractedData.notes || "";
     const resolvedNotes = userInstructions 
@@ -1167,7 +1297,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
       totalAmount: extractedData.totalAmount || 0,
       currency: extractedData.currency || "EGP",
       originalFilename: originalname,
-      classifiedPath: fileStorage.relativePath,
+      classifiedPath: fileStorage.path,
       status: "processed" as const,
       processedAt: new Date().toISOString(),
       telegramUser: null,
@@ -1292,6 +1422,10 @@ app.get("/api/documents/download", (req, res) => {
   const filePathStr = req.query.path as string;
   if (!filePathStr) {
     return res.status(400).json({ error: "مسار الملف مطلوب" });
+  }
+  
+  if (filePathStr.startsWith("http://") || filePathStr.startsWith("https://")) {
+    return res.redirect(filePathStr);
   }
   
   const normalizedRequestedPath = path.normalize(filePathStr).replace(/^(\.\.(\/|\\|$))+/, '');
