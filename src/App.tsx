@@ -2165,6 +2165,7 @@ export default function App() {
         backgroundColor: '#ffffff',
         logging: false,
         allowTaint: false,
+        scrollY: 0,
         onclone: (clonedDoc) => {
           // Clean all <style> tags inside the cloned document before html2canvas parses them
           const clonedStyles = clonedDoc.getElementsByTagName("style");
@@ -2190,6 +2191,33 @@ export default function App() {
           if (desktopMetadataGrid) {
             desktopMetadataGrid.style.display = "grid";
             desktopMetadataGrid.style.width = "100%";
+            desktopMetadataGrid.style.setProperty('height', 'auto', 'important');
+            desktopMetadataGrid.style.setProperty('min-height', 'auto', 'important');
+            desktopMetadataGrid.style.setProperty('max-height', 'auto', 'important');
+            
+            // Format all header boxes to have auto-height and padding
+            const cells = Array.from(desktopMetadataGrid.children) as HTMLElement[];
+            cells.forEach((cell) => {
+              cell.style.setProperty('height', 'auto', 'important');
+              cell.style.setProperty('min-height', 'auto', 'important');
+              cell.style.setProperty('max-height', 'auto', 'important');
+              cell.style.setProperty('padding', '12px 8px', 'important');
+              cell.style.setProperty('line-height', '1.4', 'important');
+              cell.style.display = "flex";
+              cell.style.flexDirection = "column";
+              cell.style.justifyContent = "center";
+              cell.style.alignItems = "center";
+              cell.style.boxSizing = "border-box";
+              
+              const innerElements = Array.from(cell.querySelectorAll('span, div')) as HTMLElement[];
+              innerElements.forEach((el) => {
+                el.style.setProperty('height', 'auto', 'important');
+                el.style.setProperty('min-height', 'auto', 'important');
+                el.style.setProperty('max-height', 'auto', 'important');
+                el.style.setProperty('line-height', '1.4', 'important');
+                el.style.display = "block";
+              });
+            });
           }
           const mobileMetadataBox = clonedElement.querySelector(".md\\:hidden") as HTMLElement;
           if (mobileMetadataBox) {
@@ -2990,16 +3018,20 @@ export default function App() {
             </div>
 
               {/* Metadata Box styled as Excel Rows - Merged into a desktop grid or responsive mobile blocks */}
-              <div className="hidden md:grid grid-cols-12 border-b border-slate-350 text-black font-sans bg-white select-text print:grid">
+              <div className="hidden md:grid grid-cols-12 border-b border-slate-350 text-black font-sans bg-white select-text print:grid" style={{ height: 'auto', minHeight: 'auto' }}>
                 {/* Column 1: Vendor (Seller) */}
-                <div className="col-span-3 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center items-center">
-                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                <div 
+                  className="col-span-3 border-e border-slate-300 flex flex-col gap-1 justify-center text-center items-center"
+                  style={{ height: 'auto', minHeight: 'auto', maxHeight: 'auto', padding: '12px 8px', lineHeight: '1.4' }}
+                >
+                  <span className="text-xs font-black text-black uppercase tracking-wider text-center whitespace-normal select-none" style={{ lineHeight: '1.4' }}>
                     {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor'}
                   </span>
                   <div
                     contentEditable={true}
                     suppressContentEditableWarning={true}
-                    className="font-black text-black text-[14px] mt-1 leading-snug w-full text-center block whitespace-normal break-words focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1 transition-colors"
+                    className="font-black text-black text-[14px] mt-1 w-full text-center block whitespace-normal break-words focus:outline-hidden focus:ring-1 focus:ring-sky-500 focus:bg-amber-50/10 cursor-text rounded px-1 transition-colors"
+                    style={{ lineHeight: '1.4' }}
                     onBlur={(e) => {
                       const text = e.currentTarget.innerText || "";
                       handleUpdatePrintDocField('clientName', text.trim());
@@ -3010,41 +3042,53 @@ export default function App() {
                 </div>
 
                 {/* Column 2: Ship to */}
-                <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center items-center">
-                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                <div 
+                  className="col-span-2 border-e border-slate-300 flex flex-col gap-1 justify-center text-center items-center"
+                  style={{ height: 'auto', minHeight: 'auto', maxHeight: 'auto', padding: '12px 8px', lineHeight: '1.4' }}
+                >
+                  <span className="text-xs font-black text-black uppercase tracking-wider text-center whitespace-normal select-none" style={{ lineHeight: '1.4' }}>
                     {printDirectionParam === 'rtl' ? 'اسم المشروع' : 'SHIP TO'}
                   </span>
-                  <span className="font-extrabold text-slate-850 text-xs text-black">
+                  <span className="font-extrabold text-slate-850 text-xs text-black" style={{ lineHeight: '1.4' }}>
                     {printDoc.projectName || "عام"}
                   </span>
                 </div>
 
                 {/* Column 3: PO No */}
-                <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center">
-                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                <div 
+                  className="col-span-2 border-e border-slate-300 flex flex-col gap-1 justify-center text-center items-center"
+                  style={{ height: 'auto', minHeight: 'auto', maxHeight: 'auto', padding: '12px 8px', lineHeight: '1.4' }}
+                >
+                  <span className="text-xs font-black text-black uppercase tracking-wider text-center whitespace-normal select-none" style={{ lineHeight: '1.4' }}>
                     {printDirectionParam === 'rtl' ? 'رقم أمر الشراء / PO' : 'PO No'}
                   </span>
-                  <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-normal break-all">
+                  <span className="font-mono font-black text-black text-sm mt-1 w-full text-center block whitespace-normal break-all" style={{ lineHeight: '1.4' }}>
                     #{printDoc.docNumber || "31"}
                   </span>
                 </div>
 
                 {/* Column 4: Date */}
-                <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center date-container">
-                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                <div 
+                  className="col-span-2 border-e border-slate-300 flex flex-col gap-1 justify-center text-center items-center date-container"
+                  style={{ height: 'auto', minHeight: 'auto', maxHeight: 'auto', padding: '12px 8px', lineHeight: '1.4' }}
+                >
+                  <span className="text-xs font-black text-black uppercase tracking-wider text-center whitespace-normal select-none" style={{ lineHeight: '1.4' }}>
                     {printDirectionParam === 'rtl' ? 'تاريخ المستند' : 'Order Date'}
                   </span>
-                  <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-nowrap date-text">
+                  <span className="font-mono font-black text-black text-sm mt-1 w-full text-center block whitespace-nowrap date-text" style={{ lineHeight: '1.4' }}>
                     {printDoc.receiptDate || ""}
                   </span>
                 </div>
 
                 {/* Column 5: Total */}
-                <div className="col-span-3 p-2.5 flex flex-col gap-1.5 justify-center text-center bg-amber-50/10 select-text">
-                  <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
+                <div 
+                  className="col-span-3 flex flex-col gap-1 justify-center text-center bg-amber-50/10 select-text items-center"
+                  style={{ height: 'auto', minHeight: 'auto', maxHeight: 'auto', padding: '12px 8px', lineHeight: '1.4' }}
+                >
+                  <span className="text-xs font-black text-black uppercase tracking-wider text-center whitespace-normal select-none" style={{ lineHeight: '1.4' }}>
                     {printDirectionParam === 'rtl' ? 'PO Total' : 'PO Total'}
                   </span>
-                  <span className="font-mono font-black text-[#DC2626] text-[13.5px] mt-1 leading-none select-text w-full text-center block whitespace-nowrap overflow-visible">
+                  <span className="font-mono font-black text-[#DC2626] text-[13.5px] mt-1 select-text w-full text-center block whitespace-nowrap overflow-visible" style={{ lineHeight: '1.4' }}>
                     {getDocNetSpent(printDoc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
