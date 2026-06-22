@@ -2159,17 +2159,18 @@ export default function App() {
       window.scrollTo(0, 0);
 
       // Render crisp canvas representation of printable sheet with oklch safety transform
-      const canvas = await html2canvas(element, {
+      const canvas = await (html2canvas as any)(element, {
         scale: 4.0, // Ultra-high-fidelity resolution for perfect print crispness
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
         allowTaint: false,
         scrollY: 0,
+        letterRendering: true,
         onclone: (clonedDoc) => {
           // Clean all <style> tags inside the cloned document before html2canvas parses them
           const clonedStyles = clonedDoc.getElementsByTagName("style");
-          Array.from(clonedStyles).forEach((styleEl) => {
+          Array.from(clonedStyles).forEach((styleEl: any) => {
             if (styleEl.textContent && (styleEl.textContent.includes('oklch') || styleEl.textContent.includes('oklab'))) {
               styleEl.textContent = convertOklToRgb(styleEl.textContent);
             }
@@ -2990,6 +2991,58 @@ export default function App() {
               size: A4 portrait !important;
               margin: ${printMarginTop}mm ${printMarginRight}mm ${printMarginBottom}mm ${printMarginLeft}mm !important;
             }
+            #printable-excel-sheet-delta-isolated tr,
+            #printable-excel-sheet-delta-isolated td,
+            #printable-excel-sheet-delta-isolated th {
+              height: auto !important;
+              min-height: auto !important;
+              max-height: auto !important;
+              line-height: 1.5 !important;
+              padding: 12px 10px !important;
+            }
+            #printable-excel-sheet-delta-isolated tr {
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            .col-print-no {
+              width: 5% !important;
+              min-width: 5% !important;
+              max-width: 5% !important;
+            }
+            .col-print-desc {
+              width: ${hasAnyBrand ? '42%' : '50%'} !important;
+              min-width: ${hasAnyBrand ? '42%' : '50%'} !important;
+              max-width: ${hasAnyBrand ? '42%' : '50%'} !important;
+              text-align: right !important;
+              direction: rtl !important;
+            }
+            .col-print-brand {
+              width: 8% !important;
+              min-width: 8% !important;
+              max-width: 8% !important;
+            }
+            .col-print-unit {
+              width: 8% !important;
+              min-width: 8% !important;
+              max-width: 8% !important;
+            }
+            .col-print-qty {
+              width: 8% !important;
+              min-width: 8% !important;
+              max-width: 8% !important;
+            }
+            .col-print-price {
+              width: 14% !important;
+              min-width: 14% !important;
+              max-width: 14% !important;
+              white-space: nowrap !important;
+            }
+            .col-print-amount {
+              width: 15% !important;
+              min-width: 15% !important;
+              max-width: 15% !important;
+              white-space: nowrap !important;
+            }
           }
         `}} />
 
@@ -3173,27 +3226,27 @@ export default function App() {
                         Row No.
                       </th>
                     )}
-                    <th className="border-e border-[#B0B0B0] py-4 w-12 min-w-[48px] max-w-[48px] font-sans text-center select-none align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-[#B0B0B0] py-4 w-12 min-w-[48px] max-w-[48px] font-sans text-center select-none align-middle font-bold text-black col-print-no" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       No
                     </th>
-                    <th className="border-e border-[#B0B0B0] py-4 px-3 min-w-[260px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-[#B0B0B0] py-4 px-3 min-w-[260px] text-center align-middle font-bold text-black col-print-desc" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       {printDirectionParam === 'rtl' ? 'الوصف التفصيلي (Description)' : 'Description'}
                     </th>
                     {hasAnyBrand && (
-                      <th className="border-e border-slate-300 py-4 w-24 min-w-[96px] max-w-[96px] font-sans text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                      <th className="border-e border-slate-300 py-4 w-24 min-w-[96px] max-w-[96px] font-sans text-center align-middle font-bold text-black col-print-brand" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                         {printDirectionParam === 'rtl' ? 'البراند (Brand)' : 'Brand'}
                       </th>
                     )}
-                    <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black col-print-unit" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Unit
                     </th>
-                    <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black col-print-qty" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Qty
                     </th>
-                    <th className="border-e border-slate-300 py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-slate-300 py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black col-print-price" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Price
                     </th>
-                    <th className="py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black col-print-amount" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Amount
                     </th>
                   </tr>
@@ -3235,8 +3288,8 @@ export default function App() {
                                     {sequenceNo}
                                   </td>
                                 )}
-                                <td className="border-e border-slate-200 py-5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{idx + 1}</td>
-                                <td className="border-e border-slate-200 py-5 px-3 min-w-[260px] align-middle text-center" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className="border-e border-slate-200 py-5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] align-middle col-print-no" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{idx + 1}</td>
+                                <td className="border-e border-slate-200 py-5 px-3 min-w-[260px] align-middle text-center col-print-desc" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div 
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -3252,7 +3305,7 @@ export default function App() {
                                   </div>
                                 </td>
                                 {hasAnyBrand && (
-                                  <td className="border-e border-slate-200 py-5 text-black font-bold w-24 min-w-[96px] max-w-[96px] break-words whitespace-normal font-sans text-center align-middle" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                  <td className="border-e border-slate-200 py-5 text-black font-bold w-24 min-w-[96px] max-w-[96px] break-words whitespace-normal font-sans text-center align-middle col-print-brand" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                     <div
                                       contentEditable={true}
                                       suppressContentEditableWarning={true}
@@ -3267,7 +3320,7 @@ export default function App() {
                                     </div>
                                   </td>
                                 )}
-                                <td className="border-e border-slate-200 py-5 text-black font-bold w-16 min-w-[64px] max-w-[64px] break-words whitespace-normal text-center align-middle" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className="border-e border-slate-200 py-5 text-black font-bold w-16 min-w-[64px] max-w-[64px] break-words whitespace-normal text-center align-middle col-print-unit" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -3286,7 +3339,7 @@ export default function App() {
                                     {item.unit && !item.unit.includes('عئد') && item.unit !== 'عئد.' && item.unit !== 'عئد' ? convertEasternToWesternNumerals(item.unit) : "عدد"}
                                   </div>
                                 </td>
-                                <td className="border-e border-slate-200 py-5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className="border-e border-slate-200 py-5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle col-print-qty" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -3300,7 +3353,7 @@ export default function App() {
                                     {item.quantity || "1"}
                                   </div>
                                 </td>
-                                <td className="border-e border-slate-200 py-5 font-bold text-black w-28 min-w-[112px] max-w-[112px] text-center align-middle font-mono text-[12px] whitespace-nowrap text-nowrap" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className="border-e border-slate-200 py-5 font-bold text-black w-28 min-w-[112px] max-w-[112px] text-center align-middle font-mono text-[12px] whitespace-nowrap text-nowrap col-print-price" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -3321,7 +3374,7 @@ export default function App() {
                                     })()}
                                   </div>
                                 </td>
-                                <td className="py-5 w-28 min-w-[112px] max-w-[112px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono whitespace-nowrap text-nowrap" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className="py-5 w-28 min-w-[112px] max-w-[112px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono whitespace-nowrap text-nowrap col-print-amount" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div className="whitespace-nowrap text-nowrap text-center w-full">
                                     {(() => {
                                       const baseTotal = item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0));
