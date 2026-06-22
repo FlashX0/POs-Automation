@@ -1115,14 +1115,14 @@ async function uploadToSupabaseStorage(
     fileExtension = ".jpg";
   }
   
-  const finalFilename = `${docTypeLabel}_${docNumLabel}__${clientFolderName}__${dateStr}${fileExtension}`;
-  const supabasePath = `${projectFolderName}/${finalFilename}`;
+  const finalFilename = `${docTypeLabel}_${docNumLabel}${fileExtension}`;
+  const supabasePath = `${projectFolderName}/${clientFolderName}/${finalFilename}`;
   
   if (supabaseClient) {
     try {
-      let bucketName = "POs Files";
+      const bucketName = "POs Files";
       console.log(`Uploading file ${supabasePath} to Supabase bucket "${bucketName}"...`);
-      let { data, error } = await supabaseClient.storage
+      const { data, error } = await supabaseClient.storage
         .from(bucketName)
         .upload(supabasePath, processedBuffer, {
           contentType: processedMimetype,
@@ -1130,18 +1130,7 @@ async function uploadToSupabaseStorage(
         });
         
       if (error) {
-        console.warn(`Upload to bucket "${bucketName}" failed: ${error.message}. Retrying with backup "pos-files"...`);
-        bucketName = "pos-files";
-        const retryResult = await supabaseClient.storage
-          .from(bucketName)
-          .upload(supabasePath, processedBuffer, {
-            contentType: processedMimetype,
-            upsert: true
-          });
-        if (retryResult.error) {
-          throw retryResult.error;
-        }
-        data = retryResult.data;
+        throw error;
       }
       
       // Get Public URL

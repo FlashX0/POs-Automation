@@ -466,6 +466,12 @@ export default function App() {
   });
   const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
 
+  // States for interactive custom print margins (in milimeters/mm) with default safe minimum margin (5mm)
+  const [printMarginTop, setPrintMarginTop] = useState<number>(5);
+  const [printMarginBottom, setPrintMarginBottom] = useState<number>(5);
+  const [printMarginLeft, setPrintMarginLeft] = useState<number>(5);
+  const [printMarginRight, setPrintMarginRight] = useState<number>(5);
+
   // States for Local Storage Data Retention & Sync Backup
   const [hasBackupToRestore, setHasBackupToRestore] = useState<boolean>(false);
   const [backupCount, setBackupCount] = useState<number>(0);
@@ -1480,7 +1486,7 @@ export default function App() {
       rows[4][3] = "Ship to / اسم المشروع";
       rows[4][4] = "No:";
       rows[4][5] = isQuote ? "Quote Date" : "Order Date";
-      rows[4][6] = isQuote ? "Quotation Total" : "Purshase order Total"; // Matches spelling of DELTA requirements
+      rows[4][6] = "PO Total"; // Matches spelling of DELTA requirements
 
       // Calculated Values with defaults
       const vendorName = doc.clientName || "رواد للتوكيلات التجارية";
@@ -2108,6 +2114,9 @@ export default function App() {
       alert("عذراً، لم نتمكن من تحديد جدول الطباعة.");
       return;
     }
+
+    const activeDocForBrand = documents.find(d => d.id === printDocId) || selectedDoc;
+    const hasAnyBrand = !!(activeDocForBrand && activeDocForBrand.items && activeDocForBrand.items.some(item => item.brand?.trim() !== ""));
 
     setIsGeneratingPDF(true);
     try {
@@ -2764,6 +2773,59 @@ export default function App() {
             </div>
           </div>
 
+          <div className="flex flex-col gap-2.5 bg-slate-800/40 p-4 rounded-xl border border-slate-800 mt-2 text-right">
+            <span className="text-xs font-extrabold text-slate-300 flex items-center gap-1.5 justify-end">
+              <span>تخصيص هوامش صفحة الطباعة (mm):</span>
+              <span>📐</span>
+            </span>
+            <div className="flex flex-wrap gap-4 text-xs font-mono justify-end mt-1 items-center">
+              <div className="flex items-center gap-1.5 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                <span className="text-[10px] text-slate-400 font-bold">يسار (Left):</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={printMarginLeft}
+                  onChange={(e) => setPrintMarginLeft(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-12 bg-slate-800 border border-slate-700 text-white font-bold text-center px-1 py-0.5 rounded focus:outline-hidden focus:border-sky-500"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                <span className="text-[10px] text-slate-400 font-bold">يمين (Right):</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={printMarginRight}
+                  onChange={(e) => setPrintMarginRight(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-12 bg-slate-800 border border-slate-700 text-white font-bold text-center px-1 py-0.5 rounded focus:outline-hidden focus:border-sky-500"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                <span className="text-[10px] text-slate-400 font-bold">تحت (Bottom):</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={printMarginBottom}
+                  onChange={(e) => setPrintMarginBottom(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-12 bg-slate-800 border border-slate-700 text-white font-bold text-center px-1 py-0.5 rounded focus:outline-hidden focus:border-sky-500"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                <span className="text-[10px] text-slate-400 font-bold">فوق (Top):</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={printMarginTop}
+                  onChange={(e) => setPrintMarginTop(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-12 bg-slate-800 border border-slate-700 text-white font-bold text-center px-1 py-0.5 rounded focus:outline-hidden focus:border-sky-500"
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-wrap justify-between items-center gap-3 mt-2 border-t border-slate-800 pt-4">
             <button
               type="button"
@@ -2859,6 +2921,16 @@ export default function App() {
           </div>
         )}
 
+        {/* Dynamic User Custom Margins and @page overrider injection */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media print {
+            @page {
+              size: A4 portrait !important;
+              margin: ${printMarginTop}mm ${printMarginRight}mm ${printMarginBottom}mm ${printMarginLeft}mm !important;
+            }
+          }
+        `}} />
+
         {/* PRISTINE VIRTUAL EXCEL SHEET FOR PRINT */}
         <div className="w-full max-w-4xl mx-auto print-me-wrapper">
           <div 
@@ -2936,12 +3008,10 @@ export default function App() {
                 {/* Column 5: Total */}
                 <div className="col-span-3 p-2.5 flex flex-col gap-1.5 justify-center text-center bg-amber-50/10 select-text">
                   <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
-                    {printDoc.docType === 'quote' 
-                      ? (printDirectionParam === 'rtl' ? 'إجمالي العرض' : 'Offer Total') 
-                      : (printDirectionParam === 'rtl' ? 'إجمالي أمر الشراء' : 'Purchase Order')}
+                    {printDirectionParam === 'rtl' ? 'PO Total' : 'PO Total'}
                   </span>
                   <span className="font-mono font-black text-[#DC2626] text-[13.5px] mt-1 leading-none select-text w-full text-center block whitespace-nowrap overflow-visible">
-                    {getDocNetSpent(printDoc).toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                    {getDocNetSpent(printDoc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
@@ -5942,7 +6012,7 @@ export default function App() {
                         {selectedDoc.docType === 'quote' ? 'Quote Date' : 'Order Date'}
                       </div>
                       <div className="col-span-2 bg-[#F3F4F6] p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
-                        {selectedDoc.docType === 'quote' ? 'Offer Total' : 'PO Total'}
+                        {selectedDoc.docType === 'quote' ? 'PO Total' : 'PO Total'}
                       </div>
 
                       {/* Meta Values Editable Fields */}
