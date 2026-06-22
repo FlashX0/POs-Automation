@@ -37,6 +37,15 @@ function sanitizeStorageName(text: any, fallback: string = 'unnamed'): string {
   return cleaned || fallback;
 }
 
+function cleanFolderName(name: any): string {
+  if (!name) return 'unnamed';
+  return name
+    .toString()
+    .trim()
+    .replace(/[\s_/\-\\–—]+/g, '-') // تحويل المسافات والعواض المزدوجة إلى عارضة مفردة
+    .replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g, ''); // الحفاظ فقط على الحروف العربية والإنجليزية والأرقام والعواض
+}
+
 function sanitizeName(name: string, fallback: string = "unnamed"): string {
   return sanitizeStorageName(name, fallback);
 }
@@ -1672,12 +1681,11 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     const poNo = docNumber;
     const poNumber = (poNo && poNo.toString().replace(/[^0-9]/g, '')) || '11'; 
 
-    // 2. توليد طابع زمني فريد بالملي ثانية لمنع تكرار الأسماء
-    const timestamp = Date.now();
-
-    // 3. بناء اسم ملف رقمي وإنجليزي نظيف تماماً وخالٍ من أي تعقيدات
-    const finalStoragePath = `PO-${poNumber}-${timestamp}.pdf`;
-    const supabasePath = finalStoragePath;
+    // 2. تنظيف وبناء المجلدات المتداخلة بشكل صارم (Nested Folders Fix)
+    const folderProject = cleanFolderName(projectName || "عام");
+    const folderVendor = cleanFolderName(vendorName || "Unknown-Client");
+    const finalZipPath = `${folderProject}/${folderVendor}/PO-${poNumber}-${Date.now()}.zip`;
+    const supabasePath = finalZipPath;
 
     if (!supabaseClient) {
       const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY are set.";
@@ -1686,20 +1694,20 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     }
 
     const bucketName = "POs Files";
-    console.log(`Uploading generated PDF to path "${supabasePath}" in bucket "${bucketName}"...`);
+    console.log(`Uploading generated ZIP to path "${supabasePath}" in bucket "${bucketName}"...`);
 
     // Create a real Blob for Supabase as requested
-    const fileBlob = new globalThis.Blob([buffer], { type: "application/pdf" });
+    const fileBlob = new globalThis.Blob([buffer], { type: "application/zip" });
 
     const { data, error } = await supabaseClient.storage
       .from(bucketName)
       .upload(supabasePath, fileBlob, {
-        contentType: 'application/pdf',
+        contentType: 'application/zip',
         upsert: true
       });
 
     if (error) {
-      console.error(`Supabase Client upload API error for generated PDF:`, error);
+      console.error(`Supabase Client upload API error for generated ZIP:`, error);
       throw error;
     }
 
@@ -1709,7 +1717,7 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
       .getPublicUrl(supabasePath);
 
     const publicUrl = publicUrlData.publicUrl;
-    console.log(`Successfully uploaded generated PDF to ${publicUrl}`);
+    console.log(`Successfully uploaded generated ZIP to ${publicUrl}`);
 
     // Update document record in database
     const docIdx = (db.documents || []).findIndex((d: any) => d.id === documentId);

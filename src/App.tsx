@@ -53,6 +53,7 @@ import {
 } from 'lucide-react';
 // @ts-ignore
 import * as XLSX from 'xlsx-js-style';
+import JSZip from 'jszip';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 // @ts-ignore
@@ -1481,12 +1482,7 @@ export default function App() {
   };
 
   // Export selected purchase order / document to matching DELTA Excel template structure
-  const handleExportToDeltaExcel = (doc: ProcessedDocument) => {
-    if (!doc) {
-      alert('الرجاء تحديد مستند أولاً لتصديره.');
-      return;
-    }
-
+  const generateDeltaExcelWorkbook = (doc: ProcessedDocument): any => {
     try {
       const isQuote = doc.docType === 'quote';
       const itemsCount = Math.max(doc.items?.length || 0, 5);
@@ -1957,6 +1953,21 @@ export default function App() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "DELTA_PO");
 
+      return wb;
+    } catch (e: any) {
+      console.error("Workbook generation failed", e);
+      throw e;
+    }
+  };
+
+  const handleExportToDeltaExcel = (doc: ProcessedDocument) => {
+    if (!doc) {
+      alert('الرجاء تحديد مستند أولاً لتصديره.');
+      return;
+    }
+    try {
+      const wb = generateDeltaExcelWorkbook(doc);
+      const orderNo = (doc.docNumber && doc.docNumber !== "N/A" && doc.docNumber !== "REF") ? doc.docNumber : "31";
       XLSX.writeFile(wb, `DELTA_PO_${orderNo}.xlsx`);
       triggerNotificationToast('success', 'تم تصدير شيت DELTA', 'تم إنشاء وتنزيل شيت إكسيل كود مالي منسق ومطابق لنسق شركة DELTA بنجاح!');
     } catch (e: any) {
@@ -2542,20 +2553,36 @@ export default function App() {
       if (printDocId) {
         triggerNotificationToast(
           'info',
-          'جاري رفع نسخة الـ PDF وتحديث السجل سحابياً...',
+          'جاري رفع الملف المضغوط (ZIP) وتحديث السجل سحابياً...',
           'يرجى عدم إغلاق النافذة أثناء الحفظ في Supabase Storage.'
         );
         
-        let pdfBlob: Blob;
+        let zipBlob: Blob;
         try {
-          pdfBlob = pdf.output('blob');
+          const pdfBlob = pdf.output('blob');
+          
+          let excelBlob: Blob;
+          if (printDoc) {
+            const wb = generateDeltaExcelWorkbook(printDoc);
+            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            excelBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          } else {
+            throw new Error("لم يتم العثور على وثيقة لإنشاء ملف الإكسيل.");
+          }
+
+          const zip = new JSZip();
+          const poNumber = docNum ? docNum.toString().replace(/[^0-9]/g, '') : '11';
+          
+          zip.file(`PO-${poNumber}.pdf`, pdfBlob); // ملف الـ PDF
+          zip.file(`PO-${poNumber}.xlsx`, excelBlob); // ملف الإكسيل
+          zipBlob = await zip.generateAsync({ type: 'blob' });
         } catch (blobErr: any) {
-          console.error("Failed to generate PDF blob:", blobErr);
-          throw new Error(`تعذر إنشاء مصفوفة الـ Blob من مستند PDF: ${blobErr.message}`);
+          console.error("Failed to generate ZIP blob:", blobErr);
+          throw new Error(`تعذر إنشاء الملف المضغوط ZIP: ${blobErr.message}`);
         }
 
         const uploadForm = new FormData();
-        uploadForm.append('file', pdfBlob, `PO_${docNum}.pdf`);
+        uploadForm.append('file', zipBlob, `PO_${docNum}.zip`);
         uploadForm.append('documentId', printDocId);
         uploadForm.append('projectName', projName);
         uploadForm.append('vendorName', vendorName);
@@ -2568,11 +2595,11 @@ export default function App() {
 
         if (!uploadRes.ok) {
           const errData = await uploadRes.json().catch(() => ({}));
-          throw new Error(errData.error || 'عذراً، فشل رفع نسخة الـ PDF إلى خادم التخزين السحابي.');
+          throw new Error(errData.error || 'عذراً، فشل رفع الملف المضغوط إلى خادم التخزين السحابي.');
         }
 
         const uploadResult = await uploadRes.json();
-        console.log("Uploaded PDF Public URL:", uploadResult.publicUrl);
+        console.log("Uploaded ZIP Public URL:", uploadResult.publicUrl);
         
         // Update documents list in background
         setDocuments(prevDocs => 
@@ -2581,8 +2608,8 @@ export default function App() {
 
         triggerNotificationToast(
           'success',
-          'تم تحديث نسخة الـ PDF بنجاح ✨',
-          'تم حفظ الملف بأمان في Supabase Storage وتحديث السجل.'
+          'تم تحديث وحفظ الملف المضغوط (ZIP) بنجاح ✨',
+          'تم حفظ ملف الـ ZIP بأمان في Supabase Storage وتحديث السجل.'
         );
       }
     } catch (error: any) {
