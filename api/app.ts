@@ -1087,7 +1087,7 @@ function classifyAndStoreFile(fileBuffer: Buffer, parsedData: any, originalName:
 }
 
 /**
- * Uploads a file to Supabase inside "pos-files" bucket, falling back to local file path
+ * Uploads a file to Supabase inside "POs Files" bucket, raising strict errors on failure.
  */
 async function uploadToSupabaseStorage(
   fileBuffer: Buffer,
@@ -1118,42 +1118,52 @@ async function uploadToSupabaseStorage(
   const finalFilename = `${docTypeLabel}_${docNumLabel}${fileExtension}`;
   const supabasePath = `${projectFolderName}/${clientFolderName}/${finalFilename}`;
   
-  if (supabaseClient) {
-    try {
-      const bucketName = "POs Files";
-      console.log(`Uploading file ${supabasePath} to Supabase bucket "${bucketName}"...`);
-      const { data, error } = await supabaseClient.storage
-        .from(bucketName)
-        .upload(supabasePath, processedBuffer, {
-          contentType: processedMimetype,
-          upsert: true
-        });
-        
-      if (error) {
-        throw error;
-      }
-      
-      // Get Public URL
-      const { data: publicUrlData } = supabaseClient.storage
-        .from(bucketName)
-        .getPublicUrl(supabasePath);
-        
-      console.log(`Successfully uploaded to Supabase Storage inside bucket "${bucketName}"! Public URL: ${publicUrlData.publicUrl}`);
-      return {
-        path: publicUrlData.publicUrl,
-        isCloud: true
-      };
-    } catch (err: any) {
-      console.error("Supabase Storage upload failed, falling back to local simulation:", err.message);
-    }
+  if (!supabaseClient) {
+    const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY env variables are provided.";
+    console.error(errMsg);
+    throw new Error(errMsg);
   }
   
-  // Fallback to local file simulation or storage
-  const localResult = classifyAndStoreFile(processedBuffer, parsedData, originalName);
-  return {
-    path: localResult.relativePath,
-    isCloud: false
-  };
+  try {
+    const bucketName = "POs Files";
+    console.log(`Uploading file ${supabasePath} to Supabase bucket "${bucketName}"...`);
+    
+    // Convert Buffer to real Blob as requested
+    const fileBlob = new globalThis.Blob([processedBuffer], { type: processedMimetype });
+    
+    // Ensure content type is explicitly specified
+    let finalMimetype = processedMimetype;
+    if (fileExtension.toLowerCase() === '.pdf') {
+      finalMimetype = 'application/pdf';
+    }
+    
+    const { data, error } = await supabaseClient.storage
+      .from(bucketName)
+      .upload(supabasePath, fileBlob, {
+        contentType: finalMimetype,
+        upsert: true
+      });
+      
+    if (error) {
+      console.error(`Supabase Client upload API returned an error for path [${supabasePath}]:`, error);
+      throw error;
+    }
+    
+    // Get Public URL
+    const { data: publicUrlData } = supabaseClient.storage
+      .from(bucketName)
+      .getPublicUrl(supabasePath);
+      
+    console.log(`Successfully uploaded to Supabase Storage inside bucket "${bucketName}"! Public URL: ${publicUrlData.publicUrl}`);
+    return {
+      path: publicUrlData.publicUrl,
+      isCloud: true
+    };
+  } catch (err: any) {
+    const failedMsg = `فشل رفع الملف إلى المخزن السحابي (Supabase Storage): ${err.message || 'فشل غير متوقع'}`;
+    console.error(failedMsg, err);
+    throw new Error(failedMsg);
+  }
 }
 
 // REST API ENDPOINTS
@@ -1623,6 +1633,82 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
       triggerNotification("error", "فشل رفع المستند", `حدث خطأ أثناء محاولة رفع الملف: ${error.message}`);
     } catch (e) {}
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 2a. Direct upload for generated pdf copies from front-end
+app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "لم يتم تحديد أي ملف." });
+    }
+    const { documentId, projectName, vendorName, docNumber } = req.body;
+    if (!documentId) {
+      return res.status(400).json({ error: "مُعرّف المستند مطلوب." });
+    }
+
+    const { buffer, mimetype, originalname } = req.file;
+
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+
+    // Sanitize values for folder structure
+    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+    const cleanProjName = sanitize(projectName || "عام");
+    const cleanVendorName = sanitize(vendorName || "Unknown_Client");
+    const cleanDocNum = sanitize(docNumber || "document");
+
+    const fileExtension = ".pdf";
+    const finalFilename = `PO_${cleanDocNum}${fileExtension}`;
+    const supabasePath = `${cleanProjName}/${cleanVendorName}/${finalFilename}`;
+
+    if (!supabaseClient) {
+      const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY are set.";
+      console.error(errMsg);
+      throw new Error(errMsg);
+    }
+
+    const bucketName = "POs Files";
+    console.log(`Uploading generated PDF to path "${supabasePath}" in bucket "${bucketName}"...`);
+
+    // Create a real Blob for Supabase as requested
+    const fileBlob = new globalThis.Blob([buffer], { type: "application/pdf" });
+
+    const { data, error } = await supabaseClient.storage
+      .from(bucketName)
+      .upload(supabasePath, fileBlob, {
+        contentType: 'application/pdf',
+        upsert: true
+      });
+
+    if (error) {
+      console.error(`Supabase Client upload API error for generated PDF:`, error);
+      throw error;
+    }
+
+    // Get Public URL
+    const { data: publicUrlData } = supabaseClient.storage
+      .from(bucketName)
+      .getPublicUrl(supabasePath);
+
+    const publicUrl = publicUrlData.publicUrl;
+    console.log(`Successfully uploaded generated PDF to ${publicUrl}`);
+
+    // Update document record in database
+    const docIdx = (db.documents || []).findIndex((d: any) => d.id === documentId);
+    if (docIdx !== -1) {
+      db.documents[docIdx].classifiedPath = publicUrl;
+      db.documents[docIdx].status = "processed";
+      saveDb(db);
+    } else {
+      console.warn(`Could not find document with ID ${documentId} to update its classifiedPath.`);
+    }
+
+    res.json({ success: true, publicUrl });
+  } catch (err: any) {
+    const failedMsg = `فشل رفع نسخة الـ PDF إلى المخزن السحابي (Supabase Storage): ${err.message || 'فشل غير متوقع'}`;
+    console.error(failedMsg, err);
+    res.status(500).json({ error: failedMsg });
   }
 });
 

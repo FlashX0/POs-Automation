@@ -1186,7 +1186,14 @@ export default function App() {
       
       fetchData();
     } catch (err: any) {
+      console.error("File upload failed:", err);
       setErrorMsg(err.message);
+      triggerNotificationToast(
+        'error',
+        'فشل رفع وتحليل المستند ❌',
+        err.message || 'حدث خطأ غير متوقع أثناء المعالجة سحابياً.'
+      );
+      alert(`عذراً، حدث خطأ أثناء محاولة رفع ومعالجة الملف:\n${err.message}`);
     } finally {
       setUploading(false);
       if (dashboardFileInputRef.current) dashboardFileInputRef.current.value = '';
@@ -2160,7 +2167,7 @@ export default function App() {
 
       // Render crisp canvas representation of printable sheet with oklch safety transform
       const canvas = await (html2canvas as any)(element, {
-        scale: 4.0, // Ultra-high-fidelity resolution for perfect print crispness
+        scale: 2, // Scale 2 as explicitly requested by user
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
@@ -2234,33 +2241,67 @@ export default function App() {
             t.style.border = "2px solid #000000";
           });
 
-          // Style all cloned ths
+          // Style all cloned ths with dynamic row height and safe padding
           const ths = clonedElement.getElementsByTagName("th");
           Array.from(ths).forEach((th) => {
             const cell = th as HTMLTableCellElement;
+            cell.style.setProperty('height', 'auto', 'important');
+            cell.style.setProperty('min-height', 'auto', 'important');
+            cell.style.setProperty('max-height', 'auto', 'important');
+            cell.style.setProperty('line-height', '1.5', 'important');
+            cell.style.setProperty('padding', '12px 10px', 'important');
             cell.style.border = "1px solid #000000";
             cell.style.borderColor = "#000000";
             cell.style.color = "#000000";
-            cell.style.padding = "10px 8px";
             cell.style.verticalAlign = "middle";
             cell.style.textAlign = "center";
           });
 
-          // Style all cloned tds
+          // Style all cloned tds with dynamic heights, line-height, and padding
           const tds = clonedElement.getElementsByTagName("td");
           Array.from(tds).forEach((td) => {
             const cell = td as HTMLTableCellElement;
+            cell.style.setProperty('height', 'auto', 'important');
+            cell.style.setProperty('min-height', 'auto', 'important');
+            cell.style.setProperty('max-height', 'auto', 'important');
+            cell.style.setProperty('line-height', '1.5', 'important');
+            cell.style.setProperty('padding', '12px 10px', 'important');
             cell.style.border = "1px solid #000000";
             cell.style.borderColor = "#000000";
             cell.style.color = "#000000";
-            cell.style.padding = "10px 8px";
             cell.style.verticalAlign = "middle";
+            
+            // Prevent horizontal compressing, allow wrapping, and safe word wrapping
+            cell.style.setProperty('white-space', 'normal', 'important');
+            cell.style.setProperty('overflow', 'visible', 'important');
+            cell.style.setProperty('word-wrap', 'break-word', 'important');
+            cell.style.setProperty('word-break', 'break-word', 'important');
+
+            // Force dynamic line heights and text formatting on any nested div/span inside the cells
+            const nestedItems = Array.from(cell.querySelectorAll('div, span')) as HTMLElement[];
+            nestedItems.forEach((inner) => {
+              inner.style.setProperty('height', 'auto', 'important');
+              inner.style.setProperty('min-height', 'auto', 'important');
+              inner.style.setProperty('max-height', 'auto', 'important');
+              inner.style.setProperty('line-height', '1.5', 'important');
+              inner.style.setProperty('padding', '0', 'important');
+              inner.style.setProperty('margin', '0', 'important');
+              inner.style.setProperty('white-space', 'normal', 'important');
+              inner.style.setProperty('word-wrap', 'break-word', 'important');
+              inner.style.setProperty('word-break', 'break-word', 'important');
+            });
           });
 
-          // Force column widths precisely for each table row
+          // Force column widths precisely and avoid breaking inside pages
           const rows = clonedElement.getElementsByTagName("tr");
           Array.from(rows).forEach((row) => {
             const tr = row as HTMLTableRowElement;
+            tr.style.setProperty('height', 'auto', 'important');
+            tr.style.setProperty('min-height', 'auto', 'important');
+            tr.style.setProperty('max-height', 'auto', 'important');
+            tr.style.setProperty('page-break-inside', 'avoid', 'important');
+            tr.style.setProperty('break-inside', 'avoid', 'important');
+
             const cells = Array.from(tr.cells);
             
             // Adjust individual columns for actual table items
@@ -2268,20 +2309,103 @@ export default function App() {
             const actualCells = cells.slice(startIndex);
             if (actualCells.length >= 6) {
               if (hasAnyBrand) {
-                if (actualCells[0]) { actualCells[0].style.width = "5%"; actualCells[0].style.textAlign = "center"; }
-                if (actualCells[1]) { actualCells[1].style.width = "43%"; actualCells[1].style.textAlign = printDirectionParam === 'rtl' ? "right" : "left"; }
-                if (actualCells[2]) { actualCells[2].style.width = "10%"; actualCells[2].style.textAlign = "center"; }
-                if (actualCells[3]) { actualCells[3].style.width = "10%"; actualCells[3].style.textAlign = "center"; }
-                if (actualCells[4]) { actualCells[4].style.width = "8%";  actualCells[4].style.textAlign = "center"; }
-                if (actualCells[5]) { actualCells[5].style.width = "12%"; actualCells[5].style.textAlign = "center"; actualCells[5].style.whiteSpace = "nowrap"; }
-                if (actualCells[6]) { actualCells[6].style.width = "12%"; actualCells[6].style.textAlign = "center"; actualCells[6].style.whiteSpace = "nowrap"; }
+                // Column proportions with Brand: No (5%), Description (42%), Brand (8%), Unit (8%), Qty (8%), Price (14%), Amount (15%) = 100%
+                if (actualCells[0]) {
+                  actualCells[0].style.setProperty('width', '5%', 'important');
+                  actualCells[0].style.setProperty('min-width', '5%', 'important');
+                  actualCells[0].style.setProperty('max-width', '5%', 'important');
+                  actualCells[0].style.textAlign = "center";
+                }
+                if (actualCells[1]) {
+                  actualCells[1].style.setProperty('width', '42%', 'important');
+                  actualCells[1].style.setProperty('min-width', '42%', 'important');
+                  actualCells[1].style.setProperty('max-width', '42%', 'important');
+                  actualCells[1].style.textAlign = "right";
+                  actualCells[1].style.direction = "rtl";
+                  const innerDiv = actualCells[1].querySelector('div') as HTMLElement;
+                  if (innerDiv) {
+                    innerDiv.style.textAlign = "right";
+                    innerDiv.style.direction = "rtl";
+                  }
+                }
+                if (actualCells[2]) {
+                  actualCells[2].style.setProperty('width', '8%', 'important');
+                  actualCells[2].style.setProperty('min-width', '8%', 'important');
+                  actualCells[2].style.setProperty('max-width', '8%', 'important');
+                  actualCells[2].style.textAlign = "center";
+                }
+                if (actualCells[3]) {
+                  actualCells[3].style.setProperty('width', '8%', 'important');
+                  actualCells[3].style.setProperty('min-width', '8%', 'important');
+                  actualCells[3].style.setProperty('max-width', '8%', 'important');
+                  actualCells[3].style.textAlign = "center";
+                }
+                if (actualCells[4]) {
+                  actualCells[4].style.setProperty('width', '8%', 'important');
+                  actualCells[4].style.setProperty('min-width', '8%', 'important');
+                  actualCells[4].style.setProperty('max-width', '8%', 'important');
+                  actualCells[4].style.textAlign = "center";
+                }
+                if (actualCells[5]) {
+                  actualCells[5].style.setProperty('width', '14%', 'important');
+                  actualCells[5].style.setProperty('min-width', '14%', 'important');
+                  actualCells[5].style.setProperty('max-width', '14%', 'important');
+                  actualCells[5].style.textAlign = "center";
+                  actualCells[5].style.setProperty('white-space', 'nowrap', 'important');
+                }
+                if (actualCells[6]) {
+                  actualCells[6].style.setProperty('width', '15%', 'important');
+                  actualCells[6].style.setProperty('min-width', '15%', 'important');
+                  actualCells[6].style.setProperty('max-width', '15%', 'important');
+                  actualCells[6].style.textAlign = "center";
+                  actualCells[6].style.setProperty('white-space', 'nowrap', 'important');
+                }
               } else {
-                if (actualCells[0]) { actualCells[0].style.width = "5%"; actualCells[0].style.textAlign = "center"; }
-                if (actualCells[1]) { actualCells[1].style.width = "53%"; actualCells[1].style.textAlign = printDirectionParam === 'rtl' ? "right" : "left"; }
-                if (actualCells[2]) { actualCells[2].style.width = "10%"; actualCells[2].style.textAlign = "center"; }
-                if (actualCells[3]) { actualCells[3].style.width = "8%";  actualCells[3].style.textAlign = "center"; }
-                if (actualCells[4]) { actualCells[4].style.width = "12%"; actualCells[4].style.textAlign = "center"; actualCells[4].style.whiteSpace = "nowrap"; }
-                if (actualCells[5]) { actualCells[5].style.width = "12%"; actualCells[5].style.textAlign = "center"; actualCells[5].style.whiteSpace = "nowrap"; }
+                // Column proportions without Brand: No (5%), Description (50%), Unit (8%), Qty (8%), Price (14%), Amount (15%) = 100%
+                if (actualCells[0]) {
+                  actualCells[0].style.setProperty('width', '5%', 'important');
+                  actualCells[0].style.setProperty('min-width', '5%', 'important');
+                  actualCells[0].style.setProperty('max-width', '5%', 'important');
+                  actualCells[0].style.textAlign = "center";
+                }
+                if (actualCells[1]) {
+                  actualCells[1].style.setProperty('width', '50%', 'important');
+                  actualCells[1].style.setProperty('min-width', '50%', 'important');
+                  actualCells[1].style.setProperty('max-width', '50%', 'important');
+                  actualCells[1].style.textAlign = "right";
+                  actualCells[1].style.direction = "rtl";
+                  const innerDiv = actualCells[1].querySelector('div') as HTMLElement;
+                  if (innerDiv) {
+                    innerDiv.style.textAlign = "right";
+                    innerDiv.style.direction = "rtl";
+                  }
+                }
+                if (actualCells[2]) {
+                  actualCells[2].style.setProperty('width', '8%', 'important');
+                  actualCells[2].style.setProperty('min-width', '8%', 'important');
+                  actualCells[2].style.setProperty('max-width', '8%', 'important');
+                  actualCells[2].style.textAlign = "center";
+                }
+                if (actualCells[3]) {
+                  actualCells[3].style.setProperty('width', '8%', 'important');
+                  actualCells[3].style.setProperty('min-width', '8%', 'important');
+                  actualCells[3].style.setProperty('max-width', '8%', 'important');
+                  actualCells[3].style.textAlign = "center";
+                }
+                if (actualCells[4]) {
+                  actualCells[4].style.setProperty('width', '14%', 'important');
+                  actualCells[4].style.setProperty('min-width', '14%', 'important');
+                  actualCells[4].style.setProperty('max-width', '14%', 'important');
+                  actualCells[4].style.textAlign = "center";
+                  actualCells[4].style.setProperty('white-space', 'nowrap', 'important');
+                }
+                if (actualCells[5]) {
+                  actualCells[5].style.setProperty('width', '15%', 'important');
+                  actualCells[5].style.setProperty('min-width', '15%', 'important');
+                  actualCells[5].style.setProperty('max-width', '15%', 'important');
+                  actualCells[5].style.textAlign = "center";
+                  actualCells[5].style.setProperty('white-space', 'nowrap', 'important');
+                }
               }
             }
           });
@@ -2409,10 +2533,66 @@ export default function App() {
       // Format clean filename for saving
       const docNum = printDoc ? (printDoc.docNumber || "document") : "DELTA";
       const projName = printDoc ? (printDoc.projectName || "DELTA") : "PROJECT";
+      const vendorName = printDoc ? (printDoc.clientName || "Unknown_Client") : "Unknown_Client";
+      
+      // Save locally to user device
       pdf.save(`${projName}_${docNum}_DELTA_Direct.pdf`);
+
+      // Upload file dynamically to Supabase Storage and capture Public URL
+      if (printDocId) {
+        triggerNotificationToast(
+          'info',
+          'جاري رفع نسخة الـ PDF وتحديث السجل سحابياً...',
+          'يرجى عدم إغلاق النافذة أثناء الحفظ في Supabase Storage.'
+        );
+        
+        let pdfBlob: Blob;
+        try {
+          pdfBlob = pdf.output('blob');
+        } catch (blobErr: any) {
+          console.error("Failed to generate PDF blob:", blobErr);
+          throw new Error(`تعذر إنشاء مصفوفة الـ Blob من مستند PDF: ${blobErr.message}`);
+        }
+
+        const uploadForm = new FormData();
+        uploadForm.append('file', pdfBlob, `PO_${docNum}.pdf`);
+        uploadForm.append('documentId', printDocId);
+        uploadForm.append('projectName', projName);
+        uploadForm.append('vendorName', vendorName);
+        uploadForm.append('docNumber', docNum);
+
+        const uploadRes = await fetch('/api/documents/upload-generated-pdf', {
+          method: 'POST',
+          body: uploadForm
+        });
+
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'عذراً، فشل رفع نسخة الـ PDF إلى خادم التخزين السحابي.');
+        }
+
+        const uploadResult = await uploadRes.json();
+        console.log("Uploaded PDF Public URL:", uploadResult.publicUrl);
+        
+        // Update documents list in background
+        setDocuments(prevDocs => 
+          prevDocs.map(d => d.id === printDocId ? { ...d, classifiedPath: uploadResult.publicUrl, status: 'processed' as const } : d)
+        );
+
+        triggerNotificationToast(
+          'success',
+          'تم تحديث نسخة الـ PDF بنجاح ✨',
+          'تم حفظ الملف بأمان في Supabase Storage وتحديث السجل.'
+        );
+      }
     } catch (error: any) {
-      console.error("Direct PDF Generation failed:", error);
-      alert("عذراً، فشل تصدير ملف الـ PDF. يرجى محاولة استخدام طباعة المتصفح لحفظ المستند يدوياً.");
+      console.error("Direct PDF Generation/Upload failed:", error);
+      triggerNotificationToast(
+        'error',
+        'فشل الرفع السحابي والمزامنة ❌',
+        error.message || 'حدث خطأ أثناء الرفع إلى مخزن Supabase Storage.'
+      );
+      alert(`عذراً، حدث خطأ أثناء توليد أو رفع ملف الـ PDF:\n${error.message}`);
     } finally {
       setIsGeneratingPDF(false);
     }
