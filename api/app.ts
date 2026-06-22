@@ -1123,19 +1123,16 @@ async function uploadToSupabaseStorage(
     fileExtension = ".jpg";
   }
 
-  const rawDocNum = parsedData.docNumber && parsedData.docNumber !== "N/A" ? parsedData.docNumber : "Ref-" + Math.random().toString(36).substr(2, 4);
-  const baseFilename = `PO-${rawDocNum}`;
-  const projectName = parsedData.projectName || "عام";
-  const vendorName = parsedData.clientName || "Unknown-Client";
-  const fileName = baseFilename + fileExtension;
+  // 1. استخراج رقم الـ PO الفعلي وتحويله لرقم نظيف (مثال: 11)
+  const poNo = parsedData.docNumber;
+  const poNumber = (poNo && poNo.toString().replace(/[^0-9]/g, '')) || '11'; 
 
-  // بناء المسار النظيف على شكل مجلدات داخل الـ Bucket
-  const cleanProject = sanitizeStorageName(projectName);
-  const cleanVendor = sanitizeStorageName(vendorName);
-  const cleanFile = sanitizeStorageName(fileName || 'PO_Document.pdf');
+  // 2. توليد طابع زمني فريد بالملي ثانية لمنع تكرار الأسماء
+  const timestamp = Date.now();
 
-  // المسار القياسي النهائي (يجب أن يفصل بين المجلدات علامة / فقط)
-  const supabasePath = `${cleanProject}/${cleanVendor}/${cleanFile}`;
+  // 3. بناء اسم ملف رقمي وإنجليزي نظيف تماماً وخالٍ من أي تعقيدات
+  const finalStoragePath = `PO-${poNumber}-${timestamp}${fileExtension}`;
+  const supabasePath = finalStoragePath;
   
   if (!supabaseClient) {
     const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY env variables are provided.";
@@ -1671,19 +1668,16 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     await fetchAndSyncDbFromMongo();
     const db = getDb();
 
-    // Sanitize values for folder structure strictly using global sanitizeStorageName helper
-    const fileExtension = ".pdf";
-    const rawDocNum = docNumber && docNumber !== "N/A" ? docNumber : "document";
-    const baseFilename = `PO-${rawDocNum}`;
-    const fileName = baseFilename + fileExtension;
+    // 1. استخراج رقم الـ PO الفعلي وتحويله لرقم نظيف (مثال: 11)
+    const poNo = docNumber;
+    const poNumber = (poNo && poNo.toString().replace(/[^0-9]/g, '')) || '11'; 
 
-    // بناء المسار النظيف على شكل مجلدات داخل الـ Bucket
-    const cleanProject = sanitizeStorageName(projectName);
-    const cleanVendor = sanitizeStorageName(vendorName);
-    const cleanFile = sanitizeStorageName(fileName || 'PO_Document.pdf');
+    // 2. توليد طابع زمني فريد بالملي ثانية لمنع تكرار الأسماء
+    const timestamp = Date.now();
 
-    // المسار القياسي النهائي (يجب أن يفصل بين المجلدات علامة / فقط)
-    const supabasePath = `${cleanProject}/${cleanVendor}/${cleanFile}`;
+    // 3. بناء اسم ملف رقمي وإنجليزي نظيف تماماً وخالٍ من أي تعقيدات
+    const finalStoragePath = `PO-${poNumber}-${timestamp}.pdf`;
+    const supabasePath = finalStoragePath;
 
     if (!supabaseClient) {
       const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY are set.";
