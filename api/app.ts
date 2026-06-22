@@ -26,37 +26,23 @@ if (supabaseUrl && supabaseAnonKey) {
   console.warn("Supabase URL or Anon Key is missing! File uploads will automatically fallback to local storage simulation.");
 }
 
-/**
- * Sanitizes names using a single clean dash for any spaces or unwanted elements.
- * - Removes extra spaces, strange symbols like (-, _, !), and symbols like (@, #, $, %, ^, &, *, (, )).
- * - Restricts to safe English and Arabic letters and numbers, with a solid dash spacer.
- */
-function sanitizeName(name: string, fallback: string = "unnamed"): string {
-  if (!name) return fallback;
-  
-  // Convert spaces, dashes, underscores, slashes, backslashes, and exclamation marks to a dash
-  let cleaned = name.replace(/[\s\-_!@#$%^&*()_+={}\[\]|\\:";'<>,.?/]+/g, "-");
-  
-  // Keep only alphanumeric English, Arabic and dynamic dashes
-  cleaned = cleaned.replace(/[^a-zA-Z0-9\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF-]/g, "");
-  
-  // Collapse multiple consecutive dashes into a single clean dash
-  cleaned = cleaned.replace(/-+/g, "-");
-  
-  // Trim dashes from start and end
-  cleaned = cleaned.trim().replace(/^-+|-+$/g, "");
-  
+// دالة صارمة لتنظيف الأسماء من أي رموز خاصة أو مسافات زائدة
+function sanitizeStorageName(text: any, fallback: string = 'unnamed'): string {
+  if (!text) return fallback;
+  const cleaned = text
+    .toString()
+    .trim()
+    .replace(/[\s_/\-\\–—]+/g, '-') // تحويل أي مسافات أو عواض أو سلاشات إلى عارضة واحدة
+    .replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g, ''); // حذف أي رموز غريبة مع الحفاظ على الحروف العربية والإنجليزية والأرقام
   return cleaned || fallback;
 }
 
-/**
- * Sanitizes folder and file names strictly to avoid 'Invalid key' errors in Supabase.
- * - Removes special characters: -, _, @, #, $, %, ^, &, *, (, )
- * - Converts spaces/dashes/underscores to a single clean dash: -
- * - Restricts characters to standard English and Arabic letters/numbers.
- */
+function sanitizeName(name: string, fallback: string = "unnamed"): string {
+  return sanitizeStorageName(name, fallback);
+}
+
 function sanitizePath(name: string, fallback: string = "unnamed"): string {
-  return sanitizeName(name, fallback);
+  return sanitizeStorageName(name, fallback);
 }
 
 /**
@@ -1141,10 +1127,15 @@ async function uploadToSupabaseStorage(
   const baseFilename = `PO-${rawDocNum}`;
   const projectName = parsedData.projectName || "عام";
   const vendorName = parsedData.clientName || "Unknown-Client";
-  const fileName = sanitizeName(baseFilename, "document") + fileExtension;
+  const fileName = baseFilename + fileExtension;
 
-  const sanitizePOsFilesPath = `POs Files/${sanitizeName(projectName)}/${sanitizeName(vendorName)}/${sanitizeName(fileName)}`;
-  const supabasePath = sanitizePOsFilesPath.replace("POs Files/", "");
+  // بناء المسار النظيف على شكل مجلدات داخل الـ Bucket
+  const cleanProject = sanitizeStorageName(projectName);
+  const cleanVendor = sanitizeStorageName(vendorName);
+  const cleanFile = sanitizeStorageName(fileName || 'PO_Document.pdf');
+
+  // المسار القياسي النهائي (يجب أن يفصل بين المجلدات علامة / فقط)
+  const supabasePath = `${cleanProject}/${cleanVendor}/${cleanFile}`;
   
   if (!supabaseClient) {
     const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY env variables are provided.";
@@ -1680,14 +1671,19 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     await fetchAndSyncDbFromMongo();
     const db = getDb();
 
-    // Sanitize values for folder structure strictly using global sanitizeName helper
+    // Sanitize values for folder structure strictly using global sanitizeStorageName helper
     const fileExtension = ".pdf";
     const rawDocNum = docNumber && docNumber !== "N/A" ? docNumber : "document";
     const baseFilename = `PO-${rawDocNum}`;
-    const fileName = sanitizeName(baseFilename, "document") + fileExtension;
+    const fileName = baseFilename + fileExtension;
 
-    const sanitizePOsFilesPath = `POs Files/${sanitizeName(projectName)}/${sanitizeName(vendorName)}/${sanitizeName(fileName)}`;
-    const supabasePath = sanitizePOsFilesPath.replace("POs Files/", "");
+    // بناء المسار النظيف على شكل مجلدات داخل الـ Bucket
+    const cleanProject = sanitizeStorageName(projectName);
+    const cleanVendor = sanitizeStorageName(vendorName);
+    const cleanFile = sanitizeStorageName(fileName || 'PO_Document.pdf');
+
+    // المسار القياسي النهائي (يجب أن يفصل بين المجلدات علامة / فقط)
+    const supabasePath = `${cleanProject}/${cleanVendor}/${cleanFile}`;
 
     if (!supabaseClient) {
       const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY are set.";
