@@ -27,6 +27,30 @@ if (supabaseUrl && supabaseAnonKey) {
 }
 
 /**
+ * Sanitizes folder and file names strictly to avoid 'Invalid key' errors in Supabase.
+ * - Removes special characters: -, _, @, #, $, %, ^, &, *, (, )
+ * - Converts spaces/dashes/underscores to a single clean dash: -
+ * - Restricts characters to standard English and Arabic letters/numbers.
+ */
+function sanitizePath(name: string, fallback: string = "unnamed"): string {
+  if (!name) return fallback;
+  
+  // 1. Convert spaces, slashes, backslashes, underscores, and other spacers to a dash
+  let cleaned = name.replace(/[\s\/\\_]+/g, "-");
+  
+  // 2. Remove specific special symbols, keeping only English/Arabic letters, digits, and dashes.
+  cleaned = cleaned.replace(/[^a-zA-Z0-9\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF-]/g, "");
+  
+  // 3. Convert multiple consecutive dashes into a single dash
+  cleaned = cleaned.replace(/-+/g, "-");
+  
+  // 4. Strip any leading or trailing dashes
+  cleaned = cleaned.trim().replace(/^-+|-+$/g, "");
+  
+  return cleaned || fallback;
+}
+
+/**
  * Image compressor using sharp to compress image files below 300KB
  */
 async function compressImageIfNeed(buffer: Buffer, mimetype: string): Promise<{ buffer: Buffer; mimetype: string }> {
@@ -1095,18 +1119,7 @@ async function uploadToSupabaseStorage(
   parsedData: any,
   originalName: string
 ): Promise<{ path: string; isCloud: boolean }> {
-  const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
-  
-  const clientFolderName = sanitize(parsedData.clientName || "Unknown_Client");
-  let projectFolderName = sanitize(parsedData.projectName || "عام");
-  if (!projectFolderName || projectFolderName === "undefined" || projectFolderName === "null") {
-    projectFolderName = "عام";
-  }
-  const dateStr = parsedData.receiptDate || new Date().toISOString().split("T")[0];
-  const docTypeLabel = "PO";
-  const docNumLabel = sanitize(parsedData.docNumber && parsedData.docNumber !== "N/A" ? parsedData.docNumber : "Ref_" + Math.random().toString(36).substr(2, 4));
-  
-  // Compress if image
+  // Compress if image first
   const { buffer: processedBuffer, mimetype: processedMimetype } = await compressImageIfNeed(fileBuffer, mimetype);
   
   // Determine file extension
@@ -1114,9 +1127,15 @@ async function uploadToSupabaseStorage(
   if (mimetype.startsWith("image/") && processedMimetype === "image/jpeg") {
     fileExtension = ".jpg";
   }
+
+  const rawDocNum = parsedData.docNumber && parsedData.docNumber !== "N/A" ? parsedData.docNumber : "Ref-" + Math.random().toString(36).substr(2, 4);
+  const baseFilename = `PO-${rawDocNum}`;
+
+  const cleanProject = sanitizePath(parsedData.projectName || "عام", "عام");
+  const cleanVendor = sanitizePath(parsedData.clientName || "Unknown-Client", "Unknown-Client");
+  const cleanFile = sanitizePath(baseFilename, "document") + fileExtension;
   
-  const finalFilename = `${docTypeLabel}_${docNumLabel}${fileExtension}`;
-  const supabasePath = `${projectFolderName}/${clientFolderName}/${finalFilename}`;
+  const supabasePath = `${cleanProject}/${cleanVendor}/${cleanFile}`;
   
   if (!supabaseClient) {
     const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY env variables are provided.";
@@ -1652,15 +1671,16 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     await fetchAndSyncDbFromMongo();
     const db = getDb();
 
-    // Sanitize values for folder structure
-    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
-    const cleanProjName = sanitize(projectName || "عام");
-    const cleanVendorName = sanitize(vendorName || "Unknown_Client");
-    const cleanDocNum = sanitize(docNumber || "document");
-
+    // Sanitize values for folder structure strictly using global sanitizePath helper
+    const cleanProjName = sanitizePath(projectName || "عام", "عام");
+    const cleanVendorName = sanitizePath(vendorName || "Unknown-Client", "Unknown-Client");
+    
     const fileExtension = ".pdf";
-    const finalFilename = `PO_${cleanDocNum}${fileExtension}`;
-    const supabasePath = `${cleanProjName}/${cleanVendorName}/${finalFilename}`;
+    const rawDocNum = docNumber && docNumber !== "N/A" ? docNumber : "document";
+    const baseFilename = `PO-${rawDocNum}`;
+    const cleanFile = sanitizePath(baseFilename, "document") + fileExtension;
+
+    const supabasePath = `${cleanProjName}/${cleanVendorName}/${cleanFile}`;
 
     if (!supabaseClient) {
       const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY are set.";
