@@ -466,11 +466,45 @@ export default function App() {
   });
   const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
 
-  // States for interactive custom print margins (in milimeters/mm) with default safe minimum margin (5mm)
-  const [printMarginTop, setPrintMarginTop] = useState<number>(5);
-  const [printMarginBottom, setPrintMarginBottom] = useState<number>(5);
-  const [printMarginLeft, setPrintMarginLeft] = useState<number>(5);
-  const [printMarginRight, setPrintMarginRight] = useState<number>(5);
+  // States for interactive custom print margins (in milimeters/mm) with default margin of (15mm)
+  const [printMarginTop, setPrintMarginTop] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('printMarginTop');
+      if (saved !== null) return Number(saved);
+    }
+    return 15;
+  });
+  const [printMarginBottom, setPrintMarginBottom] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('printMarginBottom');
+      if (saved !== null) return Number(saved);
+    }
+    return 15;
+  });
+  const [printMarginLeft, setPrintMarginLeft] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('printMarginLeft');
+      if (saved !== null) return Number(saved);
+    }
+    return 15;
+  });
+  const [printMarginRight, setPrintMarginRight] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('printMarginRight');
+      if (saved !== null) return Number(saved);
+    }
+    return 15;
+  });
+
+  // Sync print margins to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('printMarginTop', String(printMarginTop));
+      localStorage.setItem('printMarginBottom', String(printMarginBottom));
+      localStorage.setItem('printMarginLeft', String(printMarginLeft));
+      localStorage.setItem('printMarginRight', String(printMarginRight));
+    }
+  }, [printMarginTop, printMarginBottom, printMarginLeft, printMarginRight]);
 
   // States for Local Storage Data Retention & Sync Backup
   const [hasBackupToRestore, setHasBackupToRestore] = useState<boolean>(false);
@@ -1482,10 +1516,10 @@ export default function App() {
       rows[2][6] = "ORDER";
 
       // 2. Metadata Labels Headers
-      rows[4][0] = isQuote ? "Seller / البائع" : "Vendor / البائع";
+      rows[4][0] = "Vendor / البائع";
       rows[4][3] = "Ship to / اسم المشروع";
       rows[4][4] = "No:";
-      rows[4][5] = isQuote ? "Quote Date" : "Order Date";
+      rows[4][5] = "Order Date";
       rows[4][6] = "PO Total"; // Matches spelling of DELTA requirements
 
       // Calculated Values with defaults
@@ -2960,7 +2994,7 @@ export default function App() {
                 {/* Column 1: Vendor (Seller) */}
                 <div className="col-span-3 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center items-center">
                   <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
-                    {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                    {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor'}
                   </span>
                   <div
                     contentEditable={true}
@@ -2998,7 +3032,7 @@ export default function App() {
                 {/* Column 4: Date */}
                 <div className="col-span-2 p-2.5 border-e border-slate-300 flex flex-col gap-1.5 justify-center text-center date-container">
                   <span className="text-xs font-black text-black uppercase tracking-wider leading-tight text-center whitespace-normal select-none">
-                    {printDirectionParam === 'rtl' ? 'تاريخ المستند' : (printDoc.docType === 'quote' ? 'Quote Date' : 'Order Date')}
+                    {printDirectionParam === 'rtl' ? 'تاريخ المستند' : 'Order Date'}
                   </span>
                   <span className="font-mono font-black text-black text-sm mt-1 leading-snug w-full text-center block whitespace-nowrap date-text">
                     {printDoc.receiptDate || ""}
@@ -3021,7 +3055,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2.5 text-xs">
                   <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center">
                     <span className="text-[10px] font-bold text-slate-450 mb-1">
-                      {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                      {printDirectionParam === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor'}
                     </span>
                     <div
                       contentEditable={true}
@@ -3287,7 +3321,7 @@ export default function App() {
                                   {printDirectionParam === 'rtl' ? 'الإجمالي (Total)' : 'Total'}
                                 </td>
                                 <td className="py-5 w-28 min-w-[112px] max-w-[112px] font-extrabold text-black font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                                  {itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                                  {itemsSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                 </td>
                               </tr>
 
@@ -3306,7 +3340,7 @@ export default function App() {
                                     }
                                   </td>
                                   <td className="py-5 w-28 min-w-[112px] max-w-[112px] font-bold text-amber-600 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                                    -{withholdingTaxAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                                    -{withholdingTaxAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                   </td>
                                 </tr>
                               )}
@@ -3323,7 +3357,7 @@ export default function App() {
                                     Net Payable
                                   </td>
                                   <td className="py-5 w-28 min-w-[112px] max-w-[112px] font-extrabold text-[#DC2626] bg-amber-50/20 font-mono text-xs select-text whitespace-nowrap text-center align-middle px-3" style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                                    {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })} {printDoc.currency || 'EGP'}
+                                    {finalNetPayable.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                   </td>
                                 </tr>
                               )}
@@ -3572,10 +3606,7 @@ export default function App() {
                 <span className="text-xs text-slate-455 block font-medium">تصنيف المستندات المدخلة</span>
                 <div className="flex items-center gap-2 mt-1.5 text-xs font-bold leading-none">
                   <span className="bg-sky-950/50 text-sky-400 px-2 py-1 rounded-md border border-sky-900/60">
-                    PO: {documents.filter(d => d.docType === 'po').length}
-                  </span>
-                  <span className="bg-violet-950/50 text-violet-400 px-2 py-1 rounded-md border border-violet-900/60">
-                    Quote: {documents.filter(d => d.docType === 'quote').length}
+                    أوامر الشراء (PO): {documents.filter(d => d.docType === 'po').length}
                   </span>
                 </div>
                 <span className="text-[10px] text-slate-400 block mt-1">تصنيف وترتيب دائم بالـ AI</span>
@@ -3771,25 +3802,9 @@ export default function App() {
                   {/* Actions Row */}
                   <div className="flex flex-wrap items-center gap-2">
                     {/* Display Type Info Label / Selector */}
-                    <div className="flex bg-[#0b0f19] border border-slate-800 p-1 rounded-xl text-[11px] font-bold gap-1">
-                      <button
-                        onClick={() => setTypeFilter('all')}
-                        className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${typeFilter === 'all' ? 'bg-blue-600 text-white shadow-md font-extrabold' : 'text-slate-400 hover:text-white'}`}
-                      >
-                        الكل ({documents.length})
-                      </button>
-                      <button
-                        onClick={() => setTypeFilter('po')}
-                        className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${typeFilter === 'po' ? 'bg-blue-600 text-white shadow-md font-extrabold' : 'text-slate-400 hover:text-white'}`}
-                      >
-                        أوامر شراء (PO) ({documents.filter(d => d.docType === 'po').length})
-                      </button>
-                      <button
-                        onClick={() => setTypeFilter('quote')}
-                        className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${typeFilter === 'quote' ? 'bg-blue-600 text-white shadow-md font-extrabold' : 'text-slate-400 hover:text-white'}`}
-                      >
-                        عروض أسعار ({documents.filter(d => d.docType === 'quote').length})
-                      </button>
+                    <div className="flex bg-[#0b0f19] border border-slate-800 px-3 py-1.5 rounded-xl text-[11px] font-bold text-sky-400 gap-1.5 items-center select-none">
+                      <span>أوامر شراء (PO)</span>
+                      <span className="bg-sky-950/80 text-sky-400 px-1.5 py-0.2 rounded-md border border-sky-900/40 text-[10px] leading-tight">{documents.length}</span>
                     </div>
 
                     {/* Manual addition direct trigger */}
@@ -4164,40 +4179,9 @@ export default function App() {
 
                           {/* Document type selector */}
                           <td className="py-3 px-4">
-                            {isEditing ? (
-                              <select
-                                value={doc.docType}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => {
-                                  const draft = [...editDocs];
-                                  const valType = e.target.value as any;
-                                  draft[idx].docType = valType;
-                                  if (valType === 'po') {
-                                    const otherDocs = editDocs.filter((_, dIdx) => dIdx !== idx);
-                                    const nextNum = getNextPoNumberForProject(draft[idx].projectName || 'عام', otherDocs);
-                                    draft[idx].docNumber = String(nextNum);
-                                  }
-                                  setEditDocs(draft);
-                                }}
-                                className="px-1.5 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs"
-                              >
-                                <option value="po">أمر شراء PO</option>
-                                <option value="quote">عرض سعر Quote</option>
-                                <option value="unknown">غير مالي</option>
-                              </select>
-                            ) : doc.docType === 'po' ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-[10px] bg-sky-50 text-sky-700 border border-sky-100">
-                                أمر شراء PO
-                              </span>
-                            ) : doc.docType === 'quote' ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-[10px] bg-violet-50 text-violet-700 border border-violet-100">
-                                عرض سعر Quote
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-[10px] bg-slate-100 text-slate-600">
-                                غير معرف
-                              </span>
-                            )}
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full font-semibold text-[10px] bg-sky-50 text-sky-700 border border-sky-100">
+                              أمر شراء PO
+                            </span>
                           </td>
 
                           {/* Ref Doc Number */}
@@ -4377,10 +4361,10 @@ export default function App() {
                         {docs.map(doc => (
                           <div key={doc.id} className="py-2.5 flex justify-between items-center text-xs gap-3">
                             <div className="flex items-start gap-2 min-w-0">
-                              <FileText className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${doc.docType === 'po' ? 'text-sky-600' : 'text-violet-600'}`} />
+                              <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-sky-600" />
                               <div className="min-w-0">
                                 <span className="font-semibold text-slate-700 block truncate" title={doc.originalFilename}>
-                                  {doc.docType === 'po' ? 'أمر شراء' : 'عرض سعر'} #{doc.docNumber || 'X'}
+                                  أمر شراء #{doc.docNumber || 'X'}
                                 </span>
                                 <span className="text-[10px] text-slate-400 block font-mono">تاريخ: {doc.receiptDate}</span>
                               </div>
@@ -4735,12 +4719,8 @@ export default function App() {
                                     </td>
 
                                     <td className="py-3.5 px-4">
-                                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                                        doc.docType === 'po' 
-                                          ? 'bg-sky-50 text-sky-800' 
-                                          : 'bg-purple-50 text-purple-800'
-                                      }`}>
-                                        {doc.docType === 'po' ? 'أمر شراء' : 'عرض سعر'}
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-50 text-sky-800">
+                                        أمر شراء
                                       </span>
                                     </td>
 
@@ -5611,7 +5591,7 @@ export default function App() {
                   </button>
                   <div>
                     <h3 className="text-base font-bold text-slate-900">
-                      تفاصيل المستند: {selectedDoc.docType === 'po' ? 'أمر شراء' : 'عرض سعر'}
+                      تفاصيل المستند: أمر شراء
                     </h3>
                     <div className="flex flex-col gap-0.5 mt-0.5">
                       <p className="text-[10px] text-slate-400 font-mono">ID: {selectedDoc.id}</p>
@@ -6002,14 +5982,14 @@ export default function App() {
                     <div className="hidden md:grid grid-cols-12 border-b border-slate-300 text-black font-sans bg-white select-text">
                       {/* Meta Labels */}
                       <div className="col-span-4 bg-[#F3F4F6] border-e border-slate-200 p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
-                        {printDirection === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                        {printDirection === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor'}
                       </div>
                       <div className="col-span-2 bg-[#F3F4F6] border-e border-slate-200 p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
                         {printDirection === 'rtl' ? 'اسم المشروع' : 'Ship to'}
                       </div>
                       <div className="col-span-2 bg-[#F3F4F6] border-e border-slate-200 p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">PO No:</div>
                       <div className="col-span-2 bg-[#F3F4F6] border-e border-slate-200 p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
-                        {selectedDoc.docType === 'quote' ? 'Quote Date' : 'Order Date'}
+                        Order Date
                       </div>
                       <div className="col-span-2 bg-[#F3F4F6] p-2 font-bold text-black text-[11px] text-center whitespace-normal leading-tight">
                         {selectedDoc.docType === 'quote' ? 'PO Total' : 'PO Total'}
@@ -6070,7 +6050,7 @@ export default function App() {
                       <div className="grid grid-cols-2 gap-2.5 text-xs">
                         <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
                           <span className="block text-[10px] text-slate-450 font-bold mb-1 col-span-1">
-                            {printDirection === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor (Seller)'}
+                            {printDirection === 'rtl' ? 'اسم البائع (Vendor)' : 'Vendor'}
                           </span>
                           <input 
                             type="text"
@@ -6634,7 +6614,7 @@ export default function App() {
                     <option value="">-- اختر المستند الأول --</option>
                     {documents.map(d => (
                       <option key={d.id} value={d.id}>
-                        {d.clientName} | {d.docType === 'po' ? 'أمر شراء' : 'عرض سعر'} ({d.docNumber || 'بدون رقم'}) - {d.projectName || 'عام'}
+                        {d.clientName} | أمر شراء ({d.docNumber || 'بدون رقم'}) - {d.projectName || 'عام'}
                       </option>
                     ))}
                   </select>
@@ -6656,7 +6636,7 @@ export default function App() {
                     <option value="">-- اختر المستند الثاني --</option>
                     {documents.map(d => (
                       <option key={d.id} value={d.id}>
-                        {d.clientName} | {d.docType === 'po' ? 'أمر شراء' : 'عرض سعر'} ({d.docNumber || 'بدون رقم'}) - {d.projectName || 'عام'}
+                        {d.clientName} | أمر شراء ({d.docNumber || 'بدون رقم'}) - {d.projectName || 'عام'}
                       </option>
                     ))}
                   </select>

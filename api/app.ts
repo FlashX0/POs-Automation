@@ -813,9 +813,9 @@ async function extractDataFromDocument(fileBuffer: Buffer, mimeType: string, fil
   const todayStr = new Date().toISOString().split('T')[0];
 
   const systemInstruction = `You are an elite professional AI accountant, multimodal visual processor, and billing OCR expert.
-Analyze the provided document (which may be a scanned or digital PDF, a JPEG/PNG photo of a Purchase Order [PO - أمر شراء], an Invoice, or a Quotation [عرض سعر] written in Arabic, English, or a bidi combination of both).
+Analyze the provided document (which is a scanned or digital PDF, a JPEG/PNG photo of a Purchase Order [PO - أمر شراء], or a purchase document written in Arabic, English, or a bidi combination of both).
 
-You MUST perform advanced visual OCR and document structure analysis, extracting key structural items and header meta-data accurately as JSON.
+You MUST perform advanced visual OCR and document structure analysis, extracting key structural items and header meta-data accurately as JSON. Since the system handles everything as a Purchase Order (PO), you must treat and classify the document strictly as a PO.
 
 Core Extraction & Parsing Guidelines:
 
@@ -915,7 +915,7 @@ If any extracted term matches or strongly resembles a known term, use its EXACT 
                 },
                 docType: {
                   type: Type.STRING,
-                  description: "Must be exactly 'po' or 'quote' or 'unknown'."
+                  description: "Must be exactly 'po'."
                 },
                 docNumber: {
                   type: Type.STRING,
@@ -1045,7 +1045,7 @@ function classifyAndStoreFile(fileBuffer: Buffer, parsedData: any, originalName:
   const clientFolderName = sanitize(parsedData.clientName || "Unknown_Client");
   const projectFolderName = sanitize(parsedData.projectName || "عام");
   const dateStr = parsedData.receiptDate || new Date().toISOString().split("T")[0];
-  const docTypeLabel = parsedData.docType === "po" ? "PO" : "Quote";
+  const docTypeLabel = "PO";
   const docNumLabel = sanitize(parsedData.docNumber && parsedData.docNumber !== "N/A" ? parsedData.docNumber : "Ref_" + Math.random().toString(36).substr(2, 4));
   const fileExtension = path.extname(originalName) || ".pdf";
   
@@ -1103,7 +1103,7 @@ async function uploadToSupabaseStorage(
     projectFolderName = "عام";
   }
   const dateStr = parsedData.receiptDate || new Date().toISOString().split("T")[0];
-  const docTypeLabel = parsedData.docType === "po" ? "PO" : "Quote";
+  const docTypeLabel = "PO";
   const docNumLabel = sanitize(parsedData.docNumber && parsedData.docNumber !== "N/A" ? parsedData.docNumber : "Ref_" + Math.random().toString(36).substr(2, 4));
   
   // Compress if image
@@ -1528,15 +1528,13 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
       console.warn("Gemini extraction failed, creating a manual draft document instead:", err);
       extractionFailed = true;
 
-      const filenameLower = originalname.toLowerCase();
-      const isQuote = filenameLower.includes("quote") || filenameLower.includes("عرض") || filenameLower.includes("سعر") || filenameLower.includes("price") || filenameLower.includes("q");
       const clientNameFromFilename = originalname.replace(/\.[^/.]+$/, "").split(/[._-]/)[0] || "عميل غير محدد";
 
       extractedData = {
         clientName: clientNameFromFilename,
         projectName: "عام",
         receiptDate: new Date().toISOString().split("T")[0],
-        docType: isQuote ? "quote" : "po",
+        docType: "po",
         docNumber: "DRAFT-" + Math.floor(Math.random() * 9000 + 1000),
         items: [] as any[],
         totalAmount: 0,
@@ -1613,7 +1611,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     } else {
       triggerNotification(
         "success",
-        `مستند جديد: ${extractedData.docType === 'po' ? 'أمر شراء' : 'عرض سعر'}`,
+        "مستند جديد: أمر شراء",
         `تم استلام مستند من العميل "${extractedData.clientName}" بقيمة ${extractedData.totalAmount} ${extractedData.currency} وتصنيفه بنجاح!`
       );
     }
@@ -1743,7 +1741,7 @@ app.post("/api/documents/update", async (req, res) => {
         const clientFolderName = sanitize(doc.clientName || "Unknown_Client");
         const projectFolderName = sanitize(doc.projectName || "عام");
         const dateStr = doc.receiptDate || new Date().toISOString().split("T")[0];
-        const docTypeLabel = doc.docType === "po" ? "PO" : "Quote";
+        const docTypeLabel = "PO";
         const docNumLabel = sanitize(doc.docNumber && doc.docNumber !== "N/A" ? doc.docNumber : "Ref_" + Math.random().toString(36).substr(2, 4));
         const fileExtension = path.extname(doc.originalFilename || oldDoc.originalFilename || ".pdf") || ".pdf";
 
