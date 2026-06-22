@@ -27,27 +27,36 @@ if (supabaseUrl && supabaseAnonKey) {
 }
 
 /**
+ * Sanitizes names using a single clean dash for any spaces or unwanted elements.
+ * - Removes extra spaces, strange symbols like (-, _, !), and symbols like (@, #, $, %, ^, &, *, (, )).
+ * - Restricts to safe English and Arabic letters and numbers, with a solid dash spacer.
+ */
+function sanitizeName(name: string, fallback: string = "unnamed"): string {
+  if (!name) return fallback;
+  
+  // Convert spaces, dashes, underscores, slashes, backslashes, and exclamation marks to a dash
+  let cleaned = name.replace(/[\s\-_!@#$%^&*()_+={}\[\]|\\:";'<>,.?/]+/g, "-");
+  
+  // Keep only alphanumeric English, Arabic and dynamic dashes
+  cleaned = cleaned.replace(/[^a-zA-Z0-9\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF-]/g, "");
+  
+  // Collapse multiple consecutive dashes into a single clean dash
+  cleaned = cleaned.replace(/-+/g, "-");
+  
+  // Trim dashes from start and end
+  cleaned = cleaned.trim().replace(/^-+|-+$/g, "");
+  
+  return cleaned || fallback;
+}
+
+/**
  * Sanitizes folder and file names strictly to avoid 'Invalid key' errors in Supabase.
  * - Removes special characters: -, _, @, #, $, %, ^, &, *, (, )
  * - Converts spaces/dashes/underscores to a single clean dash: -
  * - Restricts characters to standard English and Arabic letters/numbers.
  */
 function sanitizePath(name: string, fallback: string = "unnamed"): string {
-  if (!name) return fallback;
-  
-  // 1. Convert spaces, slashes, backslashes, underscores, and other spacers to a dash
-  let cleaned = name.replace(/[\s\/\\_]+/g, "-");
-  
-  // 2. Remove specific special symbols, keeping only English/Arabic letters, digits, and dashes.
-  cleaned = cleaned.replace(/[^a-zA-Z0-9\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF-]/g, "");
-  
-  // 3. Convert multiple consecutive dashes into a single dash
-  cleaned = cleaned.replace(/-+/g, "-");
-  
-  // 4. Strip any leading or trailing dashes
-  cleaned = cleaned.trim().replace(/^-+|-+$/g, "");
-  
-  return cleaned || fallback;
+  return sanitizeName(name, fallback);
 }
 
 /**
@@ -1130,12 +1139,12 @@ async function uploadToSupabaseStorage(
 
   const rawDocNum = parsedData.docNumber && parsedData.docNumber !== "N/A" ? parsedData.docNumber : "Ref-" + Math.random().toString(36).substr(2, 4);
   const baseFilename = `PO-${rawDocNum}`;
+  const projectName = parsedData.projectName || "عام";
+  const vendorName = parsedData.clientName || "Unknown-Client";
+  const fileName = sanitizeName(baseFilename, "document") + fileExtension;
 
-  const cleanProject = sanitizePath(parsedData.projectName || "عام", "عام");
-  const cleanVendor = sanitizePath(parsedData.clientName || "Unknown-Client", "Unknown-Client");
-  const cleanFile = sanitizePath(baseFilename, "document") + fileExtension;
-  
-  const supabasePath = `${cleanProject}/${cleanVendor}/${cleanFile}`;
+  const sanitizePOsFilesPath = `POs Files/${sanitizeName(projectName)}/${sanitizeName(vendorName)}/${sanitizeName(fileName)}`;
+  const supabasePath = sanitizePOsFilesPath.replace("POs Files/", "");
   
   if (!supabaseClient) {
     const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY env variables are provided.";
@@ -1671,16 +1680,14 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     await fetchAndSyncDbFromMongo();
     const db = getDb();
 
-    // Sanitize values for folder structure strictly using global sanitizePath helper
-    const cleanProjName = sanitizePath(projectName || "عام", "عام");
-    const cleanVendorName = sanitizePath(vendorName || "Unknown-Client", "Unknown-Client");
-    
+    // Sanitize values for folder structure strictly using global sanitizeName helper
     const fileExtension = ".pdf";
     const rawDocNum = docNumber && docNumber !== "N/A" ? docNumber : "document";
     const baseFilename = `PO-${rawDocNum}`;
-    const cleanFile = sanitizePath(baseFilename, "document") + fileExtension;
+    const fileName = sanitizeName(baseFilename, "document") + fileExtension;
 
-    const supabasePath = `${cleanProjName}/${cleanVendorName}/${cleanFile}`;
+    const sanitizePOsFilesPath = `POs Files/${sanitizeName(projectName)}/${sanitizeName(vendorName)}/${sanitizeName(fileName)}`;
+    const supabasePath = sanitizePOsFilesPath.replace("POs Files/", "");
 
     if (!supabaseClient) {
       const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY are set.";
