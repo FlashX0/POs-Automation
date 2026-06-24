@@ -1343,13 +1343,45 @@ export default function App() {
     setTimeout(() => setShowNotificationToast(null), 5000);
   };
 
-  // Clean and download physical file
-  const triggerFileDownload = (doc: ProcessedDocument) => {
+  // Clean and download physical file safely within iframe sandbox
+  const triggerFileDownload = async (doc: ProcessedDocument) => {
     if (!doc.classifiedPath) {
       alert('هذا البند لا يحتوي على مستند مادي مرتبط (إدخال يدوي).');
       return;
     }
-    window.open(`/api/documents/download?path=${encodeURIComponent(doc.classifiedPath)}`, '_blank');
+    try {
+      const downloadUrl = `/api/documents/download?path=${encodeURIComponent(doc.classifiedPath)}`;
+      // Fetch through our server-side proxy (same-origin) to avoid iframe download blocks & CORS
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error('فشل تحميل الملف من الخادم');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Extract a safe filename
+      let filename = "document.pdf";
+      try {
+        const urlObj = new URL(doc.classifiedPath);
+        filename = urlObj.pathname.split('/').pop() || "document.pdf";
+      } catch {
+        filename = doc.classifiedPath.split('/').pop() || "document.pdf";
+      }
+      if (!filename.toLowerCase().endsWith('.pdf') && !filename.toLowerCase().endsWith('.png') && !filename.toLowerCase().endsWith('.jpg') && !filename.toLowerCase().endsWith('.jpeg') && !filename.toLowerCase().endsWith('.docx') && !filename.toLowerCase().endsWith('.xlsx')) {
+        filename += '.pdf'; // Default fallback
+      }
+      
+      a.download = decodeURIComponent(filename);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn("Iframe-safe direct blob download failed, falling back to window.open:", err);
+      window.open(`/api/documents/download?path=${encodeURIComponent(doc.classifiedPath)}`, '_blank');
+    }
   };
 
   // Export spreadsheet using xlsx compiled helper
@@ -1481,6 +1513,49 @@ export default function App() {
     }
   };
 
+  const transliteratedArabic = (text: string): string => {
+    const charMap: { [key: string]: string } = {
+      'أ': 'a', 'إ': 'a', 'آ': 'a', 'ا': 'a',
+      'ب': 'b', 'ت': 't', 'ث': 'th', 'ج': 'j', 'ح': 'h', 'خ': 'kh',
+      'د': 'd', 'ذ': 'dh', 'ر': 'r', 'ز': 'z', 'س': 's', 'ش': 'sh',
+      'ص': 's', 'ض': 'd', 'ط': 't', 'ظ': 'z', 'ع': 'a', 'غ': 'gh',
+      'ف': 'f', 'ق': 'q', 'ك': 'k', 'ل': 'l', 'م': 'm', 'ن': 'n',
+      'ه': 'h', 'و': 'w', 'ي': 'y', 'ى': 'y', 'ة': 'h', 'ئ': 'y',
+      'ء': 'a', 'ؤ': 'w', 'لا': 'la'
+    };
+    let result = '';
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (charMap[char] !== undefined) {
+        result += charMap[char];
+      } else {
+        result += char;
+      }
+    }
+    return result;
+  };
+
+   const sanitizeStorageName = (name: any): string => {
+    if (!name) return 'unnamed';
+    const nameStr = name.toString().trim();
+    const cleanStr = transliteratedArabic(nameStr);
+    let sanitized = cleanStr
+      .replace(/[\s_/\-\\–—]+/g, '-') // تحويل المسافات والعواض المزدوجة إلى عارضة مفردة
+      .replace(/[^a-zA-Z0-9\-]/g, '') // الحفاظ فقط على الحروف والأرقام والعواض الإنجليزية النظيفة لمنع مشاكل الـ Invalid key
+      .replace(/-+/g, '-') // منع تكرار العوارض المتتالية
+      .replace(/^-+|-+$/g, ''); // إزالة العوارض الطرفية
+      
+    if (!sanitized) {
+      // Fallback to hex characters to maintain valid ASCII
+      let hex = '';
+      for (let i = 0; i < Math.min(nameStr.length, 8); i++) {
+        hex += nameStr.charCodeAt(i).toString(16);
+      }
+      sanitized = hex.substring(0, 8);
+    }
+    return sanitized || 'unnamed';
+  };
+
   // Export selected purchase order / document to matching DELTA Excel template structure
   const generateDeltaExcelWorkbook = (doc: ProcessedDocument): any => {
     try {
@@ -1509,7 +1584,7 @@ export default function App() {
 
       const rows: any[][] = [];
       for (let i = 0; i < totalRowsCount; i++) {
-        rows[i] = Array(8).fill(""); // columns A to H (0 to 7)
+        rows[i] = Array(7).fill(""); // columns A to G (0 to 6)
       }
 
       // 1. Title Banner BLOCK
@@ -1519,16 +1594,14 @@ export default function App() {
       rows[2][6] = "ORDER";
 
       // 2. Metadata Labels Headers
-      rows[4][0] = "Vendor / البائع";
-      rows[4][3] = "Ship to / اسم المشروع";
-      rows[4][4] = "No:";
-      rows[4][5] = "Order Date";
+      rows[4][0] = "Vendor";
+      rows[4][3] = "Ship to";
+      rows[4][5] = "No";
       rows[4][6] = "PO Total"; // Matches spelling of DELTA requirements
 
       // Calculated Values with defaults
       const vendorName = doc.clientName || "رواد للتوكيلات التجارية";
-      const cleanProjectNameForExcel = (doc.projectName || "").replace(/\s*project\s*$/i, "").trim();
-      const shipToValue = cleanProjectNameForExcel ? `${cleanProjectNameForExcel} Project` : (doc.shipToAddress || "عام");
+      const shipToValue = doc.projectName || (doc.shipToAddress || "عام");
       const orderNo = (doc.docNumber && doc.docNumber !== "N/A" && doc.docNumber !== "REF") ? doc.docNumber : "31";
       const orderDate = formatDateToArabicSlash(doc.receiptDate);
       
@@ -1552,8 +1625,7 @@ export default function App() {
       // 3. Metadata Values
       rows[5][0] = vendorName;
       rows[5][3] = shipToValue;
-      rows[5][4] = orderNo;
-      rows[5][5] = orderDate;
+      rows[5][5] = orderNo;
       // Use dynamic formula for total in the metadata box pointing to the final totals row (Excel Row `termsStart - 1`)
       rows[5][6] = { t: "n", f: `G${termsStart - 1}`, v: doc.totalAmount || 0 };
 
@@ -1694,30 +1766,19 @@ export default function App() {
       // Convert 2D array matrix to standard SheetJS Worksheet object
       const ws = XLSX.utils.aoa_to_sheet(rows);
 
-      // Define static column sizes matching visual aspect ratio
-      ws['!cols'] = [
-        { wch: 8 },   // Column A: No.
-        { wch: 28 },  // Column B: Description Part 1 [Widened for descriptions]
-        { wch: 28 },  // Column C: Description Part 2 (Merged with B)
-        { wch: 11 },  // Column D: Unit
-        { wch: 10 },  // Column E: Qty
-        { wch: 15 },  // Column F: Price / Date [Shrunk to match 12% ratio]
-        { wch: 16 },  // Column G: Amount / Total [Shrunk to match 12% ratio]
-        { wch: 10 }   // Column H: Outer spacing
-      ];
-
-      // Define cells merges
+      // Define cells merges (Columns A to G, i.e. 0 to 6)
       const merges = [
         // Merge title "DELTA" across columns A to F (0 to 5)
         { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
         { s: { r: 2, c: 0 }, e: { r: 2, c: 5 } },
-        // PURCHASE ORDER titles spanning column G and H (6 and 7)
-        { s: { r: 1, c: 6 }, e: { r: 1, c: 7 } },
-        { s: { r: 2, c: 6 }, e: { r: 2, c: 7 } },
 
         // Vendor meta header and value cell mergers spanning A to C (0 to 2)
         { s: { r: 4, c: 0 }, e: { r: 4, c: 2 } },
         { s: { r: 5, c: 0 }, e: { r: 5, c: 2 } },
+
+        // Ship to meta header and value cell mergers spanning D to E (3 to 4)
+        { s: { r: 4, c: 3 }, e: { r: 4, c: 4 } },
+        { s: { r: 5, c: 3 }, e: { r: 5, c: 4 } },
 
         // Item Header Description merge (B and C, index 1 and 2)
         { s: { r: 7, c: 1 }, e: { r: 7, c: 2 } },
@@ -1744,23 +1805,117 @@ export default function App() {
         merges.push({ s: { r: 8 + i, c: 1 }, e: { r: 8 + i, c: 2 } });
       }
 
-      // Terms & Conditions mergers (A to H, index 0 to 7)
+      // Terms & Conditions mergers (A to G, index 0 to 6)
       for (let i = 0; i < 10; i++) {
-        merges.push({ s: { r: termsStart + i, c: 0 }, e: { r: termsStart + i, c: 7 } });
+        merges.push({ s: { r: termsStart + i, c: 0 }, e: { r: termsStart + i, c: 6 } });
       }
 
       // Signatures column alignments
       merges.push(
+        // Head of Procurement and Contracts / Mr. Mohamed Al-Daly (A to C: 0 to 2)
         { s: { r: sigHeadersRowIdx, c: 0 }, e: { r: sigHeadersRowIdx, c: 2 } },
-        { s: { r: sigHeadersRowIdx, c: 3 }, e: { r: sigHeadersRowIdx, c: 5 } },
-        { s: { r: sigHeadersRowIdx, c: 6 }, e: { r: sigHeadersRowIdx, c: 7 } },
-
         { s: { r: sigNamesRowIdx, c: 0 }, e: { r: sigNamesRowIdx, c: 2 } },
-        { s: { r: sigNamesRowIdx, c: 3 }, e: { r: sigNamesRowIdx, c: 5 } },
-        { s: { r: sigNamesRowIdx, c: 6 }, e: { r: sigNamesRowIdx, c: 7 } }
+
+        // Technical Office Manager / Eng. Nasr Mahmoud (D to F: 3 to 5)
+        { s: { r: sigHeadersRowIdx, c: 3 }, e: { r: sigHeadersRowIdx, c: 5 } },
+        { s: { r: sigNamesRowIdx, c: 3 }, e: { r: sigNamesRowIdx, c: 5 } }
       );
 
       ws['!merges'] = merges;
+
+      // Auto-fit Columns Width with safety padding of at least 5
+      const colWidths = Array(7).fill(12); // Start with default minimum width of 12 for all 7 columns
+      for (const cellRef in ws) {
+        if (cellRef.startsWith('!')) continue;
+        const cell = ws[cellRef];
+        if (!cell) continue;
+
+        const match = cellRef.match(/^([A-Z]+)([0-9]+)$/);
+        if (!match) continue;
+        const colStr = match[1];
+        let colIdx = 0;
+        for (let idx = 0; idx < colStr.length; idx++) {
+          colIdx = colIdx * 26 + (colStr.charCodeAt(idx) - 64);
+        }
+        colIdx = colIdx - 1; // 0-indexed column
+
+        if (colIdx >= 0 && colIdx < 7) {
+          let valStr = "";
+          if (cell.v !== undefined && cell.v !== null) {
+            valStr = cell.w ? cell.w.toString() : cell.v.toString();
+          } else if (cell.f) {
+            valStr = "123,456.78 EGP"; // safe placeholder for sum/amount cells
+          }
+
+          const rowStr = match[2];
+          const r = parseInt(rowStr) - 1;
+
+          // تجاهل الخلايا المدمجة تماماً حتى لا تتسبب في فرش العمود بناءً على العناوين الكبيرة
+          const isMerged = merges.some(m => 
+            r >= m.s.r && r <= m.e.r && colIdx >= m.s.c && colIdx <= m.e.c
+          );
+          const isMasterOfMerge = merges.some(m =>
+            m.s.r === r && m.s.c === colIdx
+          );
+
+          if (isMerged && !isMasterOfMerge) {
+            continue; 
+          }
+
+          const length = valStr.length;
+          // إذا كانت الخلية تحتوي على نص طويل جداً (مثل نصوص الشروط)، نضع حداً أقصى حتى لا يفرش العمود
+          if (length > 0 && length < 50) {
+            colWidths[colIdx] = Math.max(colWidths[colIdx], length + 4);
+          }
+        }
+      }
+
+      // Ensure some reasonable defaults or minimums with explicit overrides
+      ws['!cols'] = colWidths.slice(0, 7).map((w, idx) => {
+        if (idx === 0) return { wch: 8 };  // Column A: Serial No (Fixed to 8)
+        if (idx === 1) return { wch: 50 }; // Column B: Description (Fixed to 50 - Description مريح)
+        if (idx === 2) return { wch: 12 }; // Column C: Description Part 2 (Fixed to 12)
+        if (idx === 3) return { wch: 14 }; // Column D: Unit / Ship To part 1 (Fixed to 14)
+        if (idx === 4) return { wch: 14 }; // Column E: Qty / Ship To part 2 (Fixed to 14)
+        if (idx === 5) return { wch: 15 }; // Column F: Price / No (Fixed to 15)
+        if (idx === 6) return { wch: 22 }; // Column G: Amount / PO Total (Fixed to 22 - مساحة واسعة تمنع الـ ### تماماً)
+        return { wch: w };
+      });
+
+      // Configure comfortable row heights
+      const rowHeights = [];
+      for (let i = 0; i < totalRowsCount; i++) {
+        if (i === 1 || i === 2) {
+          rowHeights[i] = { hpt: 30 }; // Banner rows
+        } else if (i === 4) {
+          rowHeights[i] = { hpt: 30 }; // Metadata labels Row 5 (Comfortable 30 height per request)
+        } else if (i === 5) {
+          rowHeights[i] = { hpt: 35 }; // Metadata values Row 6 (Fixed to 35 for space containing vendor & project name)
+        } else if (i === 6) {
+          rowHeights[i] = { hpt: 0 };  // Row 7 is canceled / hidden as requested
+        } else if (i === 7) {
+          rowHeights[i] = { hpt: 25 }; // Table header
+        } else if (i >= 8 && i < 8 + itemsCount) {
+          const item = doc.items && doc.items[i - 8];
+          let descriptionText = "";
+          if (item) {
+            descriptionText = item.description || "";
+            if (item.brand && item.brand.trim() !== "") {
+              descriptionText += ` (${item.brand})`;
+            }
+          }
+          const lineCount = Math.ceil(descriptionText.length / 50) || 1;
+          // إذا كان سطر واحد يأخذ 26، وإذا كان أكثر يفتح ديناميكياً ليمنع قطع أي كلمة (19 درجة لكل سطر)
+          rowHeights[i] = { hpt: lineCount === 1 ? 26 : (lineCount * 19) };
+        } else if (i >= totalRowIdx && i < termsStart) {
+          rowHeights[i] = { hpt: 28 }; // Total and Net Payable rows highlighted to be comfortable and visually prominent (28 height)
+        } else if (i >= termsStart && i < termsStart + 10) {
+          rowHeights[i] = { hpt: 22 }; // Terms rows
+        } else {
+          rowHeights[i] = { hpt: 22 };
+        }
+      }
+      ws['!rows'] = rowHeights;
 
       // Apply highly refined cell-by-cell styling structure for the DELTA design format
       for (const cellRef in ws) {
@@ -1783,7 +1938,7 @@ export default function App() {
         // Initialize general fallback styling shell
         // @ts-ignore
         cell.s = {
-          font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } },
+          font: { name: "Segoe UI", sz: 14, color: { rgb: "334155" } },
           alignment: { vertical: "center", wrapText: true }
         };
 
@@ -1793,14 +1948,14 @@ export default function App() {
             // "DELTA" Title Banner (Cols A-F)
             // @ts-ignore
             cell.s = {
-              font: { name: "Segoe UI", sz: r === 1 ? 22 : 13, bold: true, color: { rgb: "0284C7" } }, // High contrast theme colors
+              font: { name: "Segoe UI", sz: 16, bold: true, color: { rgb: "0000FF" } }, // Explicit 16 font size for DELTA and FOR ROAD CONSTRUCTION per request
               alignment: { horizontal: "left", vertical: "center" }
             };
           } else {
             // "PURCHASE ORDER" / "PRICE OFFER" (Cols G-H)
             // @ts-ignore
             cell.s = {
-              font: { name: "Segoe UI", sz: 12.5, bold: true, color: { rgb: "FFFFFF" } },
+              font: { name: "Segoe UI", sz: 16, bold: true, color: { rgb: "FFFFFF" } },
               fill: { patternType: "solid", fgColor: { rgb: "0F172A" } },
               alignment: { horizontal: "center", vertical: "center" }
             };
@@ -1812,7 +1967,7 @@ export default function App() {
           // Label Headers
           // @ts-ignore
           cell.s = {
-            font: { name: "Segoe UI", sz: 9.5, bold: true, color: { rgb: "FFFFFF" } },
+            font: { name: "Segoe UI", sz: 16, bold: true, color: { rgb: "FFFFFF" } },
             fill: { patternType: "solid", fgColor: { rgb: "0284C7" } }, // Matches modern primary highlights
             alignment: { horizontal: "center", vertical: "center", wrapText: true }
           };
@@ -1821,7 +1976,7 @@ export default function App() {
           // Metadata dynamic values
           // @ts-ignore
           cell.s = {
-            font: { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "0F172A" } },
+            font: { name: "Segoe UI", sz: 14, bold: true, color: { rgb: "0F172A" } },
             fill: { patternType: "solid", fgColor: { rgb: "F1F5F9" } },
             alignment: { horizontal: "center", vertical: "center", wrapText: true }
           };
@@ -1834,7 +1989,7 @@ export default function App() {
         else if (r === 7) {
           // @ts-ignore
           cell.s = {
-            font: { name: "Segoe UI", sz: 10.5, bold: true, color: { rgb: "FFFFFF" } },
+            font: { name: "Segoe UI", sz: 16, bold: true, color: { rgb: "FFFFFF" } },
             fill: { patternType: "solid", fgColor: { rgb: "0F172A" } },
             alignment: { horizontal: "center", vertical: "center" },
             border: {
@@ -1853,18 +2008,18 @@ export default function App() {
           let alignStr = "center";
           
           if (c === 1 || c === 2) {
-            alignStr = "right"; // Right-aligned Arabic descriptions or Left-aligned for English
+            alignStr = "left"; // Explicitly left-aligned to align with description wrapText settings
           } else if (c === 6) {
-            alignStr = "left"; // Amounts left-aligned typically in billing forms, or right. Let's do right for standard number columns
+            alignStr = "center"; // Amount column centered horizontally & vertically per user request
           }
 
           if (c === 6) {
-            alignStr = "right";
+            alignStr = "center";
           }
 
           // @ts-ignore
           cell.s = {
-            font: { name: "Segoe UI", sz: 10, bold: c === 0 || c === 6, color: { rgb: "1E293B" } },
+            font: { name: "Segoe UI", sz: 14, bold: c === 0 || c === 6, color: { rgb: "1E293B" } },
             fill: { patternType: "solid", fgColor: { rgb: bgRgb } },
             alignment: { horizontal: alignStr, vertical: "center", wrapText: true },
             border: {
@@ -1892,7 +2047,7 @@ export default function App() {
           cell.s = {
             font: { 
               name: "Segoe UI", 
-              sz: 10.5, 
+              sz: 14, 
               bold: true, 
               color: isFinalPayRow && c === 6 ? { rgb: "15803D" } : { rgb: "0F172A" } 
             },
@@ -1918,17 +2073,17 @@ export default function App() {
           cell.s = {
             font: {
               name: "Segoe UI",
-              sz: isTitleRow ? 11 : 9.5,
+              sz: isTitleRow ? 16 : 14,
               bold: isTitleRow,
               color: isTitleRow ? { rgb: "0284C7" } : { rgb: "475569" }
             },
             fill: { patternType: "solid", fgColor: { rgb: "F8FAFC" } },
-            alignment: { horizontal: "right", vertical: "center", wrapText: true },
+            alignment: { horizontal: "left", vertical: "top", wrapText: true },
             border: {
               top: isTitleRow ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined,
               bottom: (r === termsStart + 9) ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined,
               left: (c === 0) ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined,
-              right: (c === 7) ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined
+              right: (c === 6) ? { style: "thin", color: { rgb: "CBD5E1" } } : undefined
             }
           };
         }
@@ -1938,7 +2093,7 @@ export default function App() {
           const isTitle = r === sigHeadersRowIdx;
           // @ts-ignore
           cell.s = {
-            font: { name: "Segoe UI", sz: 10, bold: true, color: isTitle ? { rgb: "475569" } : { rgb: "0F172A" } },
+            font: { name: "Segoe UI", sz: 14, bold: true, color: isTitle ? { rgb: "475569" } : { rgb: "0F172A" } },
             fill: { patternType: "solid", fgColor: { rgb: "F1F5F9" } },
             alignment: { horizontal: "center", vertical: "center" },
             border: {
@@ -2553,36 +2708,20 @@ export default function App() {
       if (printDocId) {
         triggerNotificationToast(
           'info',
-          'جاري رفع الملف المضغوط (ZIP) وتحديث السجل سحابياً...',
+          'جاري رفع ملف الـ PDF وتحديث السجل سحابياً...',
           'يرجى عدم إغلاق النافذة أثناء الحفظ في Supabase Storage.'
         );
         
-        let zipBlob: Blob;
+        let pdfBlob: Blob;
         try {
-          const pdfBlob = pdf.output('blob');
-          
-          let excelBlob: Blob;
-          if (printDoc) {
-            const wb = generateDeltaExcelWorkbook(printDoc);
-            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            excelBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-          } else {
-            throw new Error("لم يتم العثور على وثيقة لإنشاء ملف الإكسيل.");
-          }
-
-          const zip = new JSZip();
-          const poNumber = docNum ? docNum.toString().replace(/[^0-9]/g, '') : '11';
-          
-          zip.file(`PO-${poNumber}.pdf`, pdfBlob); // ملف الـ PDF
-          zip.file(`PO-${poNumber}.xlsx`, excelBlob); // ملف الإكسيل
-          zipBlob = await zip.generateAsync({ type: 'blob' });
+          pdfBlob = pdf.output('blob');
         } catch (blobErr: any) {
-          console.error("Failed to generate ZIP blob:", blobErr);
-          throw new Error(`تعذر إنشاء الملف المضغوط ZIP: ${blobErr.message}`);
+          console.error("Failed to generate PDF blob:", blobErr);
+          throw new Error(`تعذر إنشاء مصفوفة الـ Blob من مستند PDF: ${blobErr.message}`);
         }
 
         const uploadForm = new FormData();
-        uploadForm.append('file', zipBlob, `PO_${docNum}.zip`);
+        uploadForm.append('file', pdfBlob, `PO_${docNum}.pdf`);
         uploadForm.append('documentId', printDocId);
         uploadForm.append('projectName', projName);
         uploadForm.append('vendorName', vendorName);
@@ -2595,11 +2734,11 @@ export default function App() {
 
         if (!uploadRes.ok) {
           const errData = await uploadRes.json().catch(() => ({}));
-          throw new Error(errData.error || 'عذراً، فشل رفع الملف المضغوط إلى خادم التخزين السحابي.');
+          throw new Error(errData.error || 'عذراً، فشل رفع ملف الـ PDF إلى خادم التخزين السحابي.');
         }
 
         const uploadResult = await uploadRes.json();
-        console.log("Uploaded ZIP Public URL:", uploadResult.publicUrl);
+        console.log("Uploaded PDF Public URL:", uploadResult.publicUrl);
         
         // Update documents list in background
         setDocuments(prevDocs => 
@@ -2608,8 +2747,8 @@ export default function App() {
 
         triggerNotificationToast(
           'success',
-          'تم تحديث وحفظ الملف المضغوط (ZIP) بنجاح ✨',
-          'تم حفظ ملف الـ ZIP بأمان في Supabase Storage وتحديث السجل.'
+          'تم تحديث وحفظ ملف الـ PDF بنجاح ✨',
+          'تم حفظ ملف الـ PDF بأمان في Supabase Storage وتحديث السجل.'
         );
       }
     } catch (error: any) {
@@ -3193,23 +3332,55 @@ export default function App() {
 
         {/* Dynamic User Custom Margins and @page overrider injection */}
         <style dangerouslySetInnerHTML={{ __html: `
+          #printable-excel-sheet-delta-isolated,
+          #printable-excel-sheet-delta-isolated table,
+          #printable-excel-sheet-delta-isolated th,
+          #printable-excel-sheet-delta-isolated td,
+          #printable-excel-sheet-delta-isolated span,
+          #printable-excel-sheet-delta-isolated div {
+            font-size: 11px !important;
+          }
+          #printable-excel-sheet-delta-isolated tr {
+            height: auto !important;
+            min-height: auto !important;
+            max-height: auto !important;
+          }
+          #printable-excel-sheet-delta-isolated td,
+          #printable-excel-sheet-delta-isolated th {
+            display: table-cell !important;
+            height: auto !important;
+            min-height: auto !important;
+            max-height: auto !important;
+            line-height: 1.4 !important;
+          }
           @media print {
             @page {
               size: A4 portrait !important;
               margin: ${printMarginTop}mm ${printMarginRight}mm ${printMarginBottom}mm ${printMarginLeft}mm !important;
             }
-            #printable-excel-sheet-delta-isolated tr,
+            #printable-excel-sheet-delta-isolated,
+            #printable-excel-sheet-delta-isolated table,
+            #printable-excel-sheet-delta-isolated th,
             #printable-excel-sheet-delta-isolated td,
-            #printable-excel-sheet-delta-isolated th {
+            #printable-excel-sheet-delta-isolated span,
+            #printable-excel-sheet-delta-isolated div {
+              font-size: 11px !important;
+            }
+            #printable-excel-sheet-delta-isolated tr {
               height: auto !important;
               min-height: auto !important;
               max-height: auto !important;
-              line-height: 1.5 !important;
-              padding: 12px 10px !important;
-            }
-            #printable-excel-sheet-delta-isolated tr {
               page-break-inside: avoid !important;
               break-inside: avoid !important;
+            }
+            #printable-excel-sheet-delta-isolated td,
+            #printable-excel-sheet-delta-isolated th {
+              display: table-cell !important;
+              height: auto !important;
+              min-height: auto !important;
+              max-height: auto !important;
+              line-height: 1.4 !important;
+              padding: 12px 10px !important;
             }
             .col-print-no {
               width: 5% !important;

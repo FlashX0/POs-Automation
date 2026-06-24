@@ -27,31 +27,54 @@ if (supabaseUrl && supabaseAnonKey) {
 }
 
 // دالة صارمة لتنظيف الأسماء من أي رموز خاصة أو مسافات زائدة
-function sanitizeStorageName(text: any, fallback: string = 'unnamed'): string {
-  if (!text) return fallback;
-  const cleaned = text
-    .toString()
-    .trim()
-    .replace(/[\s_/\-\\–—]+/g, '-') // تحويل أي مسافات أو عواض أو سلاشات إلى عارضة واحدة
-    .replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g, ''); // حذف أي رموز غريبة مع الحفاظ على الحروف العربية والإنجليزية والأرقام
-  return cleaned || fallback;
+function transliteratedArabic(text: string): string {
+  const charMap: { [key: string]: string } = {
+    'أ': 'a', 'إ': 'a', 'آ': 'a', 'ا': 'a',
+    'ب': 'b', 'ت': 't', 'ث': 'th', 'ج': 'j', 'ح': 'h', 'خ': 'kh',
+    'د': 'd', 'ذ': 'dh', 'ر': 'r', 'ز': 'z', 'س': 's', 'ش': 'sh',
+    'ص': 's', 'ض': 'd', 'ط': 't', 'ظ': 'z', 'ع': 'a', 'غ': 'gh',
+    'ف': 'f', 'ق': 'q', 'ك': 'k', 'ل': 'l', 'م': 'm', 'ن': 'n',
+    'ه': 'h', 'و': 'w', 'ي': 'y', 'ى': 'y', 'ة': 'h', 'ئ': 'y',
+    'ء': 'a', 'ؤ': 'w', 'لا': 'la'
+  };
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (charMap[char] !== undefined) {
+      result += charMap[char];
+    } else {
+      result += char;
+    }
+  }
+  return result;
+}
+
+function sanitizeStorageName(name: any): string {
+  if (!name) return 'unnamed';
+  const nameStr = name.toString().trim();
+  const cleanStr = transliteratedArabic(nameStr);
+  let sanitized = cleanStr
+    .replace(/[\s_/\-\\–—]+/g, '-') // تحويل المسافات والعواض المزدوجة إلى عارضة مفردة
+    .replace(/[^a-zA-Z0-9\-]/g, '') // الحفاظ فقط على الحروف والأرقام والعواض الإنجليزية النظيفة لمنع مشاكل الـ Invalid key
+    .replace(/-+/g, '-') // منع تكرار العوارض المتتالية
+    .replace(/^-+|-+$/g, ''); // إزالة العوارض الطرفية
+    
+  if (!sanitized) {
+    sanitized = Buffer.from(nameStr).toString('hex').substring(0, 8);
+  }
+  return sanitized || 'unnamed';
 }
 
 function cleanFolderName(name: any): string {
-  if (!name) return 'unnamed';
-  return name
-    .toString()
-    .trim()
-    .replace(/[\s_/\-\\–—]+/g, '-') // تحويل المسافات والعواض المزدوجة إلى عارضة مفردة
-    .replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g, ''); // الحفاظ فقط على الحروف العربية والإنجليزية والأرقام والعواض
+  return sanitizeStorageName(name);
 }
 
 function sanitizeName(name: string, fallback: string = "unnamed"): string {
-  return sanitizeStorageName(name, fallback);
+  return sanitizeStorageName(name) || fallback;
 }
 
 function sanitizePath(name: string, fallback: string = "unnamed"): string {
-  return sanitizeStorageName(name, fallback);
+  return sanitizeStorageName(name) || fallback;
 }
 
 /**
@@ -1136,12 +1159,12 @@ async function uploadToSupabaseStorage(
   const poNo = parsedData.docNumber;
   const poNumber = (poNo && poNo.toString().replace(/[^0-9]/g, '')) || '11'; 
 
-  // 2. توليد طابع زمني فريد بالملي ثانية لمنع تكرار الأسماء
-  const timestamp = Date.now();
-
-  // 3. بناء اسم ملف رقمي وإنجليزي نظيف تماماً وخالٍ من أي تعقيدات
-  const finalStoragePath = `PO-${poNumber}-${timestamp}${fileExtension}`;
-  const supabasePath = finalStoragePath;
+  // 2. تنظيف وبناء المجلدات المتداخلة بشكل صارم (Nested Folders Fix)
+  const folderProject = sanitizeStorageName(parsedData.projectName || "عام");
+  const folderVendor = sanitizeStorageName(parsedData.clientName || "Unknown-Client");
+  const finalPdfPath = `${folderProject}/${folderVendor}/PO-${poNumber}-${Date.now()}${fileExtension}`;
+  // تأكيد إزالة الـ Leading Slash لتجنب مشاكل الـ Invalid key في Supabase
+  const supabasePath = finalPdfPath.replace(/^\/+/, '');
   
   if (!supabaseClient) {
     const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY env variables are provided.";
@@ -1682,10 +1705,11 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     const poNumber = (poNo && poNo.toString().replace(/[^0-9]/g, '')) || '11'; 
 
     // 2. تنظيف وبناء المجلدات المتداخلة بشكل صارم (Nested Folders Fix)
-    const folderProject = cleanFolderName(projectName || "عام");
-    const folderVendor = cleanFolderName(vendorName || "Unknown-Client");
-    const finalZipPath = `${folderProject}/${folderVendor}/PO-${poNumber}-${Date.now()}.zip`;
-    const supabasePath = finalZipPath;
+    const folderProject = sanitizeStorageName(projectName || "عام");
+    const folderVendor = sanitizeStorageName(vendorName || "Unknown-Client");
+    const finalPdfPath = `${folderProject}/${folderVendor}/PO-${poNumber}-${Date.now()}.pdf`;
+    // تأكيد إزالة الـ Leading Slash لتجنب مشاكل الـ Invalid key في Supabase
+    const supabasePath = finalPdfPath.replace(/^\/+/, '');
 
     if (!supabaseClient) {
       const errMsg = "Supabase Client is not initialized! Please make sure SUPABASE_URL and SUPABASE_ANON_KEY are set.";
@@ -1694,20 +1718,20 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     }
 
     const bucketName = "POs Files";
-    console.log(`Uploading generated ZIP to path "${supabasePath}" in bucket "${bucketName}"...`);
+    console.log(`Uploading generated PDF to path "${supabasePath}" in bucket "${bucketName}"...`);
 
     // Create a real Blob for Supabase as requested
-    const fileBlob = new globalThis.Blob([buffer], { type: "application/zip" });
+    const fileBlob = new globalThis.Blob([buffer], { type: "application/pdf" });
 
     const { data, error } = await supabaseClient.storage
       .from(bucketName)
       .upload(supabasePath, fileBlob, {
-        contentType: 'application/zip',
+        contentType: 'application/pdf',
         upsert: true
       });
 
     if (error) {
-      console.error(`Supabase Client upload API error for generated ZIP:`, error);
+      console.error(`Supabase Client upload API error for generated PDF:`, error);
       throw error;
     }
 
@@ -1717,7 +1741,7 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
       .getPublicUrl(supabasePath);
 
     const publicUrl = publicUrlData.publicUrl;
-    console.log(`Successfully uploaded generated ZIP to ${publicUrl}`);
+    console.log(`Successfully uploaded generated PDF to ${publicUrl}`);
 
     // Update document record in database
     const docIdx = (db.documents || []).findIndex((d: any) => d.id === documentId);
@@ -1802,13 +1826,97 @@ app.post("/api/upload/confirm", async (req, res) => {
 });
 
 // 3. Serve physical categorized files for browser downloads/preview
-app.get("/api/documents/download", (req, res) => {
+app.get("/api/documents/download", async (req, res) => {
   const filePathStr = req.query.path as string;
   if (!filePathStr) {
     return res.status(400).json({ error: "مسار الملف مطلوب" });
   }
   
+  // Set CORS and frame download headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  
   if (filePathStr.startsWith("http://") || filePathStr.startsWith("https://")) {
+    // 1. Try generating a signed URL from Supabase storage (the best and recommended way)
+    if (supabaseClient && filePathStr.includes(".supabase.co/storage/v1/object/")) {
+      try {
+        const decodedUrl = decodeURIComponent(filePathStr);
+        // Find public/ or sign/
+        const parts = decodedUrl.split("/storage/v1/object/public/");
+        const privateParts = decodedUrl.split("/storage/v1/object/sign/");
+        let bucketAndPath = "";
+        if (parts.length > 1) {
+          bucketAndPath = parts[1];
+        } else if (privateParts.length > 1) {
+          bucketAndPath = privateParts[1];
+        }
+        
+        if (bucketAndPath) {
+          const firstSlashIdx = bucketAndPath.indexOf("/");
+          if (firstSlashIdx !== -1) {
+            const bucketName = bucketAndPath.substring(0, firstSlashIdx);
+            const storagePath = bucketAndPath.substring(firstSlashIdx + 1);
+            
+            console.log(`Generating signed URL for: bucket="${bucketName}", path="${storagePath}"`);
+            
+            const { data: signedData, error: signedError } = await supabaseClient.storage
+              .from(bucketName)
+              .createSignedUrl(storagePath, 60); // 60 seconds
+              
+            if (signedError) {
+              console.error("Supabase Storage signed URL generation failed, falling back to download proxy:", signedError);
+            } else if (signedData && signedData.signedUrl) {
+              console.log("Successfully generated signed URL, redirecting directly to grant direct access without RLS...");
+              return res.redirect(signedData.signedUrl);
+            }
+            
+            // If signed URL failed, fall back to downloading via the server client
+            console.log(`Downloading private/public file from Supabase via server-client proxy: bucket="${bucketName}", path="${storagePath}"`);
+            
+            const { data: fileBlob, error } = await supabaseClient.storage
+              .from(bucketName)
+              .download(storagePath);
+              
+            if (error) {
+              console.error("Supabase Storage server download failed, falling back to fetch:", error);
+            } else if (fileBlob) {
+              const arrayBuffer = await fileBlob.arrayBuffer();
+              const buffer = Buffer.from(arrayBuffer);
+              const filename = path.basename(storagePath);
+              
+              res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+              res.setHeader("Content-Type", fileBlob.type || "application/pdf");
+              res.setHeader("Content-Length", buffer.length);
+              return res.send(buffer);
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error("Supabase Client signed URL/download failed, attempting standard fetch:", e);
+      }
+    }
+    
+    // 2. Generic HTTP proxy fetch fallback (bypasses browser CORS & iframe limitations)
+    try {
+      console.log(`Proxying file download from URL: ${filePathStr}`);
+      const response = await fetch(filePathStr);
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const parsedUrl = new URL(filePathStr);
+        const filename = path.basename(parsedUrl.pathname) || "document.pdf";
+        
+        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+        const contentType = response.headers.get("content-type") || "application/pdf";
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Content-Length", buffer.length);
+        return res.send(buffer);
+      }
+    } catch (fetchErr: any) {
+      console.error("Universal proxy fetch failed, falling back to redirect:", fetchErr);
+    }
+    
+    // 3. Absolute fallback
     return res.redirect(filePathStr);
   }
   
@@ -1816,6 +1924,8 @@ app.get("/api/documents/download", (req, res) => {
   const cleanPath = path.join(DATA_DIR, normalizedRequestedPath.replace(/^\/data\//, ""));
   
   if (fs.existsSync(cleanPath) && fs.statSync(cleanPath).isFile()) {
+    const filename = path.basename(cleanPath);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
     return res.sendFile(cleanPath);
   } else {
     return res.status(404).json({ error: "المستند غير موجود في مخزن التصنيف." });
