@@ -164,7 +164,119 @@ const appStateSchema = new mongoose.Schema({
 const AppState = mongoose.model("AppState", appStateSchema);
 
 // 3. مصفوفة المشاريع الافتراضية الخاصة بك بالكامل دون أي نقص
-const defaultProjects: string[] = [];
+const defaultProjects = [
+  "Al Burouj - Sitewide",
+  "Azailya",
+  "EDNC",
+  "June - Main Gate",
+  "June - Main Gate Landscape",
+  "June - Parcel 2",
+  "Al Burouj - Buffer Zone",
+  "Al Burouj - Parcel 1.14",
+  "HP - Sport Club",
+  "The Estates",
+  "Seoudi Market",
+  "June - Parcel 1 & MainTrunk",
+  "June - Parcel 6",
+  "HP - Sea Shore",
+  "HP - Road Works"
+];
+
+function mapProjectNameToStandard(name: string): string {
+  if (!name) return "عام";
+  const str = name.trim().toLowerCase();
+  
+  // HP / Hyde Park / هايد بارك
+  if (str.includes("hp") || str.includes("hyde park") || str.includes("هايد بارك") || str.includes("هايدبارك")) {
+    if (str.includes("sea shore") || str.includes("seashore") || str.includes("sea") || str.includes("shore") || str.includes("سي شور") || str.includes("شاطئ")) {
+      return "HP - Sea Shore";
+    }
+    if (str.includes("road") || str.includes("طرق") || str.includes("طريق") || str.includes("أعمال الطرق")) {
+      return "HP - Road Works";
+    }
+    if (str.includes("sport") || str.includes("club") || str.includes("نادي") || str.includes("رياضي")) {
+      return "HP - Sport Club";
+    }
+    return "HP - Sport Club";
+  }
+
+  // Al Burouj / البروج
+  if (str.includes("burouj") || str.includes("brouj") || str.includes("البروج") || str.includes("بروج")) {
+    if (str.includes("buffer") || str.includes("بفر") || str.includes("بافر") || str.includes("عازل") || str.includes("منطقة عازلة")) {
+      return "Al Burouj - Buffer Zone";
+    }
+    if (str.includes("1.14") || str.includes("cgp") || str.includes("بارسل") || str.includes("parcel")) {
+      return "Al Burouj - Parcel 1.14";
+    }
+    return "Al Burouj - Sitewide";
+  }
+
+  // June / جون
+  if (str.includes("june") || str.includes("جون")) {
+    if (str.includes("landscape") || str.includes("لاندسكيب") || str.includes("لاند سكيب") || str.includes("تجميل")) {
+      return "June - Main Gate Landscape";
+    }
+    if (str.includes("gate") || str.includes("بوابة") || str.includes("البوابة") || str.includes("الرئيسية")) {
+      return "June - Main Gate";
+    }
+    if (str.includes("parcel 2") || str.includes("2") || str.includes("٢")) {
+      return "June - Parcel 2";
+    }
+    if (str.includes("parcel 1") || str.includes("maintrunk") || str.includes("main trunk") || str.includes("1") || str.includes("١")) {
+      return "June - Parcel 1 & MainTrunk";
+    }
+    if (str.includes("parcel 6") || str.includes("6") || str.includes("٦")) {
+      return "June - Parcel 6";
+    }
+    return "June - Main Gate";
+  }
+
+  // Azailya / ازيليا / Azalia
+  if (str.includes("azailya") || str.includes("azalia") || str.includes("azelya") || str.includes("ازيليا") || str.includes("أزيليا")) {
+    return "Azailya";
+  }
+
+  // EDNC
+  if (str.includes("ednc") || str.includes("اي دي ان سي") || str.includes("إي دي إن سي")) {
+    return "EDNC";
+  }
+
+  // The Estates / الاستيت
+  if (str.includes("estates") || str.includes("الاستيت") || str.includes("ألايستيت") || str.includes("استيت")) {
+    return "The Estates";
+  }
+
+  // Seoudi / سعودي
+  if (str.includes("seoudi") || str.includes("سعودي")) {
+    return "Seoudi Market";
+  }
+
+  const standardProjects = [
+    "Al Burouj - Sitewide",
+    "Azailya",
+    "EDNC",
+    "June - Main Gate",
+    "June - Main Gate Landscape",
+    "June - Parcel 2",
+    "Al Burouj - Buffer Zone",
+    "Al Burouj - Parcel 1.14",
+    "HP - Sport Club",
+    "The Estates",
+    "Seoudi Market",
+    "June - Parcel 1 & MainTrunk",
+    "June - Parcel 6",
+    "HP - Sea Shore",
+    "HP - Road Works"
+  ];
+
+  const foundExact = standardProjects.find(p => p.toLowerCase() === str);
+  if (foundExact) return foundExact;
+
+  const foundPartial = standardProjects.find(p => str.includes(p.toLowerCase()));
+  if (foundPartial) return foundPartial;
+
+  return name;
+}
 
 // 4. تم إيقاف الدالة التلقائية لملء قاعدة البيانات بناءً على طلب المستخدم لعدم تكرار المشاريع الافتراضية
 /*
@@ -248,68 +360,51 @@ mongoose.connection.once("open", async () => {
       }
     }
 
-    // 2. تنظيف الـ collection الخاص بالمشاريع الفردية
-    const oldProjectsList = [
-      "Villette A&B", "Villette C&D", "Azalia", "Block 39", "EDNC", 
-      "June - Main Gate Landscape", "June - Main Gate", "Al-brouj", "June", 
-      "City Stars Al Sahel", "Allegria", "ETAPA", "Strip 2 Mall", 
-      "Training Pool", "Al Brouj - New Buffer", "Hyde Park", 
-      "Al-Brouj - CGP 1.14A", "JUNE Parcel 01 - Maintrunk", "THE ESTATES"
-    ];
-    await Project.deleteMany({ name: { $in: oldProjectsList } });
-    console.log("Successfully deleted individual old default projects from MongoDB Collection!");
-  } catch (err: any) {
-    console.error("Error executing custom clean-up script on MongoDB Atlas:", err.message);
-  }
-
-  // تم تعطيل seedDatabase لتجنب رفع مشاريع افتراضية تلقائياً بقاعدة البيانات
-  // await seedDatabase();
-  await fetchAndSyncDbFromMongo();
-  try {
-    const dbProjects = await Project.find({}, "name");
-    const names = dbProjects.map(p => p.name);
-    if (names.length > 0) {
-      const db = getDb();
-      let changed = false;
-
-      // تهيئة وحذف المشاريع المكررة من قائمة المشاريع الفعالة الحالية ونقل وثائقها للأسماء النظيفة المقابلة
-      const duplicatesMap: { [key: string]: string } = {
-        "Al-brouj - New Buffer": "Al Brouj - New Buffer",
-        "strip 2 Mall": "Strip 2 Mall",
-        "THE ESTATE": "THE ESTATES"
-      };
-
-      if (db.projects) {
-        const originalLength = db.projects.length;
-        db.projects = db.projects.filter((p: string) => !["Al-brouj - New Buffer", "strip 2 Mall", "THE ESTATE"].includes(p));
-        if (db.projects.length !== originalLength) {
-          changed = true;
-        }
-      }
-
-      if (db.documents && Array.isArray(db.documents)) {
-        db.documents.forEach((doc: any) => {
-          if (doc.projectName && duplicatesMap[doc.projectName]) {
-            console.log(`Mapping document ${doc.id} project name from "${doc.projectName}" to "${duplicatesMap[doc.projectName]}"`);
-            doc.projectName = duplicatesMap[doc.projectName];
-            changed = true;
-          }
-        });
-      }
-
-      for (const name of names) {
-        if (!db.projects.includes(name)) {
-          db.projects.push(name);
-          changed = true;
-        }
-      }
-      if (changed) {
-        saveDb(db);
-        console.log("Synchronized missing projects from MongoDB Atlas to active local DB and cleaned duplicates.");
+    // 2. تنظيف الـ collection الخاص بالمشاريع الفردية في أطلس ليتطابق تماماً مع القائمة المعتمدة
+    await Project.deleteMany({ name: { $nin: defaultProjects } });
+    console.log("Successfully cleaned up individual non-standard projects from MongoDB Collection!");
+    
+    // 3. بذر (Seed) المشاريع المعتمدة الجديدة في MongoDB Atlas
+    for (const name of defaultProjects) {
+      const exists = await Project.findOne({ name });
+      if (!exists) {
+        await Project.create({ name });
+        console.log(`Successfully seeded project to MongoDB Atlas: ${name}`);
       }
     }
+  } catch (err: any) {
+    console.error("Error executing custom clean-up & seed script on MongoDB Atlas:", err.message);
+  }
+
+  await fetchAndSyncDbFromMongo();
+  try {
+    const db = getDb();
+    let changed = false;
+
+    // تهيئة القائمة بالكامل بالمشاريع المعتمدة الـ 15 دون تكرار
+    db.projects = [...defaultProjects];
+    changed = true;
+
+    // تحديث وتصنيف كافة المستندات السابقة تلقائياً بالاعتماد على دالة الربط الذكية (Alias Mapping) لمنع التكرار البصري
+    if (db.documents && Array.isArray(db.documents)) {
+      db.documents.forEach((doc: any) => {
+        if (doc.projectName) {
+          const standard = mapProjectNameToStandard(doc.projectName);
+          if (doc.projectName !== standard) {
+            console.log(`[Auto-Mapping] Updating document ${doc.id} project from "${doc.projectName}" to standard "${standard}"`);
+            doc.projectName = standard;
+            changed = true;
+          }
+        }
+      });
+    }
+
+    if (changed) {
+      saveDb(db);
+      console.log("Successfully mapped existing documents and seeded approved standard projects list.");
+    }
   } catch (err) {
-    console.error("Error syncing projects from Atlas to active DB:", err);
+    console.error("Error syncing and seeding standard projects:", err);
   }
 });
 
@@ -350,62 +445,36 @@ function cleanDatabaseDiagnosticsInternal(db: any) {
   if (!db) return;
   let changed = false;
 
-  const duplicatesMap: { [key: string]: string } = {
-    "Al-brouj - New Buffer": "Al Brouj - New Buffer",
-    "Al-Brouj - New Buffer": "Al Brouj - New Buffer",
-    "al-brouj - new buffer": "Al Brouj - New Buffer",
-    "strip 2 Mall": "Strip 2 Mall",
-    "strip 2 mall": "Strip 2 Mall",
-    "THE ESTATE": "THE ESTATES",
-    "the estate": "THE ESTATES",
-    "THE ESTATES": "THE ESTATES"
-  };
-
-  const duplicatesToRemove = [
-    "Al-brouj - New Buffer", 
-    "Al-Brouj - New Buffer",
-    "al-brouj - new buffer",
-    "strip 2 Mall", 
-    "strip 2 mall",
-    "THE ESTATE",
-    "the estate"
-  ];
-
+  // 1. Ensure all standard projects are in db.projects and map them
   if (db.projects && Array.isArray(db.projects)) {
     const originalCount = db.projects.length;
-    // 1. Filter out known duplicate names
-    db.projects = db.projects.filter((p: string) => {
-      if (!p) return false;
-      const trimmed = p.trim();
-      return !duplicatesToRemove.includes(trimmed);
-    });
-
-    // 2. Case-insensitive deduplication of existing projects:
-    const seen = new Set<string>();
-    const uniqueProjects: string[] = [];
-    db.projects.forEach((p: string) => {
-      if (!p) return;
-      const lowercase = p.trim().toLowerCase();
-      if (!seen.has(lowercase)) {
-        seen.add(lowercase);
-        uniqueProjects.push(p.trim());
+    
+    // Seed standard projects if missing
+    for (const name of defaultProjects) {
+      if (!db.projects.includes(name)) {
+        db.projects.push(name);
+        changed = true;
       }
-    });
-    db.projects = uniqueProjects;
-
-    if (db.projects.length !== originalCount) {
+    }
+    
+    // Map existing names
+    const mappedProjects = db.projects.map((p: string) => mapProjectNameToStandard(p));
+    // Deduplicate
+    const uniqueProjects = Array.from(new Set(mappedProjects));
+    if (uniqueProjects.length !== originalCount) {
+      db.projects = uniqueProjects;
       changed = true;
     }
   }
 
-  // 3. Update documents that might be assigned to duplicate names
+  // 2. Update documents to use standard names using mapProjectNameToStandard
   if (db.documents && Array.isArray(db.documents)) {
     db.documents.forEach((doc: any) => {
       if (doc.projectName) {
-        const trimmed = doc.projectName.trim();
-        if (duplicatesMap[trimmed]) {
-          console.log(`[Auto-Clean] Redirecting doc ${doc.id} from "${doc.projectName}" to "${duplicatesMap[trimmed]}"`);
-          doc.projectName = duplicatesMap[trimmed];
+        const standard = mapProjectNameToStandard(doc.projectName);
+        if (doc.projectName !== standard) {
+          console.log(`[Auto-Clean] Mapping doc ${doc.id} project from "${doc.projectName}" to standard "${standard}"`);
+          doc.projectName = standard;
           changed = true;
         }
       }
@@ -415,7 +484,7 @@ function cleanDatabaseDiagnosticsInternal(db: any) {
   if (changed) {
     try {
       fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-      console.log("[Auto-Clean] Database duplicates cleaned up and synchronized successfully.");
+      console.log("[Auto-Clean] Database diagnostics cleaned up and mapped successfully.");
     } catch (e) {
       console.warn("Could not save auto-cleaned DB:", e);
     }
@@ -727,6 +796,164 @@ async function fetchAndSyncDbFromMongo() {
     }
   }
   return getDb();
+}
+
+async function moveProjectStorageFolder(oldProjName: string, newProjName: string) {
+  if (!supabaseClient) return;
+  const bucketName = "POs Files";
+  const oldProjFolder = sanitizeStorageName(oldProjName);
+  const newProjFolder = sanitizeStorageName(newProjName);
+  
+  if (oldProjFolder === newProjFolder) return;
+  
+  try {
+    console.log(`[Storage Move] Starting project folder rename from "${oldProjFolder}" to "${newProjFolder}"...`);
+    
+    // 1. List everything under oldProjFolder
+    const { data: vendorFolders, error: listError } = await supabaseClient.storage
+      .from(bucketName)
+      .list(oldProjFolder);
+      
+    if (listError) {
+      console.warn(`[Storage Move] Could not list subfolders in old project folder ${oldProjFolder}:`, listError.message);
+      return;
+    }
+    
+    if (!vendorFolders || vendorFolders.length === 0) {
+      console.log(`[Storage Move] No files found inside old project folder ${oldProjFolder}`);
+      return;
+    }
+    
+    // For each vendor folder or file inside oldProjFolder
+    for (const item of vendorFolders) {
+      const folderName = item.name;
+      const { data: files, error: filesError } = await supabaseClient.storage
+        .from(bucketName)
+        .list(`${oldProjFolder}/${folderName}`);
+        
+      if (filesError) {
+        console.warn(`[Storage Move] Could not list files in ${oldProjFolder}/${folderName}:`, filesError.message);
+        continue;
+      }
+      
+      if (files && files.length > 0) {
+        for (const file of files) {
+          const fileName = file.name;
+          // Skip placeholder
+          if (fileName === '.emptyFolderPlaceholder') continue;
+          
+          const oldPath = `${oldProjFolder}/${folderName}/${fileName}`;
+          const newPath = `${newProjFolder}/${folderName}/${fileName}`;
+          
+          console.log(`[Storage Move] Moving file from "${oldPath}" to "${newPath}"...`);
+          const { error: moveError } = await supabaseClient.storage
+            .from(bucketName)
+            .move(oldPath, newPath);
+            
+          if (moveError) {
+            console.error(`[Storage Move] Error moving ${oldPath} to ${newPath}:`, moveError.message);
+          } else {
+            const { data: publicUrlData } = supabaseClient.storage
+              .from(bucketName)
+              .getPublicUrl(newPath);
+              
+            const newUrl = publicUrlData.publicUrl;
+            
+            const db = getDb();
+            let changed = false;
+            if (db.documents && Array.isArray(db.documents)) {
+              db.documents.forEach((doc: any) => {
+                if (doc.projectName === newProjName && doc.classifiedPath && decodeURIComponent(doc.classifiedPath).includes(oldPath)) {
+                  console.log(`[Storage Move] Updating doc ${doc.id} url to: ${newUrl}`);
+                  doc.classifiedPath = newUrl;
+                  changed = true;
+                }
+              });
+            }
+            if (changed) {
+              saveDb(db);
+            }
+          }
+        }
+      }
+    }
+    console.log(`[Storage Move] Project folder rename from "${oldProjFolder}" to "${newProjFolder}" completed!`);
+  } catch (err: any) {
+    console.error("[Storage Move] Project rename storage move failed:", err.message);
+  }
+}
+
+async function moveVendorStorageFolder(oldVendorName: string, newVendorName: string) {
+  if (!supabaseClient) return;
+  const bucketName = "POs Files";
+  const oldVendorFolder = sanitizeStorageName(oldVendorName);
+  const newVendorFolder = sanitizeStorageName(newVendorName);
+  
+  if (oldVendorFolder === newVendorFolder) return;
+  
+  try {
+    console.log(`[Storage Move] Starting vendor folder rename from "${oldVendorFolder}" to "${newVendorFolder}"...`);
+    
+    const db = getDb();
+    const projects = db.projects || [];
+    
+    for (const projName of projects) {
+      const projFolder = sanitizeStorageName(projName);
+      const oldVendorPath = `${projFolder}/${oldVendorFolder}`;
+      const newVendorPath = `${projFolder}/${newVendorFolder}`;
+      
+      const { data: files, error: listError } = await supabaseClient.storage
+        .from(bucketName)
+        .list(oldVendorPath);
+        
+      if (listError) {
+        // Folder doesn't exist for this project, ignore
+        continue;
+      }
+      
+      if (files && files.length > 0) {
+        for (const file of files) {
+          const fileName = file.name;
+          if (fileName === '.emptyFolderPlaceholder') continue;
+          
+          const oldPath = `${oldVendorPath}/${fileName}`;
+          const newPath = `${newVendorPath}/${fileName}`;
+          
+          console.log(`[Storage Move] Moving file from "${oldPath}" to "${newPath}"...`);
+          const { error: moveError } = await supabaseClient.storage
+            .from(bucketName)
+            .move(oldPath, newPath);
+            
+          if (moveError) {
+            console.error(`[Storage Move] Error moving ${oldPath} to ${newPath}:`, moveError.message);
+          } else {
+            const { data: publicUrlData } = supabaseClient.storage
+              .from(bucketName)
+              .getPublicUrl(newPath);
+              
+            const newUrl = publicUrlData.publicUrl;
+            
+            let changed = false;
+            if (db.documents && Array.isArray(db.documents)) {
+              db.documents.forEach((doc: any) => {
+                if (doc.clientName === newVendorName && doc.classifiedPath && decodeURIComponent(doc.classifiedPath).includes(oldPath)) {
+                  console.log(`[Storage Move] Updating doc ${doc.id} url to: ${newUrl}`);
+                  doc.classifiedPath = newUrl;
+                  changed = true;
+                }
+              });
+            }
+            if (changed) {
+              saveDb(db);
+            }
+          }
+        }
+      }
+    }
+    console.log(`[Storage Move] Vendor folder rename from "${oldVendorFolder}" to "${newVendorFolder}" completed!`);
+  } catch (err: any) {
+    console.error("[Storage Move] Vendor rename storage move failed:", err.message);
+  }
 }
 
 // Initialize Gemini Client
@@ -1045,7 +1272,7 @@ If any extracted term matches or strongly resembles a known term, use its EXACT 
         data.clientName = cleanBidiText(data.clientName);
       }
       if (data.projectName) {
-        data.projectName = cleanBidiText(data.projectName);
+        data.projectName = mapProjectNameToStandard(cleanBidiText(data.projectName));
       }
       if (data.docNumber) {
         data.docNumber = cleanBidiText(data.docNumber).replace(/^(PO|Quote|أمر شراء|عرض سعر|No\.?|Num\.?)\s*[:-]?\s*/i, '');
@@ -1300,6 +1527,9 @@ app.post("/api/projects/rename", async (req, res) => {
     
     saveDb(db);
     
+    // Rename folders in Supabase Storage and update URLs automatically
+    await moveProjectStorageFolder(cleanOld, cleanNew);
+    
     // Update in MongoDB if connected
     if (mongoose.connection.readyState === 1) {
       try {
@@ -1431,6 +1661,10 @@ app.post("/api/suppliers/rename", async (req, res) => {
     }
     
     saveDb(db);
+    
+    // Rename folders in Supabase Storage and update URLs automatically
+    await moveVendorStorageFolder(cleanOld, cleanNew);
+    
     res.json({ success: true, suppliers: db.suppliers });
   } catch (error: any) {
     console.error("Rename supplier error:", error);
@@ -1528,8 +1762,51 @@ app.post("/api/units/rename", async (req, res) => {
   }
 });
 
-function getNextPoNumberForProject(db: any, projectName: string): string {
+async function getNextPoNumberForProject(db: any, projectName: string): Promise<string> {
   const cleanProj = (projectName || "عام").trim();
+  
+  if (supabaseClient) {
+    try {
+      let current_project_id = cleanProj;
+      if (mongoose.connection.readyState === 1) {
+        try {
+          const mongoProj = await Project.findOne({ name: cleanProj });
+          if (mongoProj) {
+            current_project_id = mongoProj._id.toString();
+          }
+        } catch (err) {
+          console.warn("[PO Serial] Error finding project ID in MongoDB:", err);
+        }
+      }
+
+      console.log(`[PO Serial] Querying Supabase 'pos_table' for project_id: "${current_project_id}"`);
+      const { data: lastPO, error: poError } = await supabaseClient
+        .from('pos_table')
+        .select('po_number')
+        .eq('project_id', current_project_id)
+        .order('po_number', { ascending: false })
+        .limit(1);
+
+      if (poError) {
+        console.warn(`[PO Serial] Supabase pos_table query error (table might not exist yet):`, poError.message);
+      } else if (lastPO && lastPO.length > 0) {
+        const lastNum = parseInt(lastPO[0].po_number, 10);
+        if (!isNaN(lastNum)) {
+          const nextPoNumber = lastNum + 1;
+          console.log(`[PO Serial] Supabase resolved next PO number: ${nextPoNumber} (last was ${lastNum})`);
+          return String(nextPoNumber);
+        }
+      } else {
+        // إذا كان هذا هو أول PO يتم إنشاؤه للمشروع على الإطلاق، يبدأ الترقيم تلقائياً من رقم 1.
+        console.log(`[PO Serial] No PO found in Supabase for project_id: "${current_project_id}". First PO, starting from 1.`);
+        return "1";
+      }
+    } catch (err: any) {
+      console.warn("[PO Serial] Exception during Supabase query:", err.message);
+    }
+  }
+
+  // Fallback to local DB and MongoDB
   const projectPos = (db.documents || []).filter(
     (d: any) => d.docType === 'po' && (d.projectName || 'عام').trim() === cleanProj
   );
@@ -1549,23 +1826,25 @@ function getNextPoNumberForProject(db: any, projectName: string): string {
     return String(maxNum + 1);
   }
 
-  let globalMax = 0;
-  (db.documents || []).filter((d: any) => d.docType === 'po').forEach((d: any) => {
-    if (d.docNumber) {
-      const cleanStr = d.docNumber.replace(/[^\d]/g, '');
-      const num = parseInt(cleanStr, 10);
-      if (!isNaN(num) && num > globalMax) {
-        globalMax = num;
-      }
-    }
-  });
-
-  if (globalMax > 0) {
-    return String(globalMax + 1);
-  }
-
-  return "11";
+  // إذا كان هذا هو أول PO يتم إنشاؤه للمشروع على الإطلاق، يبدأ الترقيم تلقائياً من رقم 1.
+  return "1";
 }
+
+app.get("/api/projects/next-po-number", async (req, res) => {
+  try {
+    const { projectName } = req.query;
+    if (!projectName || typeof projectName !== "string") {
+      return res.status(400).json({ error: "اسم المشروع مطلوب" });
+    }
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    const nextNum = await getNextPoNumberForProject(db, projectName);
+    res.json({ success: true, nextPoNumber: nextNum });
+  } catch (err: any) {
+    console.error("Error getting next PO number:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // 2. Direct client file upload & parsing
 app.post("/api/upload", upload.single("file"), async (req, res) => {
@@ -1607,7 +1886,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     
     let resolvedDocNumber = extractedData.docNumber;
     if (extractedData.docType === 'po') {
-      resolvedDocNumber = getNextPoNumberForProject(db, extractedData.projectName || "عام");
+      resolvedDocNumber = await getNextPoNumberForProject(db, extractedData.projectName || "عام");
     }
     
     const fileStorage = await uploadToSupabaseStorage(buffer, mimetype, { ...extractedData, docNumber: resolvedDocNumber }, originalname);
@@ -1943,10 +2222,15 @@ app.post("/api/documents/update", async (req, res) => {
     const db = getDb();
     const oldDocs = db.documents || [];
     
-    const updatedDocs = documents.map((doc: any) => {
+    const updatedDocs = await Promise.all(documents.map(async (doc: any) => {
       const oldDoc = oldDocs.find((d: any) => d.id === doc.id);
       if (!oldDoc) return doc;
       if (!oldDoc.classifiedPath) return doc;
+
+      // Ensure edited project name is mapped to a standard project name
+      if (doc.projectName) {
+        doc.projectName = mapProjectNameToStandard(doc.projectName);
+      }
 
       const clientChanged = (oldDoc.clientName || "").trim() !== (doc.clientName || "").trim();
       const projectChanged = (oldDoc.projectName || "").trim() !== (doc.projectName || "").trim();
@@ -1955,72 +2239,112 @@ app.post("/api/documents/update", async (req, res) => {
       const docNumChanged = (oldDoc.docNumber || "").trim() !== (doc.docNumber || "").trim();
 
       if (clientChanged || projectChanged || dateChanged || docTypeChanged || docNumChanged) {
-        const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
-        const oldRelative = oldDoc.classifiedPath;
-        const oldCleanProjectFilePath = path.join(DATA_DIR, oldRelative.replace(/^\/data\//, ""));
-
-        const clientFolderName = sanitize(doc.clientName || "Unknown_Client");
-        const projectFolderName = sanitize(doc.projectName || "عام");
-        const dateStr = doc.receiptDate || new Date().toISOString().split("T")[0];
-        const docTypeLabel = "PO";
-        const docNumLabel = sanitize(doc.docNumber && doc.docNumber !== "N/A" ? doc.docNumber : "Ref_" + Math.random().toString(36).substr(2, 4));
-        const fileExtension = path.extname(doc.originalFilename || oldDoc.originalFilename || ".pdf") || ".pdf";
-
-        const newFilename = `${docTypeLabel}_${docNumLabel}__${clientFolderName}__${dateStr}${fileExtension}`;
-
-        const newProjectDir = path.join(ORGANIZED_DIR, projectFolderName);
-        if (!fs.existsSync(newProjectDir)) {
+        // Check if file is stored in Supabase Storage
+        if (oldDoc.classifiedPath.includes(".supabase.co") && supabaseClient) {
           try {
-            fs.mkdirSync(newProjectDir, { recursive: true });
-          } catch (e) {}
-        }
-        const newProjectFilePath = path.join(newProjectDir, newFilename);
-
-        const newClientDir = path.join(ORGANIZED_DIR, clientFolderName);
-        if (!fs.existsSync(newClientDir)) {
-          try {
-            fs.mkdirSync(newClientDir, { recursive: true });
-          } catch (e) {}
-        }
-        const newClientFilePath = path.join(newClientDir, newFilename);
-
-        if (fs.existsSync(oldCleanProjectFilePath) && fs.statSync(oldCleanProjectFilePath).isFile()) {
-          try {
-            const fileBuffer = fs.readFileSync(oldCleanProjectFilePath);
-
-            try {
-              fs.unlinkSync(oldCleanProjectFilePath);
-            } catch (err) {
-              console.warn("Could not delete old project file:", err);
-            }
-
-            const oldClientFolderName = sanitize(oldDoc.clientName || "Unknown_Client");
-            const oldFilename = path.basename(oldCleanProjectFilePath);
-            const oldClientFilePath = path.join(ORGANIZED_DIR, oldClientFolderName, oldFilename);
-            if (fs.existsSync(oldClientFilePath)) {
-              try {
-                fs.unlinkSync(oldClientFilePath);
-              } catch (err) {
-                console.warn("Could not delete old client file copy:", err);
+            const decodedPath = decodeURIComponent(oldDoc.classifiedPath);
+            const bucketKeyword = "/public/POs Files/";
+            const index = decodedPath.indexOf(bucketKeyword);
+            if (index !== -1) {
+              const relativeSupabasePath = decodedPath.substring(index + bucketKeyword.length);
+              
+              const newFolderProject = sanitizeStorageName(doc.projectName || "عام");
+              const newFolderVendor = sanitizeStorageName(doc.clientName || "Unknown-Client");
+              
+              const fileName = relativeSupabasePath.split("/").pop();
+              if (fileName) {
+                const newSupabasePath = `${newFolderProject}/${newFolderVendor}/${fileName}`;
+                
+                if (relativeSupabasePath !== newSupabasePath) {
+                  console.log(`[Storage Move] Moving edited document in Supabase from "${relativeSupabasePath}" to "${newSupabasePath}"`);
+                  const { error: moveError } = await supabaseClient.storage
+                    .from("POs Files")
+                    .move(relativeSupabasePath, newSupabasePath);
+                    
+                  if (moveError) {
+                    console.error("[Storage Move] Error moving document in Supabase:", moveError.message);
+                  } else {
+                    const { data: publicUrlData } = supabaseClient.storage
+                      .from("POs Files")
+                      .getPublicUrl(newSupabasePath);
+                    doc.classifiedPath = publicUrlData.publicUrl;
+                    console.log(`[Storage Move] Successfully updated edited document URL in Supabase to: ${doc.classifiedPath}`);
+                  }
+                }
               }
             }
+          } catch (supMoveErr: any) {
+            console.error("[Storage Move] Exception moving edited document in Supabase:", supMoveErr.message);
+          }
+        } else {
+          // Fallback to local file rename
+          const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+          const oldRelative = oldDoc.classifiedPath;
+          const oldCleanProjectFilePath = path.join(DATA_DIR, oldRelative.replace(/^\/data\//, ""));
 
+          const clientFolderName = sanitize(doc.clientName || "Unknown_Client");
+          const projectFolderName = sanitize(doc.projectName || "عام");
+          const dateStr = doc.receiptDate || new Date().toISOString().split("T")[0];
+          const docTypeLabel = "PO";
+          const docNumLabel = sanitize(doc.docNumber && doc.docNumber !== "N/A" ? doc.docNumber : "Ref_" + Math.random().toString(36).substr(2, 4));
+          const fileExtension = path.extname(doc.originalFilename || oldDoc.originalFilename || ".pdf") || ".pdf";
+
+          const newFilename = `${docTypeLabel}_${docNumLabel}__${clientFolderName}__${dateStr}${fileExtension}`;
+
+          const newProjectDir = path.join(ORGANIZED_DIR, projectFolderName);
+          if (!fs.existsSync(newProjectDir)) {
             try {
-              fs.writeFileSync(newProjectFilePath, fileBuffer);
-              fs.writeFileSync(newClientFilePath, fileBuffer);
-            } catch (writeErr) {
-              console.warn("Could not write renamed files (expected in read-only setups):", writeErr);
-            }
+              fs.mkdirSync(newProjectDir, { recursive: true });
+            } catch (e) {}
+          }
+          const newProjectFilePath = path.join(newProjectDir, newFilename);
 
-            doc.classifiedPath = `/data/organized/${projectFolderName}/${newFilename}`;
-          } catch (renameErr) {
-            console.error("Physical rename failed:", renameErr);
+          const newClientDir = path.join(ORGANIZED_DIR, clientFolderName);
+          if (!fs.existsSync(newClientDir)) {
+            try {
+              fs.mkdirSync(newClientDir, { recursive: true });
+            } catch (e) {}
+          }
+          const newClientFilePath = path.join(newClientDir, newFilename);
+
+          if (fs.existsSync(oldCleanProjectFilePath) && fs.statSync(oldCleanProjectFilePath).isFile()) {
+            try {
+              const fileBuffer = fs.readFileSync(oldCleanProjectFilePath);
+
+              try {
+                fs.unlinkSync(oldCleanProjectFilePath);
+              } catch (err) {
+                console.warn("Could not delete old project file:", err);
+              }
+
+              const oldClientFolderName = sanitize(oldDoc.clientName || "Unknown_Client");
+              const oldFilename = path.basename(oldCleanProjectFilePath);
+              const oldClientFilePath = path.join(ORGANIZED_DIR, oldClientFolderName, oldFilename);
+              if (fs.existsSync(oldClientFilePath)) {
+                try {
+                  fs.unlinkSync(oldClientFilePath);
+                } catch (err) {
+                  console.warn("Could not delete old client file copy:", err);
+                }
+              }
+
+              try {
+                fs.writeFileSync(newProjectFilePath, fileBuffer);
+                fs.writeFileSync(newClientFilePath, fileBuffer);
+              } catch (writeErr) {
+                console.warn("Could not write renamed files (expected in read-only setups):", writeErr);
+              }
+
+              doc.classifiedPath = `/data/organized/${projectFolderName}/${newFilename}`;
+            } catch (renameErr) {
+              console.error("Physical rename failed:", renameErr);
+            }
           }
         }
       }
 
       return doc;
-    });
+    }));
 
     db.documents = updatedDocs;
     saveDb(db);

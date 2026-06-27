@@ -930,6 +930,28 @@ export default function App() {
     }
   }, [isEditing, documents]);
 
+  const [expectedPoNumbers, setExpectedPoNumbers] = useState<{ [key: string]: string }>({});
+
+  const fetchNextPoNumber = async (projectName: string) => {
+    if (!projectName) return null;
+    try {
+      const res = await fetch(`/api/projects/next-po-number?projectName=${encodeURIComponent(projectName)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.nextPoNumber) {
+          setExpectedPoNumbers(prev => ({
+            ...prev,
+            [projectName]: data.nextPoNumber
+          }));
+          return data.nextPoNumber as string;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch next PO number:", err);
+    }
+    return null;
+  };
+
   // Get the next auto-incremented PO number for a project (e.g. if previous is 11, next is 12)
   const getNextPoNumberForProject = (projName: string, docsList = documents) => {
     const cleanProj = projName?.trim() || 'عام';
@@ -952,23 +974,8 @@ export default function App() {
       return maxNum + 1;
     }
 
-    // Fallback: search globally across all POs to continue a global sequence
-    let globalMax = 0;
-    docsList.filter(d => d.docType === 'po').forEach(d => {
-      if (d.docNumber) {
-        const cleanStr = d.docNumber.replace(/[^\d]/g, '');
-        const num = parseInt(cleanStr, 10);
-        if (!isNaN(num) && num > globalMax) {
-          globalMax = num;
-        }
-      }
-    });
-
-    if (globalMax > 0) {
-      return globalMax + 1;
-    }
-
-    return 11; // Default starting number as in user's example
+    // إذا كان هذا هو أول PO يتم إنشاؤه للمشروع على الإطلاق، يبدأ الترقيم تلقائياً من رقم 1.
+    return 1;
   };
 
   // Get style for due dates based on closeness to today
@@ -2238,17 +2245,56 @@ export default function App() {
         if (updatedDoc.docType === 'po') {
           const nextNum = getNextPoNumberForProject(updates.projectName || 'عام', documents.filter(d => d.id !== prev.id));
           updatedDoc.docNumber = String(nextNum);
+          
+          fetchNextPoNumber(updates.projectName || 'عام').then((fetchedNum) => {
+            if (fetchedNum) {
+              setSelectedDoc(current => {
+                if (current && current.id === prev.id) {
+                  const withFetched = { ...current, docNumber: fetchedNum };
+                  setDocuments(prevDocs => prevDocs.map(d => d.id === current.id ? withFetched : d));
+                  return withFetched;
+                }
+                return current;
+              });
+            }
+          });
         }
       } else if (updates.shipToAddress !== undefined) {
         updatedDoc.projectName = updates.shipToAddress;
         if (updatedDoc.docType === 'po') {
           const nextNum = getNextPoNumberForProject(updates.shipToAddress || 'عام', documents.filter(d => d.id !== prev.id));
           updatedDoc.docNumber = String(nextNum);
+          
+          fetchNextPoNumber(updates.shipToAddress || 'عام').then((fetchedNum) => {
+            if (fetchedNum) {
+              setSelectedDoc(current => {
+                if (current && current.id === prev.id) {
+                  const withFetched = { ...current, docNumber: fetchedNum };
+                  setDocuments(prevDocs => prevDocs.map(d => d.id === current.id ? withFetched : d));
+                  return withFetched;
+                }
+                return current;
+              });
+            }
+          });
         }
       } else if (updates.docType !== undefined) {
         if (updates.docType === 'po') {
           const nextNum = getNextPoNumberForProject(updatedDoc.projectName || 'عام', documents.filter(d => d.id !== prev.id));
           updatedDoc.docNumber = String(nextNum);
+          
+          fetchNextPoNumber(updatedDoc.projectName || 'عام').then((fetchedNum) => {
+            if (fetchedNum) {
+              setSelectedDoc(current => {
+                if (current && current.id === prev.id) {
+                  const withFetched = { ...current, docNumber: fetchedNum };
+                  setDocuments(prevDocs => prevDocs.map(d => d.id === current.id ? withFetched : d));
+                  return withFetched;
+                }
+                return current;
+              });
+            }
+          });
         }
       }
 
@@ -4524,6 +4570,18 @@ export default function App() {
                                         const otherDocs = editDocs.filter((_, dIdx) => dIdx !== idx);
                                         const nextNum = getNextPoNumberForProject(val, otherDocs);
                                         draft[idx].docNumber = String(nextNum);
+                                        
+                                        fetchNextPoNumber(val).then((fetchedNum) => {
+                                          if (fetchedNum) {
+                                            setEditDocs(currentDraft => {
+                                              const updatedDraft = [...currentDraft];
+                                              if (updatedDraft[idx]) {
+                                                updatedDraft[idx].docNumber = fetchedNum;
+                                              }
+                                              return updatedDraft;
+                                            });
+                                          }
+                                        });
                                       }
                                       setEditDocs(draft);
                                     }
@@ -4551,8 +4609,20 @@ export default function App() {
                                       const otherDocs = editDocs.filter((_, dIdx) => dIdx !== idx);
                                       const nextNum = getNextPoNumberForProject(val, otherDocs);
                                       draft[idx].docNumber = String(nextNum);
-                                      setEditDocs(draft);
+                                      
+                                      fetchNextPoNumber(val).then((fetchedNum) => {
+                                        if (fetchedNum) {
+                                          setEditDocs(currentDraft => {
+                                            const updatedDraft = [...currentDraft];
+                                            if (updatedDraft[idx]) {
+                                              updatedDraft[idx].docNumber = fetchedNum;
+                                            }
+                                            return updatedDraft;
+                                          });
+                                        }
+                                      });
                                     }
+                                    setEditDocs(draft);
                                   }}
                                   className="w-20 px-2 py-1 border border-sky-200 bg-sky-50/30 rounded focus:outline-hidden focus:border-sky-500 text-xs text-slate-855 font-extrabold"
                                 />
@@ -6425,6 +6495,22 @@ export default function App() {
                         <option value="completed">✔️ مكتمل (Completed)</option>
                         <option value="deferred">💤 مؤجل (Deferred)</option>
                       </select>
+                    </div>
+                    <div className="lg:border-r border-slate-250 p-4 flex items-center justify-between gap-4 text-right">
+                      <span className="font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
+                        <PlusCircle className="w-4 h-4 text-emerald-600" />
+                        الرقم التسلسلي التالي للمشروع:
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center justify-center px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 font-black rounded-lg text-xs font-mono shadow-2xs">
+                          {selectedDoc.docType === 'po' ? (selectedDoc.docNumber || '1') : 'N/A'}
+                        </span>
+                        {expectedPoNumbers[selectedDoc.projectName || "عام"] && (
+                          <span className="text-[9px] text-emerald-600 font-bold bg-emerald-500/10 px-1 py-0.5 rounded-sm whitespace-nowrap" title="تم التحقق من قاعدة البيانات">
+                            (مؤكد بالخلفية ⚡)
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
