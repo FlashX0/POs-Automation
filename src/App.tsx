@@ -507,7 +507,19 @@ export default function App() {
   });
 
   // Device Fingerprint & IP Verification States
-  const [deviceStatus, setDeviceStatus] = useState<'checking' | 'approved' | 'pending' | 'blocked'>('checking');
+  const [deviceStatus, setDeviceStatus] = useState<'checking' | 'approved' | 'pending' | 'blocked'>(() => {
+    if (typeof window !== 'undefined') {
+      const savedAdmin = localStorage.getItem('admin_session');
+      if (savedAdmin === 'true') {
+        return 'approved';
+      }
+      const savedStatus = localStorage.getItem('device_status');
+      if (savedStatus === 'approved') return 'approved';
+      if (savedStatus === 'blocked') return 'blocked';
+      if (savedStatus === 'pending') return 'pending';
+    }
+    return 'checking';
+  });
   const [deviceFingerprint, setDeviceFingerprint] = useState<string>('');
   const [deviceInfoState, setDeviceInfoState] = useState<string>('');
   const [adminDevices, setAdminDevices] = useState<any[]>([]);
@@ -552,7 +564,8 @@ export default function App() {
   const [adminPasswordInput, setAdminPasswordInput] = useState<string>('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('admin_authenticated_key') === 'DeltaAdmin2026';
+      return sessionStorage.getItem('admin_authenticated_key') === 'DeltaAdmin2026' ||
+             localStorage.getItem('admin_session') === 'true';
     }
     return false;
   });
@@ -612,16 +625,52 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.device) {
-          setDeviceStatus(data.device.status);
+          const status = data.device.status;
+          
+          if (status === 'approved') {
+            localStorage.setItem('device_status', 'approved');
+            setDeviceStatus('approved');
+          } else if (status === 'blocked') {
+            localStorage.removeItem('device_status');
+            localStorage.removeItem('admin_session');
+            sessionStorage.removeItem('admin_authenticated_key');
+            setDeviceStatus('blocked');
+          } else if (status === 'pending') {
+            const isAdminSession = localStorage.getItem('admin_session') === 'true';
+            if (!isAdminSession) {
+              localStorage.setItem('device_status', 'pending');
+              setDeviceStatus('pending');
+            } else {
+              setDeviceStatus('approved');
+            }
+          }
         } else {
-          setDeviceStatus('pending');
+          const isAdminSession = localStorage.getItem('admin_session') === 'true';
+          const savedStatus = localStorage.getItem('device_status') as any;
+          if (!isAdminSession) {
+            setDeviceStatus(savedStatus || 'pending');
+          } else {
+            setDeviceStatus('approved');
+          }
         }
       } else {
-        setDeviceStatus('approved'); // Graceful fallback
+        const isAdminSession = localStorage.getItem('admin_session') === 'true';
+        const savedStatus = localStorage.getItem('device_status') as any;
+        if (isAdminSession) {
+          setDeviceStatus('approved');
+        } else {
+          setDeviceStatus(savedStatus || 'approved');
+        }
       }
     } catch (err) {
       console.error('Error checking device status:', err);
-      setDeviceStatus('approved'); // Graceful fallback
+      const isAdminSession = localStorage.getItem('admin_session') === 'true';
+      const savedStatus = localStorage.getItem('device_status') as any;
+      if (isAdminSession) {
+        setDeviceStatus('approved');
+      } else {
+        setDeviceStatus(savedStatus || 'approved');
+      }
     }
   };
 
@@ -657,6 +706,15 @@ export default function App() {
           // If we are updating our own device, sync state
           if (fp === deviceFingerprint) {
             setDeviceStatus(status);
+            if (status === 'approved') {
+              localStorage.setItem('device_status', 'approved');
+            } else if (status === 'blocked') {
+              localStorage.removeItem('device_status');
+              localStorage.removeItem('admin_session');
+              sessionStorage.removeItem('admin_authenticated_key');
+            } else {
+              localStorage.setItem('device_status', status);
+            }
           }
         }
       }
@@ -687,6 +745,7 @@ export default function App() {
       }
 
       setDeviceStatus('approved');
+      localStorage.setItem('device_status', 'approved');
       alert('تم اعتماد جهازي الحالي كمسؤول فوراً بنجاح! تم تحديث الحالة في قاعدة البيانات.');
       fetchAdminDevices();
     } catch (err) {
@@ -4501,6 +4560,8 @@ export default function App() {
               if (adminPasswordInput === 'DeltaAdmin2026') {
                 setIsAdminAuthenticated(true);
                 sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
+                localStorage.setItem('admin_session', 'true');
+                localStorage.setItem('device_status', 'approved');
                 setPasswordError('');
               } else {
                 setPasswordError('كلمة المرور غير صحيحة، يرجى المحاولة مرة أخرى.');

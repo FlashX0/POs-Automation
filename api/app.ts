@@ -1967,9 +1967,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
       status: 'pending',
       createdAt: new Date().toISOString()
     });
-    try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(db2, null, 2), "utf-8");
-    } catch (e) {}
+    saveDb(db2);
   } else {
     // Existing device: Sync resolved status, IP address, and Device Info to all active databases
     
@@ -2015,9 +2013,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
           ip_address: ipAddress,
           device_info: deviceInfo
         };
-        try {
-          fs.writeFileSync(DB_FILE, JSON.stringify(db3, null, 2), "utf-8");
-        } catch (e) {}
+        saveDb(db3);
       }
     } else {
       db3.allowed_devices.push({
@@ -2027,9 +2023,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
         device_info: deviceInfo,
         createdAt: new Date().toISOString()
       });
-      try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(db3, null, 2), "utf-8");
-      } catch (e) {}
+      saveDb(db3);
     }
   }
 
@@ -2215,9 +2209,7 @@ app.post("/api/admin/devices/update", async (req, res) => {
     const dev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
     if (dev) {
       dev.status = status;
-      try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-      } catch (e) {}
+      saveDb(db);
       updated = true;
     } else {
       db.allowed_devices.push({
@@ -2225,9 +2217,7 @@ app.post("/api/admin/devices/update", async (req, res) => {
         status,
         createdAt: new Date().toISOString()
       });
-      try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-      } catch (e) {}
+      saveDb(db);
       updated = true;
     }
 
