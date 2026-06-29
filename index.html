@@ -6,6 +6,26 @@
     <title>POs Automation System by Khaled</title>
     <link rel="icon" type="image/jpeg" href="/src/assets/images/delta_road_logo_1781798697279.jpg" />
     <script>
+      // Make window.fetch writable to prevent TypeError: Cannot set property fetch of #<Window> which has only a getter
+      // This happens when third-party libraries or platform sandboxes try to monkeypatch or proxy window.fetch
+      (function() {
+        try {
+          var _nativeFetch = window.fetch;
+          Object.defineProperty(window, 'fetch', {
+            get: function() {
+              return _nativeFetch;
+            },
+            set: function(val) {
+              _nativeFetch = val;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {
+          console.warn('Unable to patch window.fetch property descriptor:', e);
+        }
+      })();
+
       // Automatically silence expected, benign development WebSocket and Vite HMR connection failures
       window.addEventListener('unhandledrejection', function(event) {
         if (event.reason) {
