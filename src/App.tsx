@@ -536,6 +536,19 @@ export default function App() {
     return false;
   });
 
+  const isUrlAdmin = typeof window !== 'undefined' && (
+    window.location.pathname === '/admin' ||
+    window.location.pathname === '/admin/' ||
+    window.location.pathname.includes('admin-access') ||
+    window.location.pathname.includes('admin-secret-access-control') ||
+    window.location.pathname.includes('override-system-protection') ||
+    window.location.pathname.includes('device-unblock-portal') ||
+    window.location.pathname.includes('direct-security-access') ||
+    (new URLSearchParams(window.location.search).get('admin') !== null) ||
+    (new URLSearchParams(window.location.search).get('bypass') === 'true') || 
+    (new URLSearchParams(window.location.search).get('override') === 'true')
+  );
+
   const [adminPasswordInput, setAdminPasswordInput] = useState<string>('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -4466,7 +4479,7 @@ export default function App() {
     );
   }
 
-  if (isAdminView) {
+  if (isAdminView || isUrlAdmin) {
     if (!isAdminAuthenticated) {
       return (
         <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right" dir="rtl">
@@ -4803,7 +4816,7 @@ export default function App() {
     );
   }
 
-  if (!isAdminView && !isSecretAdminView && deviceStatus === 'checking') {
+  if (!isAdminView && !isUrlAdmin && !isSecretAdminView && deviceStatus === 'checking') {
     return (
       <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6">
         <div className="max-w-md w-full bg-slate-900/40 border border-slate-800/80 rounded-3xl p-8 backdrop-blur-md shadow-2xl text-center flex flex-col items-center relative overflow-hidden">
@@ -4826,7 +4839,7 @@ export default function App() {
     );
   }
 
-  if (!isAdminView && !isSecretAdminView && deviceStatus === 'pending') {
+  if (!isAdminView && !isUrlAdmin && !isSecretAdminView && deviceStatus === 'pending') {
     return (
       <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right" dir="rtl">
         <div className="max-w-lg w-full bg-slate-900/50 border border-slate-800/80 rounded-3xl p-8 backdrop-blur-md shadow-2xl relative overflow-hidden">
@@ -4885,9 +4898,8 @@ export default function App() {
             <button
               onClick={() => {
                 if (typeof window !== 'undefined') {
-                  window.history.pushState(null, '', '/admin');
+                  window.location.href = '/admin';
                 }
-                setIsAdminView(true);
               }}
               className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold py-3 px-6 rounded-xl border border-sky-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-xs"
             >
@@ -4900,7 +4912,7 @@ export default function App() {
     );
   }
 
-  if (!isAdminView && !isSecretAdminView && deviceStatus === 'blocked') {
+  if (!isAdminView && !isUrlAdmin && !isSecretAdminView && deviceStatus === 'blocked') {
     return (
       <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right" dir="rtl">
         <div className="max-w-md w-full bg-slate-900/50 border border-red-500/20 rounded-3xl p-8 backdrop-blur-md shadow-2xl text-center flex flex-col items-center relative overflow-hidden">
@@ -4931,9 +4943,8 @@ export default function App() {
             <button
               onClick={() => {
                 if (typeof window !== 'undefined') {
-                  window.history.pushState(null, '', '/admin');
+                  window.location.href = '/admin';
                 }
-                setIsAdminView(true);
               }}
               className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold py-3 px-6 rounded-xl border border-sky-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-xs"
             >
