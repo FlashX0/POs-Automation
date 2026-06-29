@@ -516,24 +516,22 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
       const params = new URLSearchParams(window.location.search);
-      return path === '/admin' || path === '/admin/' || path === '/admin-access' || path.includes('admin-access') || params.get('admin') !== null;
-    }
-    return false;
-  });
-  const [isSecretAdminView, setIsSecretAdminView] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      const params = new URLSearchParams(window.location.search);
-      const isBypassPath = path === '/admin-secret-access-control' || 
-                           path.includes('admin-secret-access-control') ||
-                           path === '/override-system-protection' ||
-                           path.includes('override-system-protection') ||
-                           path === '/device-unblock-portal' ||
-                           path.includes('device-unblock-portal') ||
-                           path === '/direct-security-access' ||
-                           path.includes('direct-security-access');
-      const isBypassQuery = params.get('bypass') === 'true' || params.get('override') === 'true';
-      return isBypassPath || isBypassQuery;
+      const isAdminPath = path === '/admin' || 
+                          path === '/admin/' || 
+                          path === '/admin-access' || 
+                          path.includes('admin-access') || 
+                          path === '/admin-secret-access-control' || 
+                          path.includes('admin-secret-access-control') ||
+                          path === '/override-system-protection' ||
+                          path.includes('override-system-protection') ||
+                          path === '/device-unblock-portal' ||
+                          path.includes('device-unblock-portal') ||
+                          path === '/direct-security-access' ||
+                          path.includes('direct-security-access') ||
+                          params.get('admin') !== null ||
+                          params.get('bypass') === 'true' || 
+                          params.get('override') === 'true';
+      return isAdminPath;
     }
     return false;
   });
@@ -541,10 +539,11 @@ export default function App() {
   const [adminPasswordInput, setAdminPasswordInput] = useState<string>('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('admin_authenticated') === 'true';
+      return sessionStorage.getItem('admin_authenticated_key') === 'DeltaAdmin2026';
     }
     return false;
   });
+  const isSecretAdminView = false;
   const [passwordError, setPasswordError] = useState<string>('');
 
   // Calculate browser fingerprint without external dependencies
@@ -654,6 +653,10 @@ export default function App() {
   };
 
   const handleApproveMyCurrentDevice = async () => {
+    if (!isAdminAuthenticated) {
+      alert('غير مصرح! يجب تسجيل الدخول كمسؤول أولاً باستخدام كلمة المرور.');
+      return;
+    }
     try {
       // Approve both dev_7ae2a0cd and current calculated deviceFingerprint
       await fetch('/api/admin/devices/update', {
@@ -689,11 +692,11 @@ export default function App() {
     // Check device status
     checkDeviceStatus(fp, info);
     
-    // If we're on the admin page (and authenticated) or secret admin page, load the device table
-    if (isSecretAdminView || (isAdminView && isAdminAuthenticated)) {
+    // If we're on the admin page (and authenticated), load the device table
+    if (isAdminView && isAdminAuthenticated) {
       fetchAdminDevices();
     }
-  }, [isAdminView, isSecretAdminView, isAdminAuthenticated]);
+  }, [isAdminView, isAdminAuthenticated]);
 
   // Sync print margins to localStorage whenever they change
   useEffect(() => {
@@ -4190,7 +4193,7 @@ export default function App() {
     );
   }
 
-  if (isSecretAdminView) {
+  if (false) {
     return (
       <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans overflow-x-hidden w-full max-w-full p-6 text-right" dir="rtl">
         <div className="max-w-7xl mx-auto w-full space-y-6">
@@ -4482,9 +4485,9 @@ export default function App() {
 
             <form onSubmit={(e) => {
               e.preventDefault();
-              if (adminPasswordInput === 'Admin016135') {
+              if (adminPasswordInput === 'DeltaAdmin2026') {
                 setIsAdminAuthenticated(true);
-                sessionStorage.setItem('admin_authenticated', 'true');
+                sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
                 setPasswordError('');
               } else {
                 setPasswordError('كلمة المرور غير صحيحة، يرجى المحاولة مرة أخرى.');
@@ -4876,17 +4879,6 @@ export default function App() {
               نسخ بيانات الجهاز
             </button>
           </div>
-
-          {/* Secret Bypass Button for Admin */}
-          <div className="mt-6 pt-5 border-t border-slate-800/60 w-full">
-            <button 
-              onClick={() => setIsSecretAdminView(true)}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 px-6 rounded-2xl shadow-xl shadow-emerald-500/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-sm animate-pulse"
-            >
-              <Lock className="w-4 h-4 shrink-0" />
-              تجاوز الحماية: الدخول الفوري للوحة التحكم السرية كمسؤول
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -4916,17 +4908,6 @@ export default function App() {
               <span className="text-xs text-red-500 font-bold">محظور (Blocked)</span>
               <span className="text-xs text-slate-400">حالة الوصول</span>
             </div>
-          </div>
-
-          {/* Secret Bypass Button for Admin */}
-          <div className="w-full mb-6">
-            <button 
-              onClick={() => setIsSecretAdminView(true)}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 px-6 rounded-2xl shadow-xl shadow-emerald-500/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-sm animate-pulse"
-            >
-              <Lock className="w-4 h-4 shrink-0" />
-              تجاوز الحماية: الدخول الفوري للوحة التحكم السرية كمسؤول
-            </button>
           </div>
 
           <div className="text-xs text-slate-500 font-mono">
