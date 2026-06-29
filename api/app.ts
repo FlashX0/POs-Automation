@@ -1857,7 +1857,10 @@ app.get("/api/projects/next-po-number", async (req, res) => {
 });
 
 async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInfo: string) {
-  // 1. Try Supabase first (if not disabled due to missing schema/table)
+  let supabaseStatus: string | null = null;
+  let supabaseRecord: any = null;
+  
+  // 1. Query Supabase
   if (supabaseClient && !isSupabaseDevicesDisabled) {
     try {
       const { data, error } = await supabaseClient
@@ -1874,135 +1877,168 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
           console.warn("[Device Auth] Supabase query error:", error.message);
         }
       } else if (data) {
-        // Found in Supabase, update IP/Info if changed
-        if (data.ip_address !== ipAddress || data.device_info !== deviceInfo) {
-          try {
-            await supabaseClient
-              .from('allowed_devices')
-              .update({ ip_address: ipAddress, device_info: deviceInfo })
-              .eq('device_fingerprint', fingerprint);
-          } catch (e) {}
-        }
-        
-        // Let's also sync to local MongoDB if it's running
-        if (mongoose.connection.readyState === 1) {
-          try {
-            await AllowedDevice.findOneAndUpdate(
-              { device_fingerprint: fingerprint },
-              { ip_address: ipAddress, device_info: deviceInfo, status: data.status },
-              { upsert: true }
-            );
-          } catch (me) {}
-        }
-
-        // Also sync to local JSON
-        const db = getDb();
-        if (!db.allowed_devices) db.allowed_devices = [];
-        let devIdx = db.allowed_devices.findIndex((d: any) => d.device_fingerprint === fingerprint);
-        if (devIdx >= 0) {
-          db.allowed_devices[devIdx] = { ...db.allowed_devices[devIdx], ip_address: ipAddress, device_info: deviceInfo, status: data.status };
-        } else {
-          db.allowed_devices.push({ device_fingerprint: fingerprint, ip_address: ipAddress, device_info: deviceInfo, status: data.status, createdAt: new Date().toISOString() });
-        }
-        try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8"); } catch (e) {}
-
-        return data;
-      } else {
-        // Not in Supabase. Insert it as pending.
-        const newDev = {
-          device_fingerprint: fingerprint,
-          ip_address: ipAddress,
-          device_info: deviceInfo,
-          status: 'pending'
-        };
-        const { data: inserted, error: insertError } = await supabaseClient
-          .from('allowed_devices')
-          .insert([newDev])
-          .select()
-          .maybeSingle();
-
-        if (insertError) {
-          if (insertError.message && (insertError.message.includes("Could not find the table") || insertError.message.includes("does not exist") || insertError.message.includes("relation"))) {
-            console.warn("[Device Auth] Supabase 'allowed_devices' table does not exist. Disabling Supabase for device auth.");
-            isSupabaseDevicesDisabled = true;
-          } else {
-            console.warn("[Device Auth] Supabase Insert Error:", insertError.message);
-          }
-        } else if (inserted) {
-          // Sync to MongoDB & Local
-          if (mongoose.connection.readyState === 1) {
-            try {
-              await AllowedDevice.findOneAndUpdate(
-                { device_fingerprint: fingerprint },
-                { ip_address: ipAddress, device_info: deviceInfo, status: 'pending' },
-                { upsert: true }
-              );
-            } catch (me) {}
-          }
-          const db = getDb();
-          if (!db.allowed_devices) db.allowed_devices = [];
-          db.allowed_devices.push({ ...newDev, createdAt: new Date().toISOString() });
-          try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8"); } catch (e) {}
-
-          return inserted;
-        }
+        supabaseStatus = data.status;
+        supabaseRecord = data;
       }
     } catch (e: any) {
       console.warn("[Device Auth] Supabase exception during check:", e.message);
     }
   }
 
-  // 2. Fallback to MongoDB
+  // 2. Query MongoDB
+  let mongoStatus: string | null = null;
+  let mongoRecord: any = null;
   if (mongoose.connection.readyState === 1) {
     try {
-      // Use findOneAndUpdate with upsert to prevent E11000 duplicate key error on fast concurrent requests
-      const doc = await AllowedDevice.findOneAndUpdate(
-        { device_fingerprint: fingerprint },
-        { 
-          $setOnInsert: { status: 'pending', createdAt: new Date() },
-          $set: { ip_address: ipAddress, device_info: deviceInfo }
-        },
-        { upsert: true, new: true }
-      );
-      return doc;
-    } catch (err: any) {
-      if (err.code === 11000 || err.message.includes("E11000") || err.message.includes("duplicate key")) {
-        // Safe query fallback if duplicate index collision still occurs in parallel upsert
-        try {
-          const doc = await AllowedDevice.findOne({ device_fingerprint: fingerprint });
-          if (doc) return doc;
-        } catch (e) {}
+      const doc = await AllowedDevice.findOne({ device_fingerprint: fingerprint });
+      if (doc) {
+        mongoStatus = doc.status;
+        mongoRecord = doc;
       }
+    } catch (err: any) {
       console.error("[Device Auth] MongoDB error during check:", err.message);
     }
   }
 
-  // 3. Fallback to Local JSON memoryDb
+  // 3. Query Local JSON
+  let localStatus: string | null = null;
+  let localRecord: any = null;
   const db = getDb();
   if (!db.allowed_devices) {
     db.allowed_devices = [];
   }
-  let localDev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
-  if (!localDev) {
-    localDev = {
+  const localDev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
+  if (localDev) {
+    localStatus = localDev.status;
+    localRecord = localDev;
+  }
+
+  // 4. Resolve Status using weight logic (blocked: 3 > approved: 2 > pending: 1 > none: 0)
+  const getWeight = (status: string | null | undefined) => {
+    if (status === 'blocked') return 3;
+    if (status === 'approved') return 2;
+    if (status === 'pending') return 1;
+    return 0;
+  };
+
+  const sWeight = getWeight(supabaseStatus);
+  const mWeight = getWeight(mongoStatus);
+  const lWeight = getWeight(localStatus);
+
+  const maxWeight = Math.max(sWeight, mWeight, lWeight);
+  let resolvedStatus = 'pending';
+  if (maxWeight === 3) resolvedStatus = 'blocked';
+  else if (maxWeight === 2) resolvedStatus = 'approved';
+  else if (maxWeight === 1) resolvedStatus = 'pending';
+
+  // 5. Apply & Sync changes across all databases
+  if (maxWeight === 0) {
+    // Brand new device: insert as pending in all active databases
+    resolvedStatus = 'pending';
+    
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        const newDev = {
+          device_fingerprint: fingerprint,
+          ip_address: ipAddress,
+          device_info: deviceInfo,
+          status: 'pending'
+        };
+        await supabaseClient.from('allowed_devices').insert([newDev]);
+      } catch (e) {}
+    }
+
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await AllowedDevice.findOneAndUpdate(
+          { device_fingerprint: fingerprint },
+          { ip_address: ipAddress, device_info: deviceInfo, status: 'pending' },
+          { upsert: true }
+        );
+      } catch (e) {}
+    }
+
+    const db2 = getDb();
+    if (!db2.allowed_devices) db2.allowed_devices = [];
+    db2.allowed_devices.push({
       device_fingerprint: fingerprint,
       ip_address: ipAddress,
       device_info: deviceInfo,
       status: 'pending',
       createdAt: new Date().toISOString()
-    };
-    db.allowed_devices.push(localDev);
+    });
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+      fs.writeFileSync(DB_FILE, JSON.stringify(db2, null, 2), "utf-8");
     } catch (e) {}
-  } else if (localDev.ip_address !== ipAddress || localDev.device_info !== deviceInfo) {
-    localDev.ip_address = ipAddress;
-    localDev.device_info = deviceInfo;
-    try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-    } catch (e) {}
+  } else {
+    // Existing device: Sync resolved status, IP address, and Device Info to all active databases
+    
+    // Sync Supabase
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        if (!supabaseRecord || supabaseStatus !== resolvedStatus || supabaseRecord.ip_address !== ipAddress || supabaseRecord.device_info !== deviceInfo) {
+          await supabaseClient
+            .from('allowed_devices')
+            .upsert({
+              device_fingerprint: fingerprint,
+              status: resolvedStatus,
+              ip_address: ipAddress,
+              device_info: deviceInfo
+            });
+        }
+      } catch (e) {}
+    }
+
+    // Sync MongoDB
+    if (mongoose.connection.readyState === 1) {
+      try {
+        if (!mongoRecord || mongoStatus !== resolvedStatus || mongoRecord.ip_address !== ipAddress || mongoRecord.device_info !== deviceInfo) {
+          await AllowedDevice.findOneAndUpdate(
+            { device_fingerprint: fingerprint },
+            { status: resolvedStatus, ip_address: ipAddress, device_info: deviceInfo },
+            { upsert: true }
+          );
+        }
+      } catch (e) {}
+    }
+
+    // Sync Local JSON
+    const db3 = getDb();
+    if (!db3.allowed_devices) db3.allowed_devices = [];
+    let devIdx = db3.allowed_devices.findIndex((d: any) => d.device_fingerprint === fingerprint);
+    if (devIdx >= 0) {
+      const current = db3.allowed_devices[devIdx];
+      if (current.status !== resolvedStatus || current.ip_address !== ipAddress || current.device_info !== deviceInfo) {
+        db3.allowed_devices[devIdx] = {
+          ...current,
+          status: resolvedStatus,
+          ip_address: ipAddress,
+          device_info: deviceInfo
+        };
+        try {
+          fs.writeFileSync(DB_FILE, JSON.stringify(db3, null, 2), "utf-8");
+        } catch (e) {}
+      }
+    } else {
+      db3.allowed_devices.push({
+        device_fingerprint: fingerprint,
+        status: resolvedStatus,
+        ip_address: ipAddress,
+        device_info: deviceInfo,
+        createdAt: new Date().toISOString()
+      });
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(db3, null, 2), "utf-8");
+      } catch (e) {}
+    }
   }
-  return localDev;
+
+  return {
+    device_fingerprint: fingerprint,
+    status: resolvedStatus,
+    ip_address: ipAddress,
+    device_info: deviceInfo
+  };
 }
 
 app.post("/api/device/check", async (req, res) => {
@@ -2022,35 +2058,98 @@ app.post("/api/device/check", async (req, res) => {
 
 app.get("/api/admin/devices", async (req, res) => {
   try {
-    // 1. Try Supabase
+    const devicesMap = new Map<string, any>();
+
+    // Helper to merge device
+    const mergeDevice = (dev: any) => {
+      if (!dev || !dev.device_fingerprint) return;
+      const fp = dev.device_fingerprint;
+      const existing = devicesMap.get(fp);
+
+      const getWeight = (status: string) => {
+        if (status === 'blocked') return 3;
+        if (status === 'approved') return 2;
+        if (status === 'pending') return 1;
+        return 0;
+      };
+
+      if (!existing) {
+        devicesMap.set(fp, {
+          device_fingerprint: fp,
+          ip_address: dev.ip_address || "0.0.0.0",
+          device_info: dev.device_info || "Unknown Device",
+          status: dev.status || "pending",
+          createdAt: dev.createdAt || dev.created_at || new Date().toISOString()
+        });
+      } else {
+        const currentWeight = getWeight(existing.status);
+        const newWeight = getWeight(dev.status);
+        if (newWeight > currentWeight) {
+          existing.status = dev.status;
+        }
+        // Prefer non-empty IP/info
+        if (dev.ip_address && dev.ip_address !== "0.0.0.0" && dev.ip_address !== "127.0.0.1") {
+          existing.ip_address = dev.ip_address;
+        }
+        if (dev.device_info && dev.device_info !== "Unknown Device" && dev.device_info !== "Admin Approved") {
+          existing.device_info = dev.device_info;
+        }
+      }
+    };
+
+    // 1. Local db.json
+    try {
+      const db = getDb();
+      if (db.allowed_devices) {
+        db.allowed_devices.forEach(mergeDevice);
+      }
+    } catch (e) {}
+
+    // 2. MongoDB
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const mongoDevs = await AllowedDevice.find({});
+        mongoDevs.forEach((doc: any) => {
+          mergeDevice({
+            device_fingerprint: doc.device_fingerprint,
+            ip_address: doc.ip_address,
+            device_info: doc.device_info,
+            status: doc.status,
+            createdAt: doc.createdAt
+          });
+        });
+      } catch (e) {}
+    }
+
+    // 3. Supabase
     if (supabaseClient && !isSupabaseDevicesDisabled) {
       try {
         const { data, error } = await supabaseClient
           .from('allowed_devices')
           .select('*');
         if (!error && data) {
-          return res.json({ success: true, devices: data });
-        }
-        if (error) {
+          data.forEach((row: any) => {
+            mergeDevice({
+              device_fingerprint: row.device_fingerprint,
+              ip_address: row.ip_address,
+              device_info: row.device_info,
+              status: row.status,
+              createdAt: row.created_at || row.createdAt
+            });
+          });
+        } else if (error) {
           if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
             isSupabaseDevicesDisabled = true;
           }
-          console.warn("[Device Auth] Supabase admin query failed:", error.message);
         }
       } catch (e) {}
     }
 
-    // 2. Fallback to MongoDB
-    if (mongoose.connection.readyState === 1) {
-      try {
-        const data = await AllowedDevice.find({}).sort({ createdAt: -1 });
-        return res.json({ success: true, devices: data });
-      } catch (e) {}
-    }
+    const mergedDevices = Array.from(devicesMap.values()).sort((a, b) => {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
-    // 3. Fallback to local db.json
-    const db = getDb();
-    return res.json({ success: true, devices: db.allowed_devices || [] });
+    res.json({ success: true, devices: mergedDevices });
   } catch (err: any) {
     console.error("[Device Auth] Admin Devices Get Error:", err);
     res.status(500).json({ error: err.message });
