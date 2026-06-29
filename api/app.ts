@@ -15,6 +15,7 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
 
 let supabaseClient: any = null;
+let isSupabaseDevicesDisabled = false;
 if (supabaseUrl && supabaseAnonKey) {
   try {
     supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
@@ -162,6 +163,15 @@ const appStateSchema = new mongoose.Schema({
   data: { type: mongoose.Schema.Types.Mixed, required: true }
 });
 const AppState = mongoose.model("AppState", appStateSchema);
+
+const allowedDeviceSchema = new mongoose.Schema({
+  device_fingerprint: { type: String, required: true, unique: true },
+  ip_address: { type: String },
+  device_info: { type: String },
+  status: { type: String, default: "pending" },
+  createdAt: { type: Date, default: Date.now }
+});
+const AllowedDevice = mongoose.model("AllowedDevice", allowedDeviceSchema);
 
 // 3. مصفوفة المشاريع الافتراضية الخاصة بك بالكامل دون أي نقص
 const defaultProjects = [
@@ -1842,6 +1852,289 @@ app.get("/api/projects/next-po-number", async (req, res) => {
     res.json({ success: true, nextPoNumber: nextNum });
   } catch (err: any) {
     console.error("Error getting next PO number:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInfo: string) {
+  // 1. Try Supabase first (if not disabled due to missing schema/table)
+  if (supabaseClient && !isSupabaseDevicesDisabled) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('allowed_devices')
+        .select('*')
+        .eq('device_fingerprint', fingerprint)
+        .maybeSingle();
+
+      if (error) {
+        if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation") || error.code === 'PGRST116')) {
+          console.warn("[Device Auth] Supabase 'allowed_devices' table does not exist or has schema issue. Disabling Supabase for device auth.");
+          isSupabaseDevicesDisabled = true;
+        } else {
+          console.warn("[Device Auth] Supabase query error:", error.message);
+        }
+      } else if (data) {
+        // Found in Supabase, update IP/Info if changed
+        if (data.ip_address !== ipAddress || data.device_info !== deviceInfo) {
+          try {
+            await supabaseClient
+              .from('allowed_devices')
+              .update({ ip_address: ipAddress, device_info: deviceInfo })
+              .eq('device_fingerprint', fingerprint);
+          } catch (e) {}
+        }
+        
+        // Let's also sync to local MongoDB if it's running
+        if (mongoose.connection.readyState === 1) {
+          try {
+            await AllowedDevice.findOneAndUpdate(
+              { device_fingerprint: fingerprint },
+              { ip_address: ipAddress, device_info: deviceInfo, status: data.status },
+              { upsert: true }
+            );
+          } catch (me) {}
+        }
+
+        // Also sync to local JSON
+        const db = getDb();
+        if (!db.allowed_devices) db.allowed_devices = [];
+        let devIdx = db.allowed_devices.findIndex((d: any) => d.device_fingerprint === fingerprint);
+        if (devIdx >= 0) {
+          db.allowed_devices[devIdx] = { ...db.allowed_devices[devIdx], ip_address: ipAddress, device_info: deviceInfo, status: data.status };
+        } else {
+          db.allowed_devices.push({ device_fingerprint: fingerprint, ip_address: ipAddress, device_info: deviceInfo, status: data.status, createdAt: new Date().toISOString() });
+        }
+        try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8"); } catch (e) {}
+
+        return data;
+      } else {
+        // Not in Supabase. Insert it as pending.
+        const newDev = {
+          device_fingerprint: fingerprint,
+          ip_address: ipAddress,
+          device_info: deviceInfo,
+          status: 'pending'
+        };
+        const { data: inserted, error: insertError } = await supabaseClient
+          .from('allowed_devices')
+          .insert([newDev])
+          .select()
+          .maybeSingle();
+
+        if (insertError) {
+          if (insertError.message && (insertError.message.includes("Could not find the table") || insertError.message.includes("does not exist") || insertError.message.includes("relation"))) {
+            console.warn("[Device Auth] Supabase 'allowed_devices' table does not exist. Disabling Supabase for device auth.");
+            isSupabaseDevicesDisabled = true;
+          } else {
+            console.warn("[Device Auth] Supabase Insert Error:", insertError.message);
+          }
+        } else if (inserted) {
+          // Sync to MongoDB & Local
+          if (mongoose.connection.readyState === 1) {
+            try {
+              await AllowedDevice.findOneAndUpdate(
+                { device_fingerprint: fingerprint },
+                { ip_address: ipAddress, device_info: deviceInfo, status: 'pending' },
+                { upsert: true }
+              );
+            } catch (me) {}
+          }
+          const db = getDb();
+          if (!db.allowed_devices) db.allowed_devices = [];
+          db.allowed_devices.push({ ...newDev, createdAt: new Date().toISOString() });
+          try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8"); } catch (e) {}
+
+          return inserted;
+        }
+      }
+    } catch (e: any) {
+      console.warn("[Device Auth] Supabase exception during check:", e.message);
+    }
+  }
+
+  // 2. Fallback to MongoDB
+  if (mongoose.connection.readyState === 1) {
+    try {
+      // Use findOneAndUpdate with upsert to prevent E11000 duplicate key error on fast concurrent requests
+      const doc = await AllowedDevice.findOneAndUpdate(
+        { device_fingerprint: fingerprint },
+        { 
+          $setOnInsert: { status: 'pending', createdAt: new Date() },
+          $set: { ip_address: ipAddress, device_info: deviceInfo }
+        },
+        { upsert: true, new: true }
+      );
+      return doc;
+    } catch (err: any) {
+      if (err.code === 11000 || err.message.includes("E11000") || err.message.includes("duplicate key")) {
+        // Safe query fallback if duplicate index collision still occurs in parallel upsert
+        try {
+          const doc = await AllowedDevice.findOne({ device_fingerprint: fingerprint });
+          if (doc) return doc;
+        } catch (e) {}
+      }
+      console.error("[Device Auth] MongoDB error during check:", err.message);
+    }
+  }
+
+  // 3. Fallback to Local JSON memoryDb
+  const db = getDb();
+  if (!db.allowed_devices) {
+    db.allowed_devices = [];
+  }
+  let localDev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
+  if (!localDev) {
+    localDev = {
+      device_fingerprint: fingerprint,
+      ip_address: ipAddress,
+      device_info: deviceInfo,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    db.allowed_devices.push(localDev);
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+    } catch (e) {}
+  } else if (localDev.ip_address !== ipAddress || localDev.device_info !== deviceInfo) {
+    localDev.ip_address = ipAddress;
+    localDev.device_info = deviceInfo;
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+    } catch (e) {}
+  }
+  return localDev;
+}
+
+app.post("/api/device/check", async (req, res) => {
+  try {
+    const { fingerprint, deviceInfo } = req.body;
+    if (!fingerprint) {
+      return res.status(400).json({ error: "بصمة الجهاز مطلوبة" });
+    }
+    const ipAddress = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
+    const device = await getDeviceStatus(fingerprint, ipAddress, deviceInfo || "Unknown Device");
+    res.json({ success: true, device });
+  } catch (err: any) {
+    console.error("[Device Auth] Check Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/devices", async (req, res) => {
+  try {
+    // 1. Try Supabase
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        const { data, error } = await supabaseClient
+          .from('allowed_devices')
+          .select('*');
+        if (!error && data) {
+          return res.json({ success: true, devices: data });
+        }
+        if (error) {
+          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+            isSupabaseDevicesDisabled = true;
+          }
+          console.warn("[Device Auth] Supabase admin query failed:", error.message);
+        }
+      } catch (e) {}
+    }
+
+    // 2. Fallback to MongoDB
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const data = await AllowedDevice.find({}).sort({ createdAt: -1 });
+        return res.json({ success: true, devices: data });
+      } catch (e) {}
+    }
+
+    // 3. Fallback to local db.json
+    const db = getDb();
+    return res.json({ success: true, devices: db.allowed_devices || [] });
+  } catch (err: any) {
+    console.error("[Device Auth] Admin Devices Get Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/devices/update", async (req, res) => {
+  try {
+    const { fingerprint, status } = req.body;
+    if (!fingerprint || !status) {
+      return res.status(400).json({ error: "بيانات ناقصة" });
+    }
+
+    let updated = false;
+
+    // 1. Supabase
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        const { data, error } = await supabaseClient
+          .from('allowed_devices')
+          .update({ status })
+          .eq('device_fingerprint', fingerprint)
+          .select();
+        
+        if (error) {
+          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+            isSupabaseDevicesDisabled = true;
+          }
+          // Try inserting/upserting if update failed or table schema issue wasn't the cause
+          if (!isSupabaseDevicesDisabled) {
+            const { error: upsertError } = await supabaseClient
+              .from('allowed_devices')
+              .upsert({ device_fingerprint: fingerprint, status, ip_address: '0.0.0.0', device_info: 'Admin Approved' });
+            if (!upsertError) updated = true;
+          }
+        } else if (!data || data.length === 0) {
+          // If no row was updated, insert it
+          const { error: upsertError } = await supabaseClient
+            .from('allowed_devices')
+            .upsert({ device_fingerprint: fingerprint, status, ip_address: '0.0.0.0', device_info: 'Admin Approved' });
+          if (!upsertError) updated = true;
+        } else {
+          updated = true;
+        }
+      } catch (e) {}
+    }
+
+    // 2. MongoDB
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await AllowedDevice.findOneAndUpdate(
+          { device_fingerprint: fingerprint },
+          { status },
+          { upsert: true }
+        );
+        updated = true;
+      } catch (e) {}
+    }
+
+    // 3. Local JSON
+    const db = getDb();
+    if (!db.allowed_devices) db.allowed_devices = [];
+    const dev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
+    if (dev) {
+      dev.status = status;
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+      } catch (e) {}
+      updated = true;
+    } else {
+      db.allowed_devices.push({
+        device_fingerprint: fingerprint,
+        status,
+        createdAt: new Date().toISOString()
+      });
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+      } catch (e) {}
+      updated = true;
+    }
+
+    res.json({ success: updated || true });
+  } catch (err: any) {
+    console.error("[Device Auth] Admin Device Update Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
