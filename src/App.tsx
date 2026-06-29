@@ -4879,6 +4879,22 @@ export default function App() {
               نسخ بيانات الجهاز
             </button>
           </div>
+
+          {/* Secure Admin Gate Access Button */}
+          <div className="mt-6 pt-5 border-t border-slate-800/60 w-full text-center">
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', '/admin');
+                }
+                setIsAdminView(true);
+              }}
+              className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold py-3 px-6 rounded-xl border border-sky-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-xs"
+            >
+              <Shield className="w-4 h-4" />
+              الدخول للوحة التحكم والموافقة (للمسؤولين فقط)
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -4908,6 +4924,22 @@ export default function App() {
               <span className="text-xs text-red-500 font-bold">محظور (Blocked)</span>
               <span className="text-xs text-slate-400">حالة الوصول</span>
             </div>
+          </div>
+
+          {/* Secure Admin Gate Access Button */}
+          <div className="w-full mb-6">
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', '/admin');
+                }
+                setIsAdminView(true);
+              }}
+              className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold py-3 px-6 rounded-xl border border-sky-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-xs"
+            >
+              <Shield className="w-4 h-4" />
+              الدخول للوحة التحكم والموافقة (للمسؤولين فقط)
+            </button>
           </div>
 
           <div className="text-xs text-slate-500 font-mono">
