@@ -169,6 +169,7 @@ const allowedDeviceSchema = new mongoose.Schema({
   ip_address: { type: String },
   device_info: { type: String },
   status: { type: String, default: "pending" },
+  role: { type: String, default: "user" },
   createdAt: { type: Date, default: Date.now }
 });
 const AllowedDevice = mongoose.model("AllowedDevice", allowedDeviceSchema);
@@ -1858,6 +1859,7 @@ app.get("/api/projects/next-po-number", async (req, res) => {
 
 async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInfo: string) {
   let supabaseStatus: string | null = null;
+  let supabaseRole: string | null = null;
   let supabaseRecord: any = null;
   
   // 1. Query Supabase
@@ -1878,6 +1880,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
         }
       } else if (data) {
         supabaseStatus = data.status;
+        supabaseRole = data.role || null;
         supabaseRecord = data;
       }
     } catch (e: any) {
@@ -1887,12 +1890,14 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
 
   // 2. Query MongoDB
   let mongoStatus: string | null = null;
+  let mongoRole: string | null = null;
   let mongoRecord: any = null;
   if (mongoose.connection.readyState === 1) {
     try {
       const doc = await AllowedDevice.findOne({ device_fingerprint: fingerprint });
       if (doc) {
         mongoStatus = doc.status;
+        mongoRole = doc.role || null;
         mongoRecord = doc;
       }
     } catch (err: any) {
@@ -1902,6 +1907,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
 
   // 3. Query Local JSON
   let localStatus: string | null = null;
+  let localRole: string | null = null;
   let localRecord: any = null;
   const db = getDb();
   if (!db.allowed_devices) {
@@ -1910,6 +1916,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
   const localDev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
   if (localDev) {
     localStatus = localDev.status;
+    localRole = localDev.role || null;
     localRecord = localDev;
   }
 
@@ -1931,10 +1938,17 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
   else if (maxWeight === 2) resolvedStatus = 'approved';
   else if (maxWeight === 1) resolvedStatus = 'pending';
 
+  // Resolve Role (if any is admin, make role admin)
+  let resolvedRole = 'user';
+  if (supabaseRole === 'admin' || mongoRole === 'admin' || localRole === 'admin') {
+    resolvedRole = 'admin';
+  }
+
   // 5. Apply & Sync changes across all databases
   if (maxWeight === 0) {
     // Brand new device: insert as pending in all active databases
     resolvedStatus = 'pending';
+    resolvedRole = 'user';
     
     if (supabaseClient && !isSupabaseDevicesDisabled) {
       try {
@@ -1942,7 +1956,8 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
           device_fingerprint: fingerprint,
           ip_address: ipAddress,
           device_info: deviceInfo,
-          status: 'pending'
+          status: 'pending',
+          role: 'user'
         };
         await supabaseClient.from('allowed_devices').insert([newDev]);
       } catch (e) {}
@@ -1952,7 +1967,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
       try {
         await AllowedDevice.findOneAndUpdate(
           { device_fingerprint: fingerprint },
-          { ip_address: ipAddress, device_info: deviceInfo, status: 'pending' },
+          { ip_address: ipAddress, device_info: deviceInfo, status: 'pending', role: 'user' },
           { upsert: true }
         );
       } catch (e) {}
@@ -1965,21 +1980,23 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
       ip_address: ipAddress,
       device_info: deviceInfo,
       status: 'pending',
+      role: 'user',
       createdAt: new Date().toISOString()
     });
     saveDb(db2);
   } else {
-    // Existing device: Sync resolved status, IP address, and Device Info to all active databases
+    // Existing device: Sync resolved status, role, IP address, and Device Info to all active databases
     
     // Sync Supabase
     if (supabaseClient && !isSupabaseDevicesDisabled) {
       try {
-        if (!supabaseRecord || supabaseStatus !== resolvedStatus || supabaseRecord.ip_address !== ipAddress || supabaseRecord.device_info !== deviceInfo) {
+        if (!supabaseRecord || supabaseStatus !== resolvedStatus || supabaseRole !== resolvedRole || supabaseRecord.ip_address !== ipAddress || supabaseRecord.device_info !== deviceInfo) {
           await supabaseClient
             .from('allowed_devices')
             .upsert({
               device_fingerprint: fingerprint,
               status: resolvedStatus,
+              role: resolvedRole,
               ip_address: ipAddress,
               device_info: deviceInfo
             });
@@ -1990,10 +2007,10 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
     // Sync MongoDB
     if (mongoose.connection.readyState === 1) {
       try {
-        if (!mongoRecord || mongoStatus !== resolvedStatus || mongoRecord.ip_address !== ipAddress || mongoRecord.device_info !== deviceInfo) {
+        if (!mongoRecord || mongoStatus !== resolvedStatus || mongoRole !== resolvedRole || mongoRecord.ip_address !== ipAddress || mongoRecord.device_info !== deviceInfo) {
           await AllowedDevice.findOneAndUpdate(
             { device_fingerprint: fingerprint },
-            { status: resolvedStatus, ip_address: ipAddress, device_info: deviceInfo },
+            { status: resolvedStatus, role: resolvedRole, ip_address: ipAddress, device_info: deviceInfo },
             { upsert: true }
           );
         }
@@ -2006,10 +2023,11 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
     let devIdx = db3.allowed_devices.findIndex((d: any) => d.device_fingerprint === fingerprint);
     if (devIdx >= 0) {
       const current = db3.allowed_devices[devIdx];
-      if (current.status !== resolvedStatus || current.ip_address !== ipAddress || current.device_info !== deviceInfo) {
+      if (current.status !== resolvedStatus || current.role !== resolvedRole || current.ip_address !== ipAddress || current.device_info !== deviceInfo) {
         db3.allowed_devices[devIdx] = {
           ...current,
           status: resolvedStatus,
+          role: resolvedRole,
           ip_address: ipAddress,
           device_info: deviceInfo
         };
@@ -2019,6 +2037,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
       db3.allowed_devices.push({
         device_fingerprint: fingerprint,
         status: resolvedStatus,
+        role: resolvedRole,
         ip_address: ipAddress,
         device_info: deviceInfo,
         createdAt: new Date().toISOString()
@@ -2030,6 +2049,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
   return {
     device_fingerprint: fingerprint,
     status: resolvedStatus,
+    role: resolvedRole,
     ip_address: ipAddress,
     device_info: deviceInfo
   };
@@ -2073,6 +2093,7 @@ app.get("/api/admin/devices", async (req, res) => {
           ip_address: dev.ip_address || "0.0.0.0",
           device_info: dev.device_info || "Unknown Device",
           status: dev.status || "pending",
+          role: dev.role || "user",
           createdAt: dev.createdAt || dev.created_at || new Date().toISOString()
         });
       } else {
@@ -2080,6 +2101,11 @@ app.get("/api/admin/devices", async (req, res) => {
         const newWeight = getWeight(dev.status);
         if (newWeight > currentWeight) {
           existing.status = dev.status;
+        }
+        if (dev.role === 'admin') {
+          existing.role = 'admin';
+        } else if (!existing.role) {
+          existing.role = dev.role || 'user';
         }
         // Prefer non-empty IP/info
         if (dev.ip_address && dev.ip_address !== "0.0.0.0" && dev.ip_address !== "127.0.0.1") {
@@ -2109,6 +2135,7 @@ app.get("/api/admin/devices", async (req, res) => {
             ip_address: doc.ip_address,
             device_info: doc.device_info,
             status: doc.status,
+            role: doc.role,
             createdAt: doc.createdAt
           });
         });
@@ -2128,6 +2155,7 @@ app.get("/api/admin/devices", async (req, res) => {
               ip_address: row.ip_address,
               device_info: row.device_info,
               status: row.status,
+              role: row.role,
               createdAt: row.created_at || row.createdAt
             });
           });
@@ -2152,19 +2180,22 @@ app.get("/api/admin/devices", async (req, res) => {
 
 app.post("/api/admin/devices/update", async (req, res) => {
   try {
-    const { fingerprint, status } = req.body;
-    if (!fingerprint || !status) {
+    const { fingerprint, status, role } = req.body;
+    if (!fingerprint) {
       return res.status(400).json({ error: "بيانات ناقصة" });
     }
 
     let updated = false;
+    const updatePayload: any = {};
+    if (status !== undefined) updatePayload.status = status;
+    if (role !== undefined) updatePayload.role = role;
 
     // 1. Supabase
     if (supabaseClient && !isSupabaseDevicesDisabled) {
       try {
         const { data, error } = await supabaseClient
           .from('allowed_devices')
-          .update({ status })
+          .update(updatePayload)
           .eq('device_fingerprint', fingerprint)
           .select();
         
@@ -2172,18 +2203,18 @@ app.post("/api/admin/devices/update", async (req, res) => {
           if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
             isSupabaseDevicesDisabled = true;
           }
-          // Try inserting/upserting if update failed or table schema issue wasn't the cause
           if (!isSupabaseDevicesDisabled) {
+            const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
             const { error: upsertError } = await supabaseClient
               .from('allowed_devices')
-              .upsert({ device_fingerprint: fingerprint, status, ip_address: '0.0.0.0', device_info: 'Admin Approved' });
+              .upsert(upsertData);
             if (!upsertError) updated = true;
           }
         } else if (!data || data.length === 0) {
-          // If no row was updated, insert it
+          const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
           const { error: upsertError } = await supabaseClient
             .from('allowed_devices')
-            .upsert({ device_fingerprint: fingerprint, status, ip_address: '0.0.0.0', device_info: 'Admin Approved' });
+            .upsert(upsertData);
           if (!upsertError) updated = true;
         } else {
           updated = true;
@@ -2196,7 +2227,7 @@ app.post("/api/admin/devices/update", async (req, res) => {
       try {
         await AllowedDevice.findOneAndUpdate(
           { device_fingerprint: fingerprint },
-          { status },
+          updatePayload,
           { upsert: true }
         );
         updated = true;
@@ -2208,13 +2239,15 @@ app.post("/api/admin/devices/update", async (req, res) => {
     if (!db.allowed_devices) db.allowed_devices = [];
     const dev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
     if (dev) {
-      dev.status = status;
+      if (status !== undefined) dev.status = status;
+      if (role !== undefined) dev.role = role;
       saveDb(db);
       updated = true;
     } else {
       db.allowed_devices.push({
         device_fingerprint: fingerprint,
-        status,
+        status: status || 'pending',
+        role: role || 'user',
         createdAt: new Date().toISOString()
       });
       saveDb(db);
@@ -2224,6 +2257,52 @@ app.post("/api/admin/devices/update", async (req, res) => {
     res.json({ success: updated || true });
   } catch (err: any) {
     console.error("[Device Auth] Admin Device Update Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/devices/delete", async (req, res) => {
+  try {
+    const { fingerprint } = req.body;
+    if (!fingerprint) {
+      return res.status(400).json({ error: "بيانات ناقصة" });
+    }
+
+    let deleted = false;
+
+    // 1. Supabase
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        const { error } = await supabaseClient
+          .from('allowed_devices')
+          .delete()
+          .eq('device_fingerprint', fingerprint);
+        if (!error) deleted = true;
+      } catch (e) {}
+    }
+
+    // 2. MongoDB
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await AllowedDevice.deleteOne({ device_fingerprint: fingerprint });
+        deleted = true;
+      } catch (e) {}
+    }
+
+    // 3. Local JSON
+    const db = getDb();
+    if (db.allowed_devices) {
+      const initialLength = db.allowed_devices.length;
+      db.allowed_devices = db.allowed_devices.filter((d: any) => d.device_fingerprint !== fingerprint);
+      if (db.allowed_devices.length < initialLength) {
+        saveDb(db);
+        deleted = true;
+      }
+    }
+
+    res.json({ success: deleted || true });
+  } catch (err: any) {
+    console.error("[Device Auth] Admin Device Delete Error:", err);
     res.status(500).json({ error: err.message });
   }
 });

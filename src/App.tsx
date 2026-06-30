@@ -572,23 +572,28 @@ export default function App() {
   const isSecretAdminView = false;
   const [passwordError, setPasswordError] = useState<string>('');
 
-  // Calculate browser fingerprint without external dependencies
+  // Get or generate a permanent, lifetime UUID for this device
   const getDeviceFingerprint = (): string => {
     try {
-      const navigator_info = window.navigator;
-      const screen_info = window.screen;
-      let uid = navigator_info.userAgent;
-      uid += screen_info.height + "x" + screen_info.width + "x" + screen_info.colorDepth;
-      uid += navigator_info.language || "";
-      uid += new Date().getTimezoneOffset();
-      
-      let hash = 0;
-      for (let i = 0; i < uid.length; i++) {
-        const char = uid.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
+      if (typeof window !== 'undefined') {
+        const savedUuid = localStorage.getItem('app_device_uuid');
+        if (savedUuid) {
+          return savedUuid;
+        }
+        // Generate a strong, persistent unique identifier (UUID)
+        let newUuid = '';
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+          newUuid = crypto.randomUUID();
+        } else {
+          // Fallback random high-entropy generator
+          const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+          newUuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+        }
+        const finalFingerprint = 'dev_' + newUuid;
+        localStorage.setItem('app_device_uuid', finalFingerprint);
+        return finalFingerprint;
       }
-      return "dev_" + Math.abs(hash).toString(16);
+      return "dev_unknown";
     } catch (e) {
       return "dev_unknown";
     }
@@ -626,36 +631,43 @@ export default function App() {
         const data = await res.json();
         if (data.success && data.device) {
           const status = data.device.status;
+          const role = data.device.role || 'user';
           
-          if (status === 'approved') {
+          if (role === 'admin') {
+            localStorage.setItem('admin_session', 'true');
             localStorage.setItem('device_status', 'approved');
+            sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
+            setIsAdminAuthenticated(true);
             setDeviceStatus('approved');
-          } else if (status === 'blocked') {
-            localStorage.removeItem('device_status');
+          } else {
+            // Regular user
             localStorage.removeItem('admin_session');
-            sessionStorage.removeItem('admin_authenticated_key');
-            setDeviceStatus('blocked');
-          } else if (status === 'pending') {
-            const isAdminSession = localStorage.getItem('admin_session') === 'true';
-            if (!isAdminSession) {
+            if (status === 'approved') {
+              localStorage.setItem('device_status', 'approved');
+              setDeviceStatus('approved');
+            } else if (status === 'blocked') {
+              localStorage.removeItem('device_status');
+              sessionStorage.removeItem('admin_authenticated_key');
+              setIsAdminAuthenticated(false);
+              setDeviceStatus('blocked');
+            } else {
               localStorage.setItem('device_status', 'pending');
               setDeviceStatus('pending');
-            } else {
-              setDeviceStatus('approved');
             }
           }
         } else {
-          const isAdminSession = localStorage.getItem('admin_session') === 'true';
+          // If response succeeded but structure is unexpected, fall back to localStorage
           const savedStatus = localStorage.getItem('device_status') as any;
-          if (!isAdminSession) {
-            setDeviceStatus(savedStatus || 'pending');
-          } else {
+          const isAdminSession = localStorage.getItem('admin_session') === 'true';
+          if (isAdminSession) {
             setDeviceStatus('approved');
+          } else {
+            setDeviceStatus(savedStatus || 'pending');
           }
         }
       } else {
-        const isAdminSession = localStorage.getItem('admin_session') === 'true';
         const savedStatus = localStorage.getItem('device_status') as any;
+        const isAdminSession = localStorage.getItem('admin_session') === 'true';
         if (isAdminSession) {
           setDeviceStatus('approved');
         } else {
@@ -664,8 +676,8 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error checking device status:', err);
-      const isAdminSession = localStorage.getItem('admin_session') === 'true';
       const savedStatus = localStorage.getItem('device_status') as any;
+      const isAdminSession = localStorage.getItem('admin_session') === 'true';
       if (isAdminSession) {
         setDeviceStatus('approved');
       } else {
@@ -720,6 +732,71 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error updating device status:', err);
+    }
+  };
+
+  const handleUpdateDeviceRole = async (fp: string, role: string) => {
+    try {
+      const res = await fetch('/api/admin/devices/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fingerprint: fp, role })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          // Update locally
+          setAdminDevices(prev => prev.map(d => d.device_fingerprint === fp ? { ...d, role } : d));
+          // If we are updating our own device, check if our role changed
+          if (fp === deviceFingerprint) {
+            if (role === 'admin') {
+              localStorage.setItem('admin_session', 'true');
+              localStorage.setItem('device_status', 'approved');
+              sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
+              setIsAdminAuthenticated(true);
+              setDeviceStatus('approved');
+            } else {
+              localStorage.removeItem('admin_session');
+            }
+          }
+          alert('تم تحديث الرتبة بنجاح!');
+        } else {
+          alert('حدث خطأ أثناء محاولة تحديث الرتبة.');
+        }
+      } else {
+        alert('حدث خطأ في الاتصال بالخادم لتحديث الرتبة.');
+      }
+    } catch (err) {
+      console.error('Error updating device role:', err);
+      alert('حدث خطأ غير متوقع أثناء تحديث الرتبة.');
+    }
+  };
+
+  const handleDeleteDevice = async (fp: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا الجهاز نهائياً من النظام؟')) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/devices/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fingerprint: fp })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          // Remove from local state
+          setAdminDevices(prev => prev.filter(d => d.device_fingerprint !== fp));
+          alert('تم حذف الجهاز بنجاح!');
+        } else {
+          alert('حدث خطأ أثناء محاولة حذف الجهاز.');
+        }
+      } else {
+        alert('حدث خطأ في الاتصال بالخادم لحذف الجهاز.');
+      }
+    } catch (err) {
+      console.error('Error deleting device:', err);
+      alert('حدث خطأ غير متوقع أثناء حذف الجهاز.');
     }
   };
 
@@ -4768,12 +4845,13 @@ export default function App() {
                 <table className="w-full text-right text-sm">
                   <thead>
                     <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 text-xs font-bold uppercase select-none">
-                      <th className="py-4 px-6 text-center">حالة الجهاز</th>
-                      <th className="py-4 px-6 text-center">التحكم والعمليات</th>
+                      <th className="py-4 px-6 text-center">حالة الدخول والتحكم</th>
+                      <th className="py-4 px-6 text-center">الرتبة في النظام</th>
                       <th className="py-4 px-6 text-right">عنوان الـ IP</th>
                       <th className="py-4 px-6 text-right">نوع ونظام الجهاز</th>
                       <th className="py-4 px-6 text-right">بصمة الجهاز (Fingerprint)</th>
                       <th className="py-4 px-6 text-center">#</th>
+                      <th className="py-4 px-6 text-center">إجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/40 bg-slate-900/20">
@@ -4781,54 +4859,50 @@ export default function App() {
                       const isCurrent = device.device_fingerprint === deviceFingerprint;
                       return (
                         <tr key={device.device_fingerprint || index} className={`hover:bg-slate-800/20 transition-all ${isCurrent ? 'bg-sky-500/5' : ''}`}>
-                          {/* Status badge */}
-                          <td className="py-4 px-6 text-center align-middle">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold gap-1.5 ${
-                              device.status === 'approved' 
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                                : device.status === 'blocked'
-                                ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                                : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                            }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${
-                                device.status === 'approved' ? 'bg-emerald-400' :
-                                device.status === 'blocked' ? 'bg-red-400' : 'bg-amber-400'
-                              }`}></span>
-                              {device.status === 'approved' ? 'مسموح' :
-                               device.status === 'blocked' ? 'محظور' : 'في الانتظار'}
-                            </span>
+                          
+                          {/* Access Status Toggle Button */}
+                          <td className="py-4 px-6 align-middle text-center">
+                            <button
+                              onClick={() => handleUpdateDeviceStatus(device.device_fingerprint, device.status === 'approved' ? 'blocked' : 'approved')}
+                              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                                device.status === 'approved' 
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' 
+                                  : device.status === 'blocked'
+                                  ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
+                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                              }`}
+                            >
+                              {device.status === 'approved' && (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>مسموح (Approved) - اضغط للحظر</span>
+                                </>
+                              )}
+                              {device.status === 'blocked' && (
+                                <>
+                                  <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
+                                  <span>محظور (Blocked) - اضغط للسماح</span>
+                                </>
+                              )}
+                              {(device.status === 'pending' || !device.status) && (
+                                <>
+                                  <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>قيد المراجعة (Pending) - اضغط للقبول</span>
+                                </>
+                              )}
+                            </button>
                           </td>
 
-                          {/* Quick Controls */}
+                          {/* Role Select Dropdown */}
                           <td className="py-4 px-6 align-middle text-center">
-                            <div className="flex gap-2 justify-center">
-                              <button
-                                onClick={() => handleUpdateDeviceStatus(device.device_fingerprint, 'approved')}
-                                disabled={device.status === 'approved'}
-                                className="bg-emerald-500/10 hover:bg-emerald-500 hover:text-slate-950 disabled:bg-slate-800/40 disabled:text-slate-600 text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                سماح (Approve)
-                              </button>
-                              
-                              <button
-                                onClick={() => handleUpdateDeviceStatus(device.device_fingerprint, 'blocked')}
-                                disabled={device.status === 'blocked'}
-                                className="bg-red-500/10 hover:bg-red-500 hover:text-slate-950 disabled:bg-slate-800/40 disabled:text-slate-600 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/20 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                              >
-                                <ShieldAlert className="w-3.5 h-3.5" />
-                                حظر (Block)
-                              </button>
-
-                              <button
-                                onClick={() => handleUpdateDeviceStatus(device.device_fingerprint, 'pending')}
-                                disabled={device.status === 'pending' || !device.status}
-                                className="bg-slate-800 hover:bg-slate-700 disabled:text-slate-600 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 text-xs transition-all cursor-pointer flex items-center gap-1.5"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                                تصفير
-                              </button>
-                            </div>
+                            <select
+                              value={device.role || 'user'}
+                              onChange={(e) => handleUpdateDeviceRole(device.device_fingerprint, e.target.value)}
+                              className="bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-sky-500 transition-all cursor-pointer font-bold font-sans text-center min-w-[150px]"
+                            >
+                              <option value="user">👨‍💻 مستخدم عادي POs Only</option>
+                              <option value="admin">👑 مسؤول النظام Admin Panel</option>
+                            </select>
                           </td>
 
                           {/* IP Address */}
@@ -4839,7 +4913,7 @@ export default function App() {
                           {/* Device Info */}
                           <td className="py-4 px-6 align-middle text-right">
                             <span className="text-slate-200 text-sm font-semibold block">{device.device_info || "Generic Browser"}</span>
-                            <span className="text-xs text-slate-500 block font-mono">Client-Agent Detected</span>
+                            {isCurrent && <span className="text-xs text-emerald-400 font-bold font-sans block mt-0.5">★ جهازك الحالي النشط</span>}
                           </td>
 
                           {/* Device Fingerprint */}
@@ -4859,9 +4933,20 @@ export default function App() {
                             </div>
                           </td>
 
-                          {/* Counter */}
+                          {/* Index */}
                           <td className="py-4 px-6 text-center text-slate-500 font-mono align-middle">
                             {index + 1}
+                          </td>
+
+                          {/* Delete Device Action */}
+                          <td className="py-4 px-6 text-center align-middle">
+                            <button
+                              onClick={() => handleDeleteDevice(device.device_fingerprint)}
+                              className="text-red-500 hover:text-red-400 p-2 rounded-xl hover:bg-red-500/10 transition-all cursor-pointer inline-flex items-center justify-center"
+                              title="حذف الجهاز نهائياً"
+                            >
+                              <Trash2 className="w-4.5 h-4.5" />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -4959,7 +5044,8 @@ export default function App() {
             <button
               onClick={() => {
                 if (typeof window !== 'undefined') {
-                  window.location.href = '/admin';
+                  window.history.pushState({}, '', '/admin');
+                  setIsAdminView(true);
                 }
               }}
               className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold py-3 px-6 rounded-xl border border-sky-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-xs"
@@ -5004,7 +5090,8 @@ export default function App() {
             <button
               onClick={() => {
                 if (typeof window !== 'undefined') {
-                  window.location.href = '/admin';
+                  window.history.pushState({}, '', '/admin');
+                  setIsAdminView(true);
                 }
               }}
               className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold py-3 px-6 rounded-xl border border-sky-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-xs"
@@ -5057,6 +5144,20 @@ export default function App() {
             {/* Practical Top Action Panel */}
             <div className="flex flex-wrap justify-center md:justify-end items-center gap-3 w-full md:w-auto">
               
+              {/* Admin Panel Access button for recognized Admins */}
+              {localStorage.getItem('admin_session') === 'true' && (
+                <button
+                  onClick={() => {
+                    window.history.pushState({}, '', '/admin');
+                    setIsAdminView(true);
+                  }}
+                  className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 px-3.5 py-1.5 rounded-xl text-xs font-bold border border-indigo-500/30 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:scale-[1.02]"
+                >
+                  <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>لوحة التحكم 👑</span>
+                </button>
+              )}
+
               {/* Sound alert switcher */}
               <button 
                 onClick={() => setAudioEnabled(!audioEnabled)}
