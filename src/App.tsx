@@ -562,10 +562,18 @@ export default function App() {
   );
 
   const [adminPasswordInput, setAdminPasswordInput] = useState<string>('');
+  
+  const getLoggedInAdminDetails = () => {
+    if (typeof window === 'undefined') return null;
+    const authKey = sessionStorage.getItem('admin_authenticated_key');
+    if (authKey === '016135') return { name: 'المسؤول', role: 'مدير النظام' };
+    return null;
+  };
+
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('admin_authenticated_key') === 'DeltaAdmin2026' ||
-             localStorage.getItem('admin_session') === 'true';
+      const authKey = sessionStorage.getItem('admin_authenticated_key');
+      return authKey === '016135' || localStorage.getItem('admin_session') === 'true';
     }
     return false;
   });
@@ -636,7 +644,7 @@ export default function App() {
           if (role === 'admin') {
             localStorage.setItem('admin_session', 'true');
             localStorage.setItem('device_status', 'approved');
-            sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
+            sessionStorage.setItem('admin_authenticated_key', '016135');
             setIsAdminAuthenticated(true);
             setDeviceStatus('approved');
           } else {
@@ -752,7 +760,7 @@ export default function App() {
             if (role === 'admin') {
               localStorage.setItem('admin_session', 'true');
               localStorage.setItem('device_status', 'approved');
-              sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
+              sessionStorage.setItem('admin_authenticated_key', '016135');
               setIsAdminAuthenticated(true);
               setDeviceStatus('approved');
             } else {
@@ -828,6 +836,30 @@ export default function App() {
     } catch (err) {
       console.error('Error approving current device:', err);
       alert('حدث خطأ أثناء محاولة اعتماد الجهاز.');
+    }
+  };
+
+  const handleRequestReconnect = async () => {
+    try {
+      const res = await fetch('/api/device/request-reconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fingerprint: deviceFingerprint })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          alert('تم إرسال طلب الاتصال بنجاح! سيتم تحويلك لصفحة الانتظار (Pending).');
+          setDeviceStatus('pending');
+        } else {
+          alert('حدث خطأ أثناء محاولة طلب الاتصال.');
+        }
+      } else {
+        alert('حدث خطأ في الاتصال بالخادم لإعادة الطلب.');
+      }
+    } catch (err) {
+      console.error('Error requesting reconnect:', err);
+      alert('حدث خطأ غير متوقع.');
     }
   };
 
@@ -4634,12 +4666,13 @@ export default function App() {
 
             <form onSubmit={(e) => {
               e.preventDefault();
-              if (adminPasswordInput === 'DeltaAdmin2026') {
+              if (adminPasswordInput === '016135') {
                 setIsAdminAuthenticated(true);
-                sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
+                sessionStorage.setItem('admin_authenticated_key', '016135');
                 localStorage.setItem('admin_session', 'true');
                 localStorage.setItem('device_status', 'approved');
                 setPasswordError('');
+                alert('أهلاً بك في لوحة التحكم!');
               } else {
                 setPasswordError('كلمة المرور غير صحيحة، يرجى المحاولة مرة أخرى.');
               }
@@ -4709,6 +4742,11 @@ export default function App() {
                   <span className="text-xs bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2.5 py-1 rounded-full">Secure Admin Mode</span>
                 </h1>
                 <p className="text-xs text-slate-400 mt-1">إدارة الأجهزة وبصمات الـ IP للتحكم في الوصول إلى النظام</p>
+                {getLoggedInAdminDetails() && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold font-sans">
+                    <span>👤 مسؤول نشط (مدير النظام)</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -5083,6 +5121,17 @@ export default function App() {
               <span className="text-xs text-red-500 font-bold">محظور (Blocked)</span>
               <span className="text-xs text-slate-400">حالة الوصول</span>
             </div>
+          </div>
+
+          {/* Request Reconnect Button */}
+          <div className="w-full mb-4">
+            <button
+              onClick={handleRequestReconnect}
+              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black py-3.5 px-6 rounded-xl shadow-lg shadow-emerald-500/15 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-sm"
+            >
+              <RefreshCw className="w-4 h-4" />
+              طلب إعادة اتصال (إرسال طلب جديد للمسؤول)
+            </button>
           </div>
 
           {/* Secure Admin Gate Access Button */}

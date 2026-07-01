@@ -66,6 +66,90 @@ function sanitizeStorageName(name: any): string {
   return sanitized || 'unnamed';
 }
 
+const translationCache: { [key: string]: string } = {};
+const commonTranslations: { [key: string]: string } = {
+  'عام': 'general',
+  'الشركة': 'company',
+  'رواد للتوكيلات التجارية': 'Rowad-Commercial-Agencies',
+  'رواد': 'Rowad',
+  'الرواد': 'Al-Rowad'
+};
+
+async function getEnglishSlug(arabicName: any): Promise<string> {
+  if (!arabicName) return 'unnamed';
+  const trimmed = arabicName.toString().trim();
+  if (!trimmed) return 'unnamed';
+
+  if (commonTranslations[trimmed]) {
+    return commonTranslations[trimmed];
+  }
+
+  if (translationCache[trimmed]) {
+    return translationCache[trimmed];
+  }
+
+  const isEnglishOrNumbers = /^[a-zA-Z0-9\s_\-\.\(\)]+$/.test(trimmed);
+  if (isEnglishOrNumbers) {
+    const slug = trimmed
+      .replace(/[\s_/\-\\–—]+/g, '-')
+      .replace(/[^a-zA-Z0-9\-]/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    translationCache[trimmed] = slug || 'unnamed';
+    return translationCache[trimmed];
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey && ai) {
+    try {
+      console.log(`[Translation] Translating "${trimmed}" to English using Gemini...`);
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: `You are an expert translator translating Arabic company, vendor, and project names to their professional, direct English counterparts.
+Translate the following Arabic name to its proper English business or project name equivalent:
+"${trimmed}"
+
+Guidelines:
+- Do NOT use phonetic transliteration (e.g. do NOT write 'Rwad' for 'رواد'). Instead, write the actual English meaning/equivalent (e.g. 'Rowad Commercial Agencies').
+- Ensure it sounds professional and standard.
+- Return ONLY the clean translated English name. No markdown, no explanations, no punctuation.`,
+      });
+
+      const text = response.text || "";
+      const cleanedTranslation = text.trim();
+      if (cleanedTranslation) {
+        const slug = cleanedTranslation
+          .replace(/[\s_/\-\\–—]+/g, '-')
+          .replace(/[^a-zA-Z0-9\-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-+|-+$/g, '');
+          
+        if (slug) {
+          console.log(`[Translation] Successfully translated "${trimmed}" -> "${slug}"`);
+          translationCache[trimmed] = slug;
+          return slug;
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Translation] Gemini translation failed for "${trimmed}", falling back to transliteration:`, err.message);
+    }
+  }
+
+  const cleanStr = transliteratedArabic(trimmed);
+  let sanitized = cleanStr
+    .replace(/[\s_/\-\\–—]+/g, '-')
+    .replace(/[^a-zA-Z0-9\-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  if (!sanitized) {
+    sanitized = Buffer.from(trimmed).toString('hex').substring(0, 8);
+  }
+  
+  translationCache[trimmed] = sanitized || 'unnamed';
+  return translationCache[trimmed];
+}
+
 function cleanFolderName(name: any): string {
   return sanitizeStorageName(name);
 }
@@ -812,8 +896,8 @@ async function fetchAndSyncDbFromMongo() {
 async function moveProjectStorageFolder(oldProjName: string, newProjName: string) {
   if (!supabaseClient) return;
   const bucketName = "POs Files";
-  const oldProjFolder = sanitizeStorageName(oldProjName);
-  const newProjFolder = sanitizeStorageName(newProjName);
+  const oldProjFolder = await getEnglishSlug(oldProjName);
+  const newProjFolder = await getEnglishSlug(newProjName);
   
   if (oldProjFolder === newProjFolder) return;
   
@@ -897,8 +981,8 @@ async function moveProjectStorageFolder(oldProjName: string, newProjName: string
 async function moveVendorStorageFolder(oldVendorName: string, newVendorName: string) {
   if (!supabaseClient) return;
   const bucketName = "POs Files";
-  const oldVendorFolder = sanitizeStorageName(oldVendorName);
-  const newVendorFolder = sanitizeStorageName(newVendorName);
+  const oldVendorFolder = await getEnglishSlug(oldVendorName);
+  const newVendorFolder = await getEnglishSlug(newVendorName);
   
   if (oldVendorFolder === newVendorFolder) return;
   
@@ -909,7 +993,7 @@ async function moveVendorStorageFolder(oldVendorName: string, newVendorName: str
     const projects = db.projects || [];
     
     for (const projName of projects) {
-      const projFolder = sanitizeStorageName(projName);
+      const projFolder = await getEnglishSlug(projName);
       const oldVendorPath = `${projFolder}/${oldVendorFolder}`;
       const newVendorPath = `${projFolder}/${newVendorFolder}`;
       
@@ -1398,8 +1482,8 @@ async function uploadToSupabaseStorage(
   const poNumber = (poNo && poNo.toString().replace(/[^0-9]/g, '')) || '11'; 
 
   // 2. تنظيف وبناء المجلدات المتداخلة بشكل صارم (Nested Folders Fix)
-  const folderProject = sanitizeStorageName(parsedData.projectName || "عام");
-  const folderVendor = sanitizeStorageName(parsedData.clientName || "Unknown-Client");
+  const folderProject = await getEnglishSlug(parsedData.projectName || "عام");
+  const folderVendor = await getEnglishSlug(parsedData.clientName || "Unknown-Client");
   const finalPdfPath = `${folderProject}/${folderVendor}/PO-${poNumber}-${Date.now()}${fileExtension}`;
   // تأكيد إزالة الـ Leading Slash لتجنب مشاكل الـ Invalid key في Supabase
   const supabasePath = finalPdfPath.replace(/^\/+/, '');
@@ -1858,6 +1942,18 @@ app.get("/api/projects/next-po-number", async (req, res) => {
 });
 
 async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInfo: string) {
+  // 0. Check if this device is deleted (blacklisted)
+  const dbCheck = getDb();
+  if (dbCheck.deleted_devices && dbCheck.deleted_devices.includes(fingerprint)) {
+    return {
+      device_fingerprint: fingerprint,
+      status: 'blocked',
+      role: 'user',
+      ip_address: ipAddress,
+      device_info: deviceInfo
+    };
+  }
+
   let supabaseStatus: string | null = null;
   let supabaseRole: string | null = null;
   let supabaseRecord: any = null;
@@ -1922,6 +2018,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
 
   // 4. Resolve Status using weight logic (blocked: 3 > approved: 2 > pending: 1 > none: 0)
   const getWeight = (status: string | null | undefined) => {
+    if (status === 'deleted') return 4;
     if (status === 'blocked') return 3;
     if (status === 'approved') return 2;
     if (status === 'pending') return 1;
@@ -1934,13 +2031,16 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
 
   const maxWeight = Math.max(sWeight, mWeight, lWeight);
   let resolvedStatus = 'pending';
-  if (maxWeight === 3) resolvedStatus = 'blocked';
+  if (maxWeight === 4) resolvedStatus = 'deleted';
+  else if (maxWeight === 3) resolvedStatus = 'blocked';
   else if (maxWeight === 2) resolvedStatus = 'approved';
   else if (maxWeight === 1) resolvedStatus = 'pending';
 
   // Resolve Role (if any is admin, make role admin)
   let resolvedRole = 'user';
-  if (supabaseRole === 'admin' || mongoRole === 'admin' || localRole === 'admin') {
+  if (resolvedStatus === 'deleted') {
+    resolvedRole = 'user';
+  } else if (supabaseRole === 'admin' || mongoRole === 'admin' || localRole === 'admin') {
     resolvedRole = 'admin';
   }
 
@@ -2048,7 +2148,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
 
   return {
     device_fingerprint: fingerprint,
-    status: resolvedStatus,
+    status: resolvedStatus === 'deleted' ? 'blocked' : resolvedStatus,
     role: resolvedRole,
     ip_address: ipAddress,
     device_info: deviceInfo
@@ -2167,9 +2267,11 @@ app.get("/api/admin/devices", async (req, res) => {
       } catch (e) {}
     }
 
-    const mergedDevices = Array.from(devicesMap.values()).sort((a, b) => {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
+    const mergedDevices = Array.from(devicesMap.values())
+      .filter((d: any) => d.status !== 'deleted')
+      .sort((a, b) => {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
 
     res.json({ success: true, devices: mergedDevices });
   } catch (err: any) {
@@ -2183,6 +2285,16 @@ app.post("/api/admin/devices/update", async (req, res) => {
     const { fingerprint, status, role } = req.body;
     if (!fingerprint) {
       return res.status(400).json({ error: "بيانات ناقصة" });
+    }
+
+    if (role === 'admin') {
+      const dbCheck = getDb();
+      const currentAdmins = (dbCheck.allowed_devices || []).filter(
+        (d: any) => d.role === 'admin' && d.device_fingerprint !== fingerprint && d.status !== 'deleted'
+      );
+      if (currentAdmins.length >= 3) {
+        return res.status(400).json({ error: "عذراً، تم الوصول إلى الحد الأقصى للأجهزة المشرفة (3 أجهزة). يرجى إلغاء إشراف جهاز آخر أولاً." });
+      }
     }
 
     let updated = false;
@@ -2236,6 +2348,9 @@ app.post("/api/admin/devices/update", async (req, res) => {
 
     // 3. Local JSON
     const db = getDb();
+    if (db.deleted_devices) {
+      db.deleted_devices = db.deleted_devices.filter((f: string) => f !== fingerprint);
+    }
     if (!db.allowed_devices) db.allowed_devices = [];
     const dev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
     if (dev) {
@@ -2275,7 +2390,7 @@ app.post("/api/admin/devices/delete", async (req, res) => {
       try {
         const { error } = await supabaseClient
           .from('allowed_devices')
-          .delete()
+          .update({ status: 'deleted', role: 'user' })
           .eq('device_fingerprint', fingerprint);
         if (!error) deleted = true;
       } catch (e) {}
@@ -2284,25 +2399,110 @@ app.post("/api/admin/devices/delete", async (req, res) => {
     // 2. MongoDB
     if (mongoose.connection.readyState === 1) {
       try {
-        await AllowedDevice.deleteOne({ device_fingerprint: fingerprint });
+        await AllowedDevice.findOneAndUpdate(
+          { device_fingerprint: fingerprint },
+          { status: 'deleted', role: 'user' },
+          { upsert: true }
+        );
         deleted = true;
       } catch (e) {}
     }
 
     // 3. Local JSON
     const db = getDb();
+    if (!db.deleted_devices) db.deleted_devices = [];
+    if (!db.deleted_devices.includes(fingerprint)) {
+      db.deleted_devices.push(fingerprint);
+    }
     if (db.allowed_devices) {
-      const initialLength = db.allowed_devices.length;
-      db.allowed_devices = db.allowed_devices.filter((d: any) => d.device_fingerprint !== fingerprint);
-      if (db.allowed_devices.length < initialLength) {
-        saveDb(db);
+      const dev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
+      if (dev) {
+        dev.status = 'deleted';
+        dev.role = 'user';
+        deleted = true;
+      } else {
+        db.allowed_devices.push({
+          device_fingerprint: fingerprint,
+          status: 'deleted',
+          role: 'user',
+          createdAt: new Date().toISOString()
+        });
         deleted = true;
       }
     }
+    saveDb(db);
+    deleted = true;
 
     res.json({ success: deleted || true });
   } catch (err: any) {
     console.error("[Device Auth] Admin Device Delete Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/device/request-reconnect", async (req, res) => {
+  try {
+    const { fingerprint } = req.body;
+    if (!fingerprint) {
+      return res.status(400).json({ error: "بصمة الجهاز مطلوبة" });
+    }
+
+    const ipAddress = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
+
+    // 1. Remove from deleted_devices in local JSON DB
+    const db = getDb();
+    if (db.deleted_devices) {
+      db.deleted_devices = db.deleted_devices.filter((f: string) => f !== fingerprint);
+    }
+
+    // 2. Set status to 'pending' in Local JSON DB
+    if (!db.allowed_devices) db.allowed_devices = [];
+    const dev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
+    if (dev) {
+      dev.status = 'pending';
+      dev.role = 'user';
+      dev.ip_address = ipAddress;
+    } else {
+      db.allowed_devices.push({
+        device_fingerprint: fingerprint,
+        status: 'pending',
+        role: 'user',
+        ip_address: ipAddress,
+        device_info: 'Reconnected Device',
+        createdAt: new Date().toISOString()
+      });
+    }
+    saveDb(db);
+
+    // 3. Update in Supabase
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        await supabaseClient
+          .from('allowed_devices')
+          .upsert({
+            device_fingerprint: fingerprint,
+            status: 'pending',
+            role: 'user',
+            ip_address: ipAddress,
+            device_info: 'Reconnected Device'
+          });
+      } catch (e) {}
+    }
+
+    // 4. Update in MongoDB
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await AllowedDevice.findOneAndUpdate(
+          { device_fingerprint: fingerprint },
+          { status: 'pending', role: 'user', ip_address: ipAddress, device_info: 'Reconnected Device' },
+          { upsert: true }
+        );
+      } catch (e) {}
+    }
+
+    res.json({ success: true, message: "تم إعادة إرسال طلب الاتصال بنجاح" });
+  } catch (err: any) {
+    console.error("[Device Auth] Request Reconnect Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2445,8 +2645,8 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     const poNumber = (poNo && poNo.toString().replace(/[^0-9]/g, '')) || '11'; 
 
     // 2. تنظيف وبناء المجلدات المتداخلة بشكل صارم (Nested Folders Fix)
-    const folderProject = sanitizeStorageName(projectName || "عام");
-    const folderVendor = sanitizeStorageName(vendorName || "Unknown-Client");
+    const folderProject = await getEnglishSlug(projectName || "عام");
+    const folderVendor = await getEnglishSlug(vendorName || "Unknown-Client");
     const finalPdfPath = `${folderProject}/${folderVendor}/PO-${poNumber}-${Date.now()}.pdf`;
     // تأكيد إزالة الـ Leading Slash لتجنب مشاكل الـ Invalid key في Supabase
     const supabasePath = finalPdfPath.replace(/^\/+/, '');
@@ -2709,8 +2909,8 @@ app.post("/api/documents/update", async (req, res) => {
             if (index !== -1) {
               const relativeSupabasePath = decodedPath.substring(index + bucketKeyword.length);
               
-              const newFolderProject = sanitizeStorageName(doc.projectName || "عام");
-              const newFolderVendor = sanitizeStorageName(doc.clientName || "Unknown-Client");
+              const newFolderProject = await getEnglishSlug(doc.projectName || "عام");
+              const newFolderVendor = await getEnglishSlug(doc.clientName || "Unknown-Client");
               
               const fileName = relativeSupabasePath.split("/").pop();
               if (fileName) {
