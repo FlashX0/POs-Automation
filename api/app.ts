@@ -2059,7 +2059,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
           status: 'pending',
           role: 'user'
         };
-        await supabaseClient.from('allowed_devices').insert([newDev]);
+        await supabaseClient.from('allowed_devices').upsert(newDev, { onConflict: 'device_fingerprint' });
       } catch (e) {}
     }
 
@@ -2099,7 +2099,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
               role: resolvedRole,
               ip_address: ipAddress,
               device_info: deviceInfo
-            });
+            }, { onConflict: 'device_fingerprint' });
         }
       } catch (e) {}
     }
@@ -2319,14 +2319,14 @@ app.post("/api/admin/devices/update", async (req, res) => {
             const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
             const { error: upsertError } = await supabaseClient
               .from('allowed_devices')
-              .upsert(upsertData);
+              .upsert(upsertData, { onConflict: 'device_fingerprint' });
             if (!upsertError) updated = true;
           }
         } else if (!data || data.length === 0) {
           const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
           const { error: upsertError } = await supabaseClient
             .from('allowed_devices')
-            .upsert(upsertData);
+            .upsert(upsertData, { onConflict: 'device_fingerprint' });
           if (!upsertError) updated = true;
         } else {
           updated = true;
@@ -2485,7 +2485,7 @@ app.post("/api/device/request-reconnect", async (req, res) => {
             role: 'user',
             ip_address: ipAddress,
             device_info: 'Reconnected Device'
-          });
+          }, { onConflict: 'device_fingerprint' });
       } catch (e) {}
     }
 

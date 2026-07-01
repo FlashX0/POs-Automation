@@ -520,8 +520,45 @@ export default function App() {
     }
     return 'checking';
   });
-  const [deviceFingerprint, setDeviceFingerprint] = useState<string>('');
-  const [deviceInfoState, setDeviceInfoState] = useState<string>('');
+  const [deviceFingerprint, setDeviceFingerprint] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      let deviceId = localStorage.getItem('app_device_uuid');
+      if (!deviceId) {
+        let uuid = '';
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+          uuid = crypto.randomUUID();
+        } else {
+          const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+          uuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+        }
+        deviceId = 'dev_' + uuid;
+        localStorage.setItem('app_device_uuid', deviceId);
+      }
+      return deviceId;
+    }
+    return 'dev_unknown';
+  });
+  const [deviceInfoState, setDeviceInfoState] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ua = navigator.userAgent;
+        let deviceName = "Unknown Device";
+        if (/android/i.test(ua)) {
+          deviceName = "Android Device";
+        } else if (/iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream) {
+          deviceName = "iOS Device";
+        } else if (/Macintosh/i.test(ua)) {
+          deviceName = "macOS";
+        } else if (/Windows/i.test(ua)) {
+          deviceName = "Windows PC";
+        } else if (/Linux/i.test(ua)) {
+          deviceName = "Linux PC";
+        }
+        return deviceName;
+      }
+    } catch (e) {}
+    return "Device";
+  });
   const [adminDevices, setAdminDevices] = useState<any[]>([]);
   const [adminLoading, setAdminLoading] = useState<boolean>(false);
   const [isAdminView, setIsAdminView] = useState<boolean>(() => {
@@ -582,26 +619,21 @@ export default function App() {
 
   // Get or generate a permanent, lifetime UUID for this device
   const getDeviceFingerprint = (): string => {
+    if (typeof window === 'undefined') return 'dev_unknown';
     try {
-      if (typeof window !== 'undefined') {
-        const savedUuid = localStorage.getItem('app_device_uuid');
-        if (savedUuid) {
-          return savedUuid;
-        }
-        // Generate a strong, persistent unique identifier (UUID)
-        let newUuid = '';
+      let deviceId = localStorage.getItem('app_device_uuid');
+      if (!deviceId) {
+        let uuid = '';
         if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-          newUuid = crypto.randomUUID();
+          uuid = crypto.randomUUID();
         } else {
-          // Fallback random high-entropy generator
           const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
-          newUuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+          uuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
         }
-        const finalFingerprint = 'dev_' + newUuid;
-        localStorage.setItem('app_device_uuid', finalFingerprint);
-        return finalFingerprint;
+        deviceId = 'dev_' + uuid;
+        localStorage.setItem('app_device_uuid', deviceId);
       }
-      return "dev_unknown";
+      return deviceId;
     } catch (e) {
       return "dev_unknown";
     }
