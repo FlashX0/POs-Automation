@@ -1963,8 +1963,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
 
       if (error) {
         if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation") || error.code === 'PGRST116')) {
-          console.warn("[Device Auth] Supabase 'allowed_devices' table does not exist or has schema issue. Disabling Supabase for device auth.");
-          isSupabaseDevicesDisabled = true;
+          console.warn("[Device Auth] Supabase 'allowed_devices' table does not exist or has schema issue.");
         } else {
           console.warn("[Device Auth] Supabase query error:", error.message);
         }
@@ -2362,7 +2361,7 @@ app.get("/api/admin/devices", async (req, res) => {
           });
         } else if (error) {
           if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
-            isSupabaseDevicesDisabled = true;
+            console.warn("[Device Auth] Supabase table error in listing devices");
           }
         }
       } catch (e) {}
@@ -2437,15 +2436,13 @@ app.post("/api/admin/devices/update", async (req, res) => {
 
         if (error) {
           if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
-            isSupabaseDevicesDisabled = true;
+            console.warn("[Device Auth] Supabase table error in update");
           }
-          if (!isSupabaseDevicesDisabled) {
-            const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
-            const { error: upsertError } = await supabaseClient
-              .from('allowed_devices')
-              .upsert(upsertData, { onConflict: 'device_fingerprint' });
-            if (!upsertError) updated = true;
-          }
+          const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
+          const { error: upsertError } = await supabaseClient
+            .from('allowed_devices')
+            .upsert(upsertData, { onConflict: 'device_fingerprint' });
+          if (!upsertError) updated = true;
         } else if (!data || data.length === 0) {
           const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
           const { error: upsertError } = await supabaseClient

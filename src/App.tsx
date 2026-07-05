@@ -815,10 +815,19 @@ export default function App() {
               localStorage.setItem('device_status', status);
             }
           }
+          alert('تم تحديث حالة الجهاز بنجاح!');
+          // Re-fetch all device and auth info from server immediately
+          fetchAdminDevices();
+          checkDeviceStatus(deviceFingerprint, deviceInfoState);
+        } else {
+          alert('فشل تحديث حالة الجهاز.');
         }
+      } else {
+        alert('حدث خطأ في الاتصال بالسيرفر لتحديث الحالة.');
       }
     } catch (err) {
       console.error('Error updating device status:', err);
+      alert('حدث خطأ غير متوقع أثناء تحديث الحالة.');
     }
   };
 
@@ -847,6 +856,9 @@ export default function App() {
             }
           }
           alert('تم تحديث الرتبة بنجاح!');
+          // Re-fetch all device and auth info from server immediately
+          fetchAdminDevices();
+          checkDeviceStatus(deviceFingerprint, deviceInfoState);
         } else {
           alert('حدث خطأ أثناء محاولة تحديث الرتبة.');
         }
@@ -872,8 +884,9 @@ export default function App() {
         if (data.success) {
           // Update locally
           setAdminDevices(prev => prev.map(d => d.device_fingerprint === fp ? { ...d, nickname, device_name: nickname } : d));
-          // Refresh device list from server immediately
+          // Refresh device list and auth state from server immediately
           fetchAdminDevices();
+          checkDeviceStatus(deviceFingerprint, deviceInfoState);
           alert('تم حفظ اسم الجهاز المخصص بنجاح!');
         } else {
           alert('فشل حفظ الاسم المخصص.');
