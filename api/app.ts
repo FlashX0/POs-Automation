@@ -1942,18 +1942,6 @@ app.get("/api/projects/next-po-number", async (req, res) => {
 });
 
 async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInfo: string) {
-  // 0. Check if this device is deleted (blacklisted)
-  const dbCheck = getDb();
-  if (dbCheck.deleted_devices && dbCheck.deleted_devices.includes(fingerprint)) {
-    return {
-      device_fingerprint: fingerprint,
-      status: 'blocked',
-      role: 'user',
-      ip_address: ipAddress,
-      device_info: deviceInfo
-    };
-  }
-
   let supabaseStatus: string | null = null;
   let supabaseRole: string | null = null;
   let supabaseRecord: any = null;
@@ -2181,6 +2169,7 @@ app.get("/api/admin/devices", async (req, res) => {
       const existing = devicesMap.get(fp);
 
       const getWeight = (status: string) => {
+        if (status === 'deleted') return 4;
         if (status === 'blocked') return 3;
         if (status === 'approved') return 2;
         if (status === 'pending') return 1;
@@ -2385,55 +2374,45 @@ app.post("/api/admin/devices/delete", async (req, res) => {
 
     let deleted = false;
 
-    // 1. Supabase
+    // 1. Supabase - Hard delete from DB table
     if (supabaseClient && !isSupabaseDevicesDisabled) {
       try {
         const { error } = await supabaseClient
           .from('allowed_devices')
-          .update({ status: 'deleted', role: 'user' })
+          .delete()
           .eq('device_fingerprint', fingerprint);
         if (!error) deleted = true;
-      } catch (e) {}
-    }
-
-    // 2. MongoDB
-    if (mongoose.connection.readyState === 1) {
-      try {
-        await AllowedDevice.findOneAndUpdate(
-          { device_fingerprint: fingerprint },
-          { status: 'deleted', role: 'user' },
-          { upsert: true }
-        );
-        deleted = true;
-      } catch (e) {}
-    }
-
-    // 3. Local JSON
-    const db = getDb();
-    if (!db.deleted_devices) db.deleted_devices = [];
-    if (!db.deleted_devices.includes(fingerprint)) {
-      db.deleted_devices.push(fingerprint);
-    }
-    if (db.allowed_devices) {
-      const dev = db.allowed_devices.find((d: any) => d.device_fingerprint === fingerprint);
-      if (dev) {
-        dev.status = 'deleted';
-        dev.role = 'user';
-        deleted = true;
-      } else {
-        db.allowed_devices.push({
-          device_fingerprint: fingerprint,
-          status: 'deleted',
-          role: 'user',
-          createdAt: new Date().toISOString()
-        });
-        deleted = true;
+      } catch (e) {
+        console.error("[Device Auth] Supabase delete error:", e);
       }
     }
-    saveDb(db);
-    deleted = true;
 
-    res.json({ success: deleted || true });
+    // 2. MongoDB - Hard delete document
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await AllowedDevice.deleteOne({ device_fingerprint: fingerprint });
+        deleted = true;
+      } catch (e) {
+        console.error("[Device Auth] MongoDB delete error:", e);
+      }
+    }
+
+    // 3. Local JSON - Complete removal from array
+    try {
+      const db = getDb();
+      if (db.allowed_devices) {
+        db.allowed_devices = db.allowed_devices.filter((d: any) => d.device_fingerprint !== fingerprint);
+      }
+      if (db.deleted_devices) {
+        db.deleted_devices = db.deleted_devices.filter((f: string) => f !== fingerprint);
+      }
+      saveDb(db);
+      deleted = true;
+    } catch (e) {
+      console.error("[Device Auth] Local JSON DB delete error:", e);
+    }
+
+    res.json({ success: true, message: "تم حذف الجهاز بنجاح من كافة قواعد البيانات" });
   } catch (err: any) {
     console.error("[Device Auth] Admin Device Delete Error:", err);
     res.status(500).json({ error: err.message });

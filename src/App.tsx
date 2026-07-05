@@ -379,6 +379,73 @@ const sanitizeAndExtractBrands = (docs: ProcessedDocument[]): ProcessedDocument[
   });
 };
 
+const getCookie = (name: string): string | null => {
+  if (typeof document === 'undefined') return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) {
+    const part = parts.pop();
+    if (part) return part.split(';').shift() || null;
+  }
+  return null;
+};
+
+const setCookie = (name: string, value: string, days: number = 365) => {
+  if (typeof document === 'undefined') return;
+  const maxAge = days * 24 * 60 * 60;
+  // SameSite=None; Secure is required inside iframes
+  document.cookie = `${name}=${value}; max-age=${maxAge}; path=/; SameSite=None; Secure`;
+};
+
+const getOrGenerateDeviceFingerprint = (): string => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return 'dev_unknown';
+  }
+  try {
+    // 1. Try reading from persistent cookie first
+    let deviceId = getCookie('app_device_uuid');
+    
+    // 2. Try reading from localStorage as a fallback
+    let localDeviceId = null;
+    try {
+      localDeviceId = localStorage.getItem('app_device_uuid');
+    } catch (e) {}
+
+    // 3. Resolve deviceId
+    if (!deviceId && localDeviceId) {
+      deviceId = localDeviceId;
+      // Sync to cookie
+      setCookie('app_device_uuid', deviceId);
+    } else if (deviceId && !localDeviceId) {
+      // Sync to localStorage
+      try {
+        localStorage.setItem('app_device_uuid', deviceId);
+      } catch (e) {}
+    } else if (!deviceId && !localDeviceId) {
+      // Generate a permanent lifetime UUID for this device
+      let uuid = '';
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        uuid = crypto.randomUUID();
+      } else {
+        const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+        uuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+      }
+      deviceId = 'dev_' + uuid;
+      
+      // Save to both
+      setCookie('app_device_uuid', deviceId);
+      try {
+        localStorage.setItem('app_device_uuid', deviceId);
+      } catch (e) {}
+    }
+
+    return deviceId || 'dev_unknown';
+  } catch (err) {
+    console.error('Error in getOrGenerateDeviceFingerprint:', err);
+    return 'dev_unknown';
+  }
+};
+
 export default function App() {
   const [rawDocuments, setRawDocuments] = useState<ProcessedDocument[]>([]);
   const setDocuments = useCallback((val: ProcessedDocument[] | ((prev: ProcessedDocument[]) => ProcessedDocument[])) => {
@@ -521,22 +588,7 @@ export default function App() {
     return 'checking';
   });
   const [deviceFingerprint, setDeviceFingerprint] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      let deviceId = localStorage.getItem('app_device_uuid');
-      if (!deviceId) {
-        let uuid = '';
-        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-          uuid = crypto.randomUUID();
-        } else {
-          const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
-          uuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
-        }
-        deviceId = 'dev_' + uuid;
-        localStorage.setItem('app_device_uuid', deviceId);
-      }
-      return deviceId;
-    }
-    return 'dev_unknown';
+    return getOrGenerateDeviceFingerprint();
   });
   const [deviceInfoState, setDeviceInfoState] = useState<string>(() => {
     try {
@@ -619,24 +671,7 @@ export default function App() {
 
   // Get or generate a permanent, lifetime UUID for this device
   const getDeviceFingerprint = (): string => {
-    if (typeof window === 'undefined') return 'dev_unknown';
-    try {
-      let deviceId = localStorage.getItem('app_device_uuid');
-      if (!deviceId) {
-        let uuid = '';
-        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-          uuid = crypto.randomUUID();
-        } else {
-          const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
-          uuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
-        }
-        deviceId = 'dev_' + uuid;
-        localStorage.setItem('app_device_uuid', deviceId);
-      }
-      return deviceId;
-    } catch (e) {
-      return "dev_unknown";
-    }
+    return getOrGenerateDeviceFingerprint();
   };
 
   const getDeviceInfo = (): string => {
