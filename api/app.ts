@@ -473,6 +473,44 @@ mongoose.connection.once("open", async () => {
     console.error("Error executing custom clean-up & seed script on MongoDB Atlas:", err.message);
   }
 
+  // 4. One-time security reset: force logout of all devices on startup to satisfy request
+  try {
+    console.log("[Security Startup] Resetting all devices to 'pending' and 'user' to force them to log in again.");
+    // 1. Local JSON DB
+    const db = getDb();
+    if (db.allowed_devices && Array.isArray(db.allowed_devices)) {
+      db.allowed_devices = db.allowed_devices.map((d: any) => ({
+        ...d,
+        status: 'pending',
+        role: 'user'
+      }));
+      saveDb(db);
+    }
+
+    // 2. MongoDB
+    await AllowedDevice.updateMany({}, { status: 'pending', role: 'user' });
+
+    // 3. Supabase
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        const { data } = await supabaseClient.from('allowed_devices').select('device_fingerprint');
+        if (data && data.length > 0) {
+          for (const dev of data) {
+            await supabaseClient
+              .from('allowed_devices')
+              .update({ status: 'pending', role: 'user' })
+              .eq('device_fingerprint', dev.device_fingerprint);
+          }
+        }
+      } catch (ex) {
+        console.error("Supabase device reset error on startup:", ex);
+      }
+    }
+    console.log("[Security Startup] All devices successfully reset to pending.");
+  } catch (err: any) {
+    console.error("[Security Startup] Error during device status reset:", err.message);
+  }
+
   await fetchAndSyncDbFromMongo();
   try {
     const db = getDb();
@@ -2058,92 +2096,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
   let matchedRecord: any = null;
 
   if (maxWeight === 0) {
-    // No identifier exists in database for this fingerprint.
-    // Look up an existing active device with same IP and device info.
-    // 1. Check Supabase
-    if (supabaseClient && !isSupabaseDevicesDisabled) {
-      try {
-        const { data, error } = await supabaseClient
-          .from('allowed_devices')
-          .select('*')
-          .eq('ip_address', ipAddress)
-          .eq('device_info', deviceInfo);
-        
-        if (error) {
-          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
-            isSupabaseDevicesDisabled = true;
-          }
-        } else if (data && data.length > 0) {
-          // Sort by weight descending, picking the highest status first (excluding deleted)
-          const activeRecords = data.filter((d: any) => d.status !== 'deleted');
-          if (activeRecords.length > 0) {
-            activeRecords.sort((a: any, b: any) => getWeight(b.status) - getWeight(a.status));
-            matchedRecord = activeRecords[0];
-            matchedFingerprint = matchedRecord.device_fingerprint;
-          }
-        }
-      } catch (e) {
-        // Handled silently
-      }
-    }
-
-    // 2. Check MongoDB if not found in Supabase
-    if (!matchedFingerprint && mongoose.connection.readyState === 1) {
-      try {
-        const docs = await AllowedDevice.find({ ip_address: ipAddress, device_info: deviceInfo });
-        if (docs && docs.length > 0) {
-          const activeDocs = docs.filter((d: any) => d.status !== 'deleted');
-          if (activeDocs.length > 0) {
-            activeDocs.sort((a: any, b: any) => getWeight(b.status) - getWeight(a.status));
-            matchedRecord = activeDocs[0];
-            matchedFingerprint = matchedRecord.device_fingerprint;
-          }
-        }
-      } catch (e) {
-        console.warn("[Device Auth] Match search in MongoDB failed:", e);
-      }
-    }
-
-    // 3. Check Local JSON if not found in either
-    if (!matchedFingerprint) {
-      const dbSearch = getDb();
-      if (dbSearch.allowed_devices && Array.isArray(dbSearch.allowed_devices)) {
-        const localMatches = dbSearch.allowed_devices.filter((d: any) => d.ip_address === ipAddress && d.device_info === deviceInfo && d.status !== 'deleted');
-        if (localMatches.length > 0) {
-          localMatches.sort((a: any, b: any) => getWeight(b.status) - getWeight(a.status));
-          matchedRecord = localMatches[0];
-          matchedFingerprint = matchedRecord.device_fingerprint;
-        }
-      }
-    }
-
-    if (matchedFingerprint) {
-      console.log(`[Device Auth] Adopting existing device fingerprint: ${matchedFingerprint} for IP: ${ipAddress}, Info: ${deviceInfo}`);
-      // Adopt this old fingerprint
-      fingerprint = matchedFingerprint;
-      
-      // Inherit its values
-      if (matchedRecord) {
-        if (matchedRecord.status) {
-          if (matchedRecord.status === 'deleted') {
-            supabaseStatus = 'deleted';
-          } else {
-            supabaseStatus = matchedRecord.status;
-          }
-        }
-        if (matchedRecord.role) supabaseRole = matchedRecord.role;
-        mongoStatus = matchedRecord.status || null;
-        mongoRole = matchedRecord.role || null;
-        localStatus = matchedRecord.status || null;
-        localRole = matchedRecord.role || null;
-      }
-      
-      // Update weights and recalculate maxWeight
-      sWeight = getWeight(supabaseStatus);
-      mWeight = getWeight(mongoStatus);
-      lWeight = getWeight(localStatus);
-      maxWeight = Math.max(sWeight, mWeight, lWeight);
-    }
+    // No IP-based automatic device adoption as requested. Each device fingerprint (UUID) is checked strictly independently.
   }
 
   // Now resolve the status and role
@@ -2653,6 +2606,59 @@ app.post("/api/admin/devices/delete", async (req, res) => {
     res.json({ success: true, message: "تم حذف الجهاز بنجاح من كافة قواعد البيانات" });
   } catch (err: any) {
     console.error("[Device Auth] Admin Device Delete Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/devices/logout-all", async (req, res) => {
+  try {
+    const { fingerprint } = req.body;
+    
+    // 1. Local JSON DB
+    const db = getDb();
+    if (db.allowed_devices && Array.isArray(db.allowed_devices)) {
+      db.allowed_devices = db.allowed_devices.map((d: any) => {
+        if (fingerprint && d.device_fingerprint === fingerprint) {
+          return d;
+        }
+        return {
+          ...d,
+          status: 'pending',
+          role: 'user'
+        };
+      });
+      saveDb(db);
+    }
+
+    // 2. MongoDB
+    if (mongoose.connection.readyState === 1) {
+      const query = fingerprint ? { device_fingerprint: { $ne: fingerprint } } : {};
+      await AllowedDevice.updateMany(query, { status: 'pending', role: 'user' });
+    }
+
+    // 3. Supabase
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        const { data, error } = await supabaseClient.from('allowed_devices').select('device_fingerprint');
+        if (data && data.length > 0) {
+          for (const dev of data) {
+            if (fingerprint && dev.device_fingerprint === fingerprint) {
+              continue;
+            }
+            await supabaseClient
+              .from('allowed_devices')
+              .update({ status: 'pending', role: 'user' })
+              .eq('device_fingerprint', dev.device_fingerprint);
+          }
+        }
+      } catch (e) {
+        console.error("Supabase mass update error:", e);
+      }
+    }
+
+    res.json({ success: true, message: "تم تسجيل خروج وإلغاء صلاحية جميع الأجهزة الأخرى بنجاح!" });
+  } catch (err: any) {
+    console.error("[Device Auth] Admin Devices Logout-All Error:", err);
     res.status(500).json({ error: err.message });
   }
 });

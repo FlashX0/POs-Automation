@@ -588,6 +588,13 @@ export default function App() {
     }
     return 'checking';
   });
+  const [deviceRole, setDeviceRole] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const savedAdmin = localStorage.getItem('admin_session');
+      if (savedAdmin === 'true') return 'admin';
+    }
+    return 'user';
+  });
   const [deviceFingerprint, setDeviceFingerprint] = useState<string>(() => {
     return getOrGenerateDeviceFingerprint();
   });
@@ -729,6 +736,7 @@ export default function App() {
           const status = data.device.status;
           const role = data.device.role || 'user';
           const isDeleted = !!data.device.isDeleted || status === 'deleted';
+          setDeviceRole(role);
           
           if (isDeleted) {
             console.warn("Device was deleted from the live database! Clearing local state immediately.");
@@ -742,6 +750,7 @@ export default function App() {
             sessionStorage.removeItem('admin_authenticated_key');
             setIsAdminAuthenticated(false);
             setDeviceStatus('pending');
+            setDeviceRole('user');
 
             // Force generate a clean new anonymous device fingerprint
             let uuid = '';
@@ -768,6 +777,7 @@ export default function App() {
             sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
             setIsAdminAuthenticated(true);
             setDeviceStatus('approved');
+            setDeviceRole('admin');
           } else {
             const isSessionMasterAdmin = sessionStorage.getItem('admin_authenticated_key') === 'DeltaAdmin2026';
             if (isSessionMasterAdmin) {
@@ -775,11 +785,13 @@ export default function App() {
               localStorage.setItem('device_status', 'approved');
               setIsAdminAuthenticated(true);
               setDeviceStatus('approved');
+              setDeviceRole('admin');
             } else {
               // Regular user
               localStorage.removeItem('admin_session');
               sessionStorage.removeItem('admin_authenticated_key');
               setIsAdminAuthenticated(false);
+              setDeviceRole(role);
               
               if (status === 'approved') {
                 localStorage.setItem('device_status', 'approved');
@@ -799,8 +811,10 @@ export default function App() {
           const isAdminSession = localStorage.getItem('admin_session') === 'true';
           if (isAdminSession) {
             setDeviceStatus('approved');
+            setDeviceRole('admin');
           } else {
             setDeviceStatus(savedStatus || 'pending');
+            setDeviceRole('user');
           }
         }
       } else {
@@ -808,8 +822,10 @@ export default function App() {
         const isAdminSession = localStorage.getItem('admin_session') === 'true';
         if (isAdminSession) {
           setDeviceStatus('approved');
+          setDeviceRole('admin');
         } else {
           setDeviceStatus(savedStatus || 'approved');
+          setDeviceRole('user');
         }
       }
     } catch (err) {
@@ -818,8 +834,10 @@ export default function App() {
       const isAdminSession = localStorage.getItem('admin_session') === 'true';
       if (isAdminSession) {
         setDeviceStatus('approved');
+        setDeviceRole('admin');
       } else {
         setDeviceStatus(savedStatus || 'approved');
+        setDeviceRole('user');
       }
     }
   };
@@ -978,6 +996,33 @@ export default function App() {
     } catch (err) {
       console.error('Error deleting device:', err);
       alert('حدث خطأ غير متوقع أثناء حذف الجهاز.');
+    }
+  };
+
+  const handleLogoutAllDevices = async () => {
+    const confirmLogout = window.confirm("هل أنت متأكد من رغبتك في تسجيل خروج وإلغاء صلاحية كافة الأجهزة الأخرى؟ سيتعين على الجميع طلب الدخول وإدخل كلمة سر المدير مجدداً للوصول.");
+    if (!confirmLogout) return;
+
+    try {
+      const res = await fetch('/api/admin/devices/logout-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fingerprint: deviceFingerprint })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          alert('تم بنجاح تسجيل خروج وإلغاء تفعيل جميع الأجهزة الأخرى في النظام!');
+          fetchAdminDevices();
+        } else {
+          alert('حدث خطأ: ' + (data.error || 'غير معروف'));
+        }
+      } else {
+        alert('فشل الاتصال بالخادم لتسجيل خروج الأجهزة.');
+      }
+    } catch (err) {
+      console.error('Error logging out all devices:', err);
+      alert('حدث خطأ غير متوقع.');
     }
   };
 
@@ -4855,6 +4900,52 @@ export default function App() {
   }
 
   if (isAdminView || isUrlAdmin) {
+    if (isAdminAuthenticated) {
+      if (deviceStatus === 'checking') {
+        return (
+          <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right animate-none" dir="rtl">
+            <div className="max-w-md w-full bg-slate-900/40 border border-slate-800 rounded-3xl p-8 backdrop-blur-md shadow-2xl relative text-center">
+              <Loader2 className="w-12 h-12 text-amber-500 animate-spin mx-auto mb-4" />
+              <h3 className="text-lg font-black text-white mb-2">جاري التحقق من الصلاحيات الأمنية الحية...</h3>
+              <p className="text-slate-400 text-sm">يرجى الانتظار، يتم فحص حالة ورتبة جهازك حالياً من قاعدة البيانات.</p>
+            </div>
+          </div>
+        );
+      }
+
+      if (deviceStatus !== 'approved' || deviceRole !== 'admin') {
+        // Strict role guard: they are not approved or they are not admin in database!
+        localStorage.removeItem('admin_session');
+        sessionStorage.removeItem('admin_authenticated_key');
+        
+        return (
+          <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right animate-none" dir="rtl">
+            <div className="max-w-md w-full bg-red-950/20 border border-red-500/20 rounded-3xl p-8 backdrop-blur-md shadow-2xl relative text-center">
+              <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-400 mx-auto mb-4 border border-red-500/20 shadow-md">
+                <ShieldAlert className="w-8 h-8 text-red-400 animate-bounce" />
+              </div>
+              <h2 className="text-2xl font-black text-red-500 mb-2 font-sans tracking-tight">غير مصرح بالوصول (Strict Role Guard) ⚠️</h2>
+              <p className="text-slate-400 text-sm leading-relaxed mb-6">
+                عذراً، نظام الحماية الصارم يمنع هذا الجهاز من الدخول. رتبتك الحالية في قاعدة البيانات هي <span className="text-amber-400 font-bold">{deviceRole === 'user' ? 'مستخدم عادي' : deviceRole || 'مجهول'}</span> وحالة جهازك <span className="text-amber-400 font-bold">{deviceStatus}</span>.
+                <br />
+                يسمح فقط لأجهزة الـ <span className="text-emerald-400 font-bold">Admin Approved</span> برؤية أو رندرة لوحة التحكم.
+              </p>
+              <button
+                onClick={() => {
+                  setIsAdminAuthenticated(false);
+                  setIsAdminView(false);
+                  window.location.href = '/';
+                }}
+                className="w-full bg-red-600 hover:bg-red-500 text-white font-black py-3.5 px-6 rounded-xl transition-all cursor-pointer text-sm shadow-lg shadow-red-500/10"
+              >
+                الخروج والعودة للموقع الرئيسي
+              </button>
+            </div>
+          </div>
+        );
+      }
+    }
+
     if (!isAdminAuthenticated) {
       return (
         <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right" dir="rtl">
@@ -5020,6 +5111,14 @@ export default function App() {
               >
                 <Key className="w-4 h-4" />
                 تغيير كلمة المرور
+              </button>
+
+              <button
+                onClick={handleLogoutAllDevices}
+                className="bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 px-5 rounded-xl shadow-lg shadow-red-500/15 transition-all text-sm flex items-center gap-2 cursor-pointer"
+              >
+                <ShieldAlert className="w-4 h-4 text-white animate-pulse" />
+                تسجيل خروج كافة الأجهزة الأخرى ⚠️
               </button>
             </div>
           </div>
