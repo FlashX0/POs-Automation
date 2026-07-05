@@ -1963,9 +1963,10 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
 
       if (error) {
         if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation") || error.code === 'PGRST116')) {
-          console.warn("[Device Auth] Supabase 'allowed_devices' table does not exist or has schema issue.");
+          isSupabaseDevicesDisabled = true;
+          console.log("[Device Auth] Supabase 'allowed_devices' table is missing. Gracefully falling back to MongoDB/Local DB.");
         } else {
-          console.warn("[Device Auth] Supabase query error:", error.message);
+          console.log("[Device Auth] Supabase check status query error:", error.message);
         }
       } else if (data) {
         supabaseStatus = data.status;
@@ -1973,7 +1974,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
         supabaseRecord = data;
       }
     } catch (e: any) {
-      console.warn("[Device Auth] Supabase exception during check:", e.message);
+      // Bypassed silently
     }
   }
 
@@ -2009,6 +2010,34 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
     localRecord = localDev;
   }
 
+  // Live Sync & Hard Delete Check:
+  // If Supabase client is configured and active, but the record is NOT found in Supabase
+  // (supabaseRecord is null) AND the device was found in Mongo or Local, this means 
+  // the device has been deleted from Supabase by an Admin! We must sync this deletion 
+  // immediately to MongoDB and Local JSON and return 'deleted'.
+  if (supabaseClient && !isSupabaseDevicesDisabled && !supabaseRecord) {
+    if (mongoRecord || localRecord) {
+      console.log(`[Device Auth Live Sync] Device ${fingerprint} was deleted from Supabase. Cleaning up MongoDB and Local DB.`);
+      if (mongoose.connection.readyState === 1) {
+        try {
+          await AllowedDevice.deleteOne({ device_fingerprint: fingerprint });
+        } catch (e) {}
+      }
+      db.allowed_devices = db.allowed_devices.filter((d: any) => d.device_fingerprint !== fingerprint);
+      saveDb(db);
+
+      return {
+        device_fingerprint: fingerprint,
+        status: 'deleted',
+        role: 'user',
+        isDeleted: true,
+        ip_address: ipAddress,
+        device_info: deviceInfo,
+        nickname: ''
+      };
+    }
+  }
+
   // 4. Resolve Status using weight logic (blocked: 3 > approved: 2 > pending: 1 > none: 0)
   const getWeight = (status: string | null | undefined) => {
     if (status === 'deleted') return 4;
@@ -2040,7 +2069,11 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
           .eq('ip_address', ipAddress)
           .eq('device_info', deviceInfo);
         
-        if (!error && data && data.length > 0) {
+        if (error) {
+          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+            isSupabaseDevicesDisabled = true;
+          }
+        } else if (data && data.length > 0) {
           // Sort by weight descending, picking the highest status first (excluding deleted)
           const activeRecords = data.filter((d: any) => d.status !== 'deleted');
           if (activeRecords.length > 0) {
@@ -2050,7 +2083,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
           }
         }
       } catch (e) {
-        console.warn("[Device Auth] Match search in Supabase failed:", e);
+        // Handled silently
       }
     }
 
@@ -2144,7 +2177,12 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
           status: 'pending',
           role: 'user'
         };
-        await supabaseClient.from('allowed_devices').upsert(newDev, { onConflict: 'device_fingerprint' });
+        const { error } = await supabaseClient.from('allowed_devices').upsert(newDev, { onConflict: 'device_fingerprint' });
+        if (error) {
+          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+            isSupabaseDevicesDisabled = true;
+          }
+        }
       } catch (e) {}
     }
 
@@ -2176,7 +2214,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
     if (supabaseClient && !isSupabaseDevicesDisabled) {
       try {
         if (!supabaseRecord || supabaseStatus !== resolvedStatus || supabaseRole !== resolvedRole || supabaseRecord.ip_address !== ipAddress || supabaseRecord.device_info !== deviceInfo) {
-          await supabaseClient
+          const { error } = await supabaseClient
             .from('allowed_devices')
             .upsert({
               device_fingerprint: fingerprint,
@@ -2185,6 +2223,11 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
               ip_address: ipAddress,
               device_info: deviceInfo
             }, { onConflict: 'device_fingerprint' });
+          if (error) {
+            if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+              isSupabaseDevicesDisabled = true;
+            }
+          }
         }
       } catch (e) {}
     }
@@ -2260,6 +2303,40 @@ app.post("/api/device/check", async (req, res) => {
   } catch (err: any) {
     console.error("[Device Auth] Check Error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/verify-password", (req, res) => {
+  try {
+    const { password } = req.body;
+    const currentDb = getDb();
+    const currentPassword = currentDb.adminPassword || "DeltaAdmin2026";
+    if (password === currentPassword) {
+      return res.json({ success: true });
+    } else {
+      return res.status(400).json({ success: false, error: "كلمة المرور غير صحيحة" });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/admin/change-password", (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.trim().length < 4) {
+      return res.status(400).json({ success: false, error: "كلمة المرور الجديدة يجب أن تكون من 4 أحرف أو أكثر" });
+    }
+    const currentDb = getDb();
+    const currentPassword = currentDb.adminPassword || "DeltaAdmin2026";
+    if (oldPassword !== currentPassword) {
+      return res.status(400).json({ success: false, error: "كلمة المرور القديمة غير صحيحة" });
+    }
+    currentDb.adminPassword = newPassword.trim();
+    saveDb(currentDb);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -2361,7 +2438,8 @@ app.get("/api/admin/devices", async (req, res) => {
           });
         } else if (error) {
           if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
-            console.warn("[Device Auth] Supabase table error in listing devices");
+            isSupabaseDevicesDisabled = true;
+            console.log("[Device Auth] Supabase 'allowed_devices' table is missing during listing. Falling back silently.");
           }
         }
       } catch (e) {}
@@ -2392,8 +2470,8 @@ app.post("/api/admin/devices/update", async (req, res) => {
       const currentAdmins = (dbCheck.allowed_devices || []).filter(
         (d: any) => d.role === 'admin' && d.device_fingerprint !== fingerprint && d.status !== 'deleted'
       );
-      if (currentAdmins.length >= 3) {
-        return res.status(400).json({ error: "عذراً، تم الوصول إلى الحد الأقصى للأجهزة المشرفة (3 أجهزة). يرجى إلغاء إشراف جهاز آخر أولاً." });
+      if (currentAdmins.length >= 20) {
+        return res.status(400).json({ error: "عذراً، تم الوصول إلى الحد الأقصى للأجهزة المشرفة (20 جهازاً). يرجى إلغاء إشراف جهاز آخر أولاً." });
       }
     }
 
@@ -2417,38 +2495,49 @@ app.post("/api/admin/devices/update", async (req, res) => {
           .eq('device_fingerprint', fingerprint)
           .select();
         
-        // If it failed because of missing column (e.g. nickname/device_name doesn't exist yet on user's Supabase),
-        // fallback to updating only role and status.
-        if (error && valNickname !== undefined) {
-          console.warn("[Device Auth] Supabase update with nickname failed, retrying fallback without nickname columns...", error.message);
-          const fallbackPayload = { ...updatePayload };
-          delete fallbackPayload.nickname;
-          delete fallbackPayload.device_name;
+        if (error) {
+          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+            isSupabaseDevicesDisabled = true;
+            console.log("[Device Auth] Supabase 'allowed_devices' table is missing during update.");
+          } else if (valNickname !== undefined) {
+            const fallbackPayload = { ...updatePayload };
+            delete fallbackPayload.nickname;
+            delete fallbackPayload.device_name;
 
-          const retryRes = await supabaseClient
-            .from('allowed_devices')
-            .update(fallbackPayload)
-            .eq('device_fingerprint', fingerprint)
-            .select();
-          data = retryRes.data;
-          error = retryRes.error;
+            const retryRes = await supabaseClient
+              .from('allowed_devices')
+              .update(fallbackPayload)
+              .eq('device_fingerprint', fingerprint)
+              .select();
+            data = retryRes.data;
+            error = retryRes.error;
+
+            if (error) {
+              if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+                isSupabaseDevicesDisabled = true;
+              }
+            } else {
+              updated = true;
+            }
+          }
         }
 
         if (error) {
-          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
-            console.warn("[Device Auth] Supabase table error in update");
+          if (!isSupabaseDevicesDisabled) {
+            const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
+            const { error: upsertError } = await supabaseClient
+              .from('allowed_devices')
+              .upsert(upsertData, { onConflict: 'device_fingerprint' });
+            if (!upsertError) updated = true;
           }
-          const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
-          const { error: upsertError } = await supabaseClient
-            .from('allowed_devices')
-            .upsert(upsertData, { onConflict: 'device_fingerprint' });
-          if (!upsertError) updated = true;
         } else if (!data || data.length === 0) {
-          const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
-          const { error: upsertError } = await supabaseClient
-            .from('allowed_devices')
-            .upsert(upsertData, { onConflict: 'device_fingerprint' });
-          if (!upsertError) updated = true;
+          if (!isSupabaseDevicesDisabled) {
+            const upsertData = { device_fingerprint: fingerprint, ip_address: '0.0.0.0', device_info: 'Admin Approved', ...updatePayload };
+            const { error: upsertError } = await supabaseClient
+              .from('allowed_devices')
+              .upsert(upsertData, { onConflict: 'device_fingerprint' });
+            if (!upsertError) updated = true;
+          }
         } else {
           updated = true;
         }
@@ -2523,9 +2612,16 @@ app.post("/api/admin/devices/delete", async (req, res) => {
           .from('allowed_devices')
           .delete()
           .eq('device_fingerprint', fingerprint);
-        if (!error) deleted = true;
+        if (error) {
+          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+            isSupabaseDevicesDisabled = true;
+            console.log("[Device Auth] Supabase 'allowed_devices' table is missing during delete.");
+          }
+        } else {
+          deleted = true;
+        }
       } catch (e) {
-        console.error("[Device Auth] Supabase delete error:", e);
+        // Handled silently
       }
     }
 
@@ -2598,7 +2694,7 @@ app.post("/api/device/request-reconnect", async (req, res) => {
     // 3. Update in Supabase
     if (supabaseClient && !isSupabaseDevicesDisabled) {
       try {
-        await supabaseClient
+        const { error } = await supabaseClient
           .from('allowed_devices')
           .upsert({
             device_fingerprint: fingerprint,
@@ -2607,6 +2703,11 @@ app.post("/api/device/request-reconnect", async (req, res) => {
             ip_address: ipAddress,
             device_info: 'Reconnected Device'
           }, { onConflict: 'device_fingerprint' });
+        if (error) {
+          if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
+            isSupabaseDevicesDisabled = true;
+          }
+        }
       } catch (e) {}
     }
 

@@ -57,6 +57,7 @@ import {
   Check,
   Lock,
   Unlock,
+  Key,
   Eye,
   EyeOff
 } from 'lucide-react';
@@ -613,6 +614,13 @@ export default function App() {
   });
   const [adminDevices, setAdminDevices] = useState<any[]>([]);
   const [adminLoading, setAdminLoading] = useState<boolean>(false);
+  const [changePasswordModalOpen, setChangePasswordModalOpen] = useState<boolean>(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
+  const [newPasswordInput, setNewPasswordInput] = useState<string>('');
+  const [confirmNewPasswordInput, setConfirmNewPasswordInput] = useState<string>('');
+  const [changePasswordError, setChangePasswordError] = useState<string>('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState<string>('');
+  const [changePasswordLoading, setChangePasswordLoading] = useState<boolean>(false);
   const [deviceNicknames, setDeviceNicknames] = useState<Record<string, string>>({});
   const [savingNickname, setSavingNickname] = useState<Record<string, boolean>>({});
   const [isAdminView, setIsAdminView] = useState<boolean>(() => {
@@ -657,14 +665,14 @@ export default function App() {
   const getLoggedInAdminDetails = () => {
     if (typeof window === 'undefined') return null;
     const authKey = sessionStorage.getItem('admin_authenticated_key');
-    if (authKey === '016135') return { name: 'المسؤول', role: 'مدير النظام' };
+    if (authKey === '016135' || authKey === 'DeltaAdmin2026') return { name: 'المسؤول', role: 'مدير النظام' };
     return null;
   };
 
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const authKey = sessionStorage.getItem('admin_authenticated_key');
-      return authKey === '016135' || localStorage.getItem('admin_session') === 'true';
+      return authKey === '016135' || authKey === 'DeltaAdmin2026' || localStorage.getItem('admin_session') === 'true';
     }
     return false;
   });
@@ -715,31 +723,74 @@ export default function App() {
               localStorage.setItem('app_device_uuid', data.device.device_fingerprint);
             } catch (e) {}
             setDeviceFingerprint(data.device.device_fingerprint);
+            fp = data.device.device_fingerprint; // Update local fp reference for downstream checks
           }
 
           const status = data.device.status;
           const role = data.device.role || 'user';
+          const isDeleted = !!data.device.isDeleted || status === 'deleted';
           
-          if (role === 'admin') {
+          if (isDeleted) {
+            console.warn("Device was deleted from the live database! Clearing local state immediately.");
+            // Wipe out cookies & local storages
+            document.cookie = 'app_device_uuid=; max-age=0; path=/; SameSite=None; Secure';
+            try {
+              localStorage.removeItem('app_device_uuid');
+              localStorage.removeItem('admin_session');
+              localStorage.removeItem('device_status');
+            } catch (e) {}
+            sessionStorage.removeItem('admin_authenticated_key');
+            setIsAdminAuthenticated(false);
+            setDeviceStatus('pending');
+
+            // Force generate a clean new anonymous device fingerprint
+            let uuid = '';
+            if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+              uuid = crypto.randomUUID();
+            } else {
+              const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+              uuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+            }
+            const freshFp = 'dev_' + uuid;
+            setCookie('app_device_uuid', freshFp);
+            try {
+              localStorage.setItem('app_device_uuid', freshFp);
+            } catch (e) {}
+            setDeviceFingerprint(freshFp);
+            
+            alert('تنبيه أمني: جرى إلغاء تفعيل هذا الجهاز من قاعدة البيانات الرئيسية. تم مسح معرفات الجهاز، يرجى تقديم طلب موافقة جديد كجهاز مجهول.');
+            return;
+          }
+          
+          if (role === 'admin' && status === 'approved') {
             localStorage.setItem('admin_session', 'true');
             localStorage.setItem('device_status', 'approved');
-            sessionStorage.setItem('admin_authenticated_key', '016135');
+            sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
             setIsAdminAuthenticated(true);
             setDeviceStatus('approved');
           } else {
-            // Regular user
-            localStorage.removeItem('admin_session');
-            if (status === 'approved') {
+            const isSessionMasterAdmin = sessionStorage.getItem('admin_authenticated_key') === 'DeltaAdmin2026';
+            if (isSessionMasterAdmin) {
+              localStorage.setItem('admin_session', 'true');
               localStorage.setItem('device_status', 'approved');
+              setIsAdminAuthenticated(true);
               setDeviceStatus('approved');
-            } else if (status === 'blocked') {
-              localStorage.removeItem('device_status');
+            } else {
+              // Regular user
+              localStorage.removeItem('admin_session');
               sessionStorage.removeItem('admin_authenticated_key');
               setIsAdminAuthenticated(false);
-              setDeviceStatus('blocked');
-            } else {
-              localStorage.setItem('device_status', 'pending');
-              setDeviceStatus('pending');
+              
+              if (status === 'approved') {
+                localStorage.setItem('device_status', 'approved');
+                setDeviceStatus('approved');
+              } else if (status === 'blocked') {
+                localStorage.removeItem('device_status');
+                setDeviceStatus('blocked');
+              } else {
+                localStorage.setItem('device_status', 'pending');
+                setDeviceStatus('pending');
+              }
             }
           }
         } else {
@@ -848,7 +899,7 @@ export default function App() {
             if (role === 'admin') {
               localStorage.setItem('admin_session', 'true');
               localStorage.setItem('device_status', 'approved');
-              sessionStorage.setItem('admin_authenticated_key', '016135');
+              sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
               setIsAdminAuthenticated(true);
               setDeviceStatus('approved');
             } else {
@@ -4820,17 +4871,47 @@ export default function App() {
               </p>
             </div>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
-              if (adminPasswordInput === '016135') {
-                setIsAdminAuthenticated(true);
-                sessionStorage.setItem('admin_authenticated_key', '016135');
-                localStorage.setItem('admin_session', 'true');
-                localStorage.setItem('device_status', 'approved');
-                setPasswordError('');
-                alert('أهلاً بك في لوحة التحكم!');
-              } else {
-                setPasswordError('كلمة المرور غير صحيحة، يرجى المحاولة مرة أخرى.');
+              setPasswordError('');
+              try {
+                const response = await fetch('/api/admin/verify-password', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ password: adminPasswordInput })
+                });
+                const data = await response.json();
+                if (data.success) {
+                  setIsAdminAuthenticated(true);
+                  sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
+                  localStorage.setItem('admin_session', 'true');
+                  localStorage.setItem('device_status', 'approved');
+                  
+                  // Live Sync: update current device role and status in database immediately
+                  try {
+                    await fetch('/api/admin/devices/update', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        fingerprint: deviceFingerprint,
+                        status: 'approved',
+                        role: 'admin',
+                        nickname: deviceInfoState + ' (Admin)'
+                      })
+                    });
+                    // Re-fetch all devices and check status
+                    fetchAdminDevices();
+                    checkDeviceStatus(deviceFingerprint, deviceInfoState);
+                  } catch (err) {
+                    console.error('Error auto-syncing admin device status on login:', err);
+                  }
+
+                  alert('أهلاً بك في لوحة التحكم!');
+                } else {
+                  setPasswordError(data.error || 'كلمة المرور غير صحيحة، يرجى المحاولة مرة أخرى.');
+                }
+              } catch (err) {
+                setPasswordError('فشل الاتصال بالخادم، يرجى المحاولة لاحقاً.');
               }
             }} className="space-y-4">
               <div>
@@ -4924,6 +5005,21 @@ export default function App() {
               >
                 <RefreshCw className={`w-4 h-4 ${adminLoading ? 'animate-spin' : ''}`} />
                 تحديث قائمة الأجهزة
+              </button>
+
+              <button
+                onClick={() => {
+                  setChangePasswordError('');
+                  setChangePasswordSuccess('');
+                  setCurrentPasswordInput('');
+                  setNewPasswordInput('');
+                  setConfirmNewPasswordInput('');
+                  setChangePasswordModalOpen(true);
+                }}
+                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 px-5 rounded-xl shadow-lg shadow-amber-500/10 transition-all text-sm flex items-center gap-2 cursor-pointer"
+              >
+                <Key className="w-4 h-4" />
+                تغيير كلمة المرور
               </button>
             </div>
           </div>
@@ -9151,6 +9247,161 @@ export default function App() {
 
               </div>
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 9bc. ADMIN PASSWORD CHANGE MODAL */}
+      <AnimatePresence>
+        {changePasswordModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl max-w-md w-full relative text-right animate-none"
+              dir="rtl"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setChangePasswordModalOpen(false)}
+                className="absolute top-4 left-4 p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full cursor-pointer transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-5 text-amber-400 border-b border-slate-800 pb-3">
+                <Key className="w-6 h-6 shrink-0 animate-pulse text-amber-400" />
+                <h3 className="text-lg font-black text-white">
+                  تغيير كلمة مرور المسؤول
+                </h3>
+              </div>
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setChangePasswordError('');
+                setChangePasswordSuccess('');
+
+                if (!currentPasswordInput) {
+                  setChangePasswordError('يرجى إدخال كلمة المرور الحالية.');
+                  return;
+                }
+                if (!newPasswordInput || newPasswordInput.length < 4) {
+                  setChangePasswordError('كلمة المرور الجديدة يجب أن تكون من 4 أحرف أو أكثر.');
+                  return;
+                }
+                if (newPasswordInput !== confirmNewPasswordInput) {
+                  setChangePasswordError('كلمة المرور الجديدة وتأكيدها غير متطابقين.');
+                  return;
+                }
+
+                setChangePasswordLoading(true);
+                try {
+                  const response = await fetch('/api/admin/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      oldPassword: currentPasswordInput,
+                      newPassword: newPasswordInput
+                    })
+                  });
+                  const data = await response.json();
+                  if (data.success) {
+                    setChangePasswordSuccess('تم تغيير كلمة المرور بنجاح! يرجى تذكر كلمة المرور الجديدة.');
+                    setCurrentPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmNewPasswordInput('');
+                    setTimeout(() => {
+                      setChangePasswordModalOpen(false);
+                    }, 2500);
+                  } else {
+                    setChangePasswordError(data.error || 'فشل تحديث كلمة المرور، يرجى المحاولة مرة أخرى.');
+                  }
+                } catch (err) {
+                  setChangePasswordError('فشل الاتصال بالخادم، يرجى المحاولة لاحقاً.');
+                } finally {
+                  setChangePasswordLoading(false);
+                }
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">كلمة المرور الحالية (Current Password)</label>
+                  <input
+                    type="password"
+                    required
+                    value={currentPasswordInput}
+                    onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                    placeholder="أدخل كلمة المرور الحالية..."
+                    className="w-full bg-slate-950/80 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-650 text-sm outline-none transition-all text-center font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">كلمة المرور الجديدة (New Password)</label>
+                  <input
+                    type="password"
+                    required
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder="أدخل كلمة المرور الجديدة (4 أحرف كحد أدنى)..."
+                    className="w-full bg-slate-950/80 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-650 text-sm outline-none transition-all text-center font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">تأكيد كلمة المرور الجديدة (Confirm New Password)</label>
+                  <input
+                    type="password"
+                    required
+                    value={confirmNewPasswordInput}
+                    onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
+                    placeholder="أعد إدخال كلمة المرور الجديدة للتأكيد..."
+                    className="w-full bg-slate-950/80 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-650 text-sm outline-none transition-all text-center font-mono"
+                  />
+                </div>
+
+                {changePasswordError && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs py-2.5 px-4 rounded-xl font-bold flex items-center gap-2 justify-start">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{changePasswordError}</span>
+                  </div>
+                )}
+
+                {changePasswordSuccess && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs py-2.5 px-4 rounded-xl font-bold flex items-center gap-2 justify-start">
+                    <CheckCircle className="w-4 h-4 shrink-0" />
+                    <span>{changePasswordSuccess}</span>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-3 border-t border-slate-800/60 mt-4">
+                  <button
+                    type="submit"
+                    disabled={changePasswordLoading}
+                    className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:bg-amber-800 text-slate-950 font-black py-3 px-5 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-sm"
+                  >
+                    {changePasswordLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        جاري الحفظ...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        حفظ كلمة المرور الجديدة
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChangePasswordModalOpen(false)}
+                    className="px-5 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-bold transition-all cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
