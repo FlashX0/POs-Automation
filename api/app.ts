@@ -254,6 +254,8 @@ const allowedDeviceSchema = new mongoose.Schema({
   device_info: { type: String },
   status: { type: String, default: "pending" },
   role: { type: String, default: "user" },
+  nickname: { type: String },
+  device_name: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 const AllowedDevice = mongoose.model("AllowedDevice", allowedDeviceSchema);
@@ -2183,6 +2185,7 @@ app.get("/api/admin/devices", async (req, res) => {
           device_info: dev.device_info || "Unknown Device",
           status: dev.status || "pending",
           role: dev.role || "user",
+          nickname: dev.nickname || dev.device_name || "",
           createdAt: dev.createdAt || dev.created_at || new Date().toISOString()
         });
       } else {
@@ -2202,6 +2205,9 @@ app.get("/api/admin/devices", async (req, res) => {
         }
         if (dev.device_info && dev.device_info !== "Unknown Device" && dev.device_info !== "Admin Approved") {
           existing.device_info = dev.device_info;
+        }
+        if (dev.nickname || dev.device_name) {
+          existing.nickname = dev.nickname || dev.device_name;
         }
       }
     };
@@ -2225,6 +2231,7 @@ app.get("/api/admin/devices", async (req, res) => {
             device_info: doc.device_info,
             status: doc.status,
             role: doc.role,
+            nickname: doc.nickname || doc.device_name,
             createdAt: doc.createdAt
           });
         });
@@ -2245,6 +2252,7 @@ app.get("/api/admin/devices", async (req, res) => {
               device_info: row.device_info,
               status: row.status,
               role: row.role,
+              nickname: row.nickname || row.device_name,
               createdAt: row.created_at || row.createdAt
             });
           });
@@ -2271,7 +2279,7 @@ app.get("/api/admin/devices", async (req, res) => {
 
 app.post("/api/admin/devices/update", async (req, res) => {
   try {
-    const { fingerprint, status, role } = req.body;
+    const { fingerprint, status, role, nickname, device_name } = req.body;
     if (!fingerprint) {
       return res.status(400).json({ error: "بيانات ناقصة" });
     }
@@ -2291,15 +2299,38 @@ app.post("/api/admin/devices/update", async (req, res) => {
     if (status !== undefined) updatePayload.status = status;
     if (role !== undefined) updatePayload.role = role;
 
+    const valNickname = nickname !== undefined ? nickname : device_name;
+    if (valNickname !== undefined) {
+      updatePayload.nickname = valNickname;
+      updatePayload.device_name = valNickname;
+    }
+
     // 1. Supabase
     if (supabaseClient && !isSupabaseDevicesDisabled) {
       try {
-        const { data, error } = await supabaseClient
+        let { data, error } = await supabaseClient
           .from('allowed_devices')
           .update(updatePayload)
           .eq('device_fingerprint', fingerprint)
           .select();
         
+        // If it failed because of missing column (e.g. nickname/device_name doesn't exist yet on user's Supabase),
+        // fallback to updating only role and status.
+        if (error && valNickname !== undefined) {
+          console.warn("[Device Auth] Supabase update with nickname failed, retrying fallback without nickname columns...", error.message);
+          const fallbackPayload = { ...updatePayload };
+          delete fallbackPayload.nickname;
+          delete fallbackPayload.device_name;
+
+          const retryRes = await supabaseClient
+            .from('allowed_devices')
+            .update(fallbackPayload)
+            .eq('device_fingerprint', fingerprint)
+            .select();
+          data = retryRes.data;
+          error = retryRes.error;
+        }
+
         if (error) {
           if (error.message && (error.message.includes("Could not find the table") || error.message.includes("does not exist") || error.message.includes("relation"))) {
             isSupabaseDevicesDisabled = true;
@@ -2320,7 +2351,9 @@ app.post("/api/admin/devices/update", async (req, res) => {
         } else {
           updated = true;
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("[Device Auth] Supabase update exception:", e);
+      }
     }
 
     // 2. MongoDB
@@ -2332,7 +2365,9 @@ app.post("/api/admin/devices/update", async (req, res) => {
           { upsert: true }
         );
         updated = true;
-      } catch (e) {}
+      } catch (e) {
+        console.error("[Device Auth] MongoDB update error:", e);
+      }
     }
 
     // 3. Local JSON
@@ -2345,6 +2380,10 @@ app.post("/api/admin/devices/update", async (req, res) => {
     if (dev) {
       if (status !== undefined) dev.status = status;
       if (role !== undefined) dev.role = role;
+      if (valNickname !== undefined) {
+        dev.nickname = valNickname;
+        dev.device_name = valNickname;
+      }
       saveDb(db);
       updated = true;
     } else {
@@ -2352,6 +2391,8 @@ app.post("/api/admin/devices/update", async (req, res) => {
         device_fingerprint: fingerprint,
         status: status || 'pending',
         role: role || 'user',
+        nickname: valNickname || '',
+        device_name: valNickname || '',
         createdAt: new Date().toISOString()
       });
       saveDb(db);

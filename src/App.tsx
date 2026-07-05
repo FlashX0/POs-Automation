@@ -613,6 +613,8 @@ export default function App() {
   });
   const [adminDevices, setAdminDevices] = useState<any[]>([]);
   const [adminLoading, setAdminLoading] = useState<boolean>(false);
+  const [deviceNicknames, setDeviceNicknames] = useState<Record<string, string>>({});
+  const [savingNickname, setSavingNickname] = useState<Record<string, boolean>>({});
   const [isAdminView, setIsAdminView] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
@@ -844,6 +846,34 @@ export default function App() {
     } catch (err) {
       console.error('Error updating device role:', err);
       alert('حدث خطأ غير متوقع أثناء تحديث الرتبة.');
+    }
+  };
+
+  const handleUpdateDeviceNickname = async (fp: string, nickname: string) => {
+    setSavingNickname(prev => ({ ...prev, [fp]: true }));
+    try {
+      const res = await fetch('/api/admin/devices/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fingerprint: fp, nickname })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          // Update locally
+          setAdminDevices(prev => prev.map(d => d.device_fingerprint === fp ? { ...d, nickname } : d));
+          alert('تم حفظ اسم الجهاز المخصص بنجاح!');
+        } else {
+          alert('فشل حفظ الاسم المخصص.');
+        }
+      } else {
+        alert('حدث خطأ في الاتصال بالسيرفر لحفظ الاسم المخصص.');
+      }
+    } catch (err) {
+      console.error('Error updating device nickname:', err);
+      alert('حدث خطأ غير متوقع أثناء حفظ الاسم.');
+    } finally {
+      setSavingNickname(prev => ({ ...prev, [fp]: false }));
     }
   };
 
@@ -4606,6 +4636,7 @@ export default function App() {
                     <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 text-xs font-bold uppercase select-none">
                       <th className="py-4 px-6 text-center">الحالة الحالية</th>
                       <th className="py-4 px-6 text-center">التحكم الفوري بالصلاحية</th>
+                      <th className="py-4 px-6 text-right">اسم الجهاز المخصص</th>
                       <th className="py-4 px-6 text-right">عنوان الـ IP</th>
                       <th className="py-4 px-6 text-right">نوع الجهاز والـ User-Agent</th>
                       <th className="py-4 px-6 text-right">بصمة الجهاز (Device Fingerprint)</th>
@@ -4664,6 +4695,39 @@ export default function App() {
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                                 تصفير
+                              </button>
+                            </div>
+                          </td>
+
+                          {/* Custom Device Name */}
+                          <td className="py-4 px-6 align-middle text-right">
+                            <div className="flex items-center gap-2 justify-end">
+                              <input
+                                type="text"
+                                placeholder="اسم مخصص (مثال: لابتوب أحمد)"
+                                value={deviceNicknames[device.device_fingerprint] !== undefined 
+                                  ? deviceNicknames[device.device_fingerprint] 
+                                  : (device.nickname || '')}
+                                onChange={(e) => setDeviceNicknames(prev => ({ ...prev, [device.device_fingerprint]: e.target.value }))}
+                                className="bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-sky-500 transition-all text-right w-44"
+                                dir="rtl"
+                              />
+                              <button
+                                onClick={() => handleUpdateDeviceNickname(
+                                  device.device_fingerprint, 
+                                  deviceNicknames[device.device_fingerprint] !== undefined 
+                                    ? deviceNicknames[device.device_fingerprint] 
+                                    : (device.nickname || '')
+                                )}
+                                disabled={savingNickname[device.device_fingerprint]}
+                                className="bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 p-2 rounded-xl border border-sky-500/20 transition-all disabled:opacity-50 flex items-center justify-center cursor-pointer"
+                                title="حفظ الاسم المخصص"
+                              >
+                                {savingNickname[device.device_fingerprint] ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Save className="w-3.5 h-3.5" />
+                                )}
                               </button>
                             </div>
                           </td>
@@ -4952,6 +5016,7 @@ export default function App() {
                     <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 text-xs font-bold uppercase select-none">
                       <th className="py-4 px-6 text-center">حالة الدخول والتحكم</th>
                       <th className="py-4 px-6 text-center">الرتبة في النظام</th>
+                      <th className="py-4 px-6 text-right">اسم الجهاز المخصص</th>
                       <th className="py-4 px-6 text-right">عنوان الـ IP</th>
                       <th className="py-4 px-6 text-right">نوع ونظام الجهاز</th>
                       <th className="py-4 px-6 text-right">بصمة الجهاز (Fingerprint)</th>
@@ -5008,6 +5073,39 @@ export default function App() {
                               <option value="user">👨‍💻 مستخدم عادي POs Only</option>
                               <option value="admin">👑 مسؤول النظام Admin Panel</option>
                             </select>
+                          </td>
+
+                          {/* Custom Device Name */}
+                          <td className="py-4 px-6 align-middle text-right">
+                            <div className="flex items-center gap-2 justify-end">
+                              <input
+                                type="text"
+                                placeholder="اسم مخصص (مثال: لابتوب أحمد)"
+                                value={deviceNicknames[device.device_fingerprint] !== undefined 
+                                  ? deviceNicknames[device.device_fingerprint] 
+                                  : (device.nickname || '')}
+                                onChange={(e) => setDeviceNicknames(prev => ({ ...prev, [device.device_fingerprint]: e.target.value }))}
+                                className="bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-sky-500 transition-all text-right w-44"
+                                dir="rtl"
+                              />
+                              <button
+                                onClick={() => handleUpdateDeviceNickname(
+                                  device.device_fingerprint, 
+                                  deviceNicknames[device.device_fingerprint] !== undefined 
+                                    ? deviceNicknames[device.device_fingerprint] 
+                                    : (device.nickname || '')
+                                )}
+                                disabled={savingNickname[device.device_fingerprint]}
+                                className="bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 p-2 rounded-xl border border-sky-500/20 transition-all disabled:opacity-50 flex items-center justify-center cursor-pointer"
+                                title="حفظ الاسم المخصص"
+                              >
+                                {savingNickname[device.device_fingerprint] ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Save className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
                           </td>
 
                           {/* IP Address */}
