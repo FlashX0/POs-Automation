@@ -707,6 +707,16 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.device) {
+          // If the server adopted an existing fingerprint for us, update local storage/cookies
+          if (data.device.device_fingerprint && data.device.device_fingerprint !== fp) {
+            console.log("Adopted matched old fingerprint from server:", data.device.device_fingerprint);
+            setCookie('app_device_uuid', data.device.device_fingerprint);
+            try {
+              localStorage.setItem('app_device_uuid', data.device.device_fingerprint);
+            } catch (e) {}
+            setDeviceFingerprint(data.device.device_fingerprint);
+          }
+
           const status = data.device.status;
           const role = data.device.role || 'user';
           
@@ -861,7 +871,9 @@ export default function App() {
         const data = await res.json();
         if (data.success) {
           // Update locally
-          setAdminDevices(prev => prev.map(d => d.device_fingerprint === fp ? { ...d, nickname } : d));
+          setAdminDevices(prev => prev.map(d => d.device_fingerprint === fp ? { ...d, nickname, device_name: nickname } : d));
+          // Refresh device list from server immediately
+          fetchAdminDevices();
           alert('تم حفظ اسم الجهاز المخصص بنجاح!');
         } else {
           alert('فشل حفظ الاسم المخصص.');

@@ -279,8 +279,8 @@ const defaultProjects = [
   "HP - Road Works"
 ];
 
-function mapProjectNameToStandard(name: string): string {
-  if (!name) return "عام";
+function mapProjectNameToStandard(name: any): string {
+  if (!name || typeof name !== "string") return "عام";
   const str = name.trim().toLowerCase();
   
   // HP / Hyde Park / هايد بارك
@@ -539,52 +539,56 @@ let memoryDb: any = null;
 
 // Helpers to read/write database state
 function cleanDatabaseDiagnosticsInternal(db: any) {
-  if (!db) return;
-  let changed = false;
+  try {
+    if (!db) return;
+    let changed = false;
 
-  // 1. Ensure all standard projects are in db.projects and map them
-  if (db.projects && Array.isArray(db.projects)) {
-    const originalCount = db.projects.length;
-    
-    // Seed standard projects if missing
-    for (const name of defaultProjects) {
-      if (!db.projects.includes(name)) {
-        db.projects.push(name);
-        changed = true;
-      }
-    }
-    
-    // Map existing names
-    const mappedProjects = db.projects.map((p: string) => mapProjectNameToStandard(p));
-    // Deduplicate
-    const uniqueProjects = Array.from(new Set(mappedProjects));
-    if (uniqueProjects.length !== originalCount) {
-      db.projects = uniqueProjects;
-      changed = true;
-    }
-  }
-
-  // 2. Update documents to use standard names using mapProjectNameToStandard
-  if (db.documents && Array.isArray(db.documents)) {
-    db.documents.forEach((doc: any) => {
-      if (doc.projectName) {
-        const standard = mapProjectNameToStandard(doc.projectName);
-        if (doc.projectName !== standard) {
-          console.log(`[Auto-Clean] Mapping doc ${doc.id} project from "${doc.projectName}" to standard "${standard}"`);
-          doc.projectName = standard;
+    // 1. Ensure all standard projects are in db.projects and map them
+    if (db.projects && Array.isArray(db.projects)) {
+      const originalCount = db.projects.length;
+      
+      // Seed standard projects if missing
+      for (const name of defaultProjects) {
+        if (!db.projects.includes(name)) {
+          db.projects.push(name);
           changed = true;
         }
       }
-    });
-  }
-
-  if (changed) {
-    try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-      console.log("[Auto-Clean] Database diagnostics cleaned up and mapped successfully.");
-    } catch (e) {
-      console.warn("Could not save auto-cleaned DB:", e);
+      
+      // Map existing names
+      const mappedProjects = db.projects.map((p: any) => mapProjectNameToStandard(p));
+      // Deduplicate
+      const uniqueProjects = Array.from(new Set(mappedProjects));
+      if (uniqueProjects.length !== originalCount) {
+        db.projects = uniqueProjects;
+        changed = true;
+      }
     }
+
+    // 2. Update documents to use standard names using mapProjectNameToStandard
+    if (db.documents && Array.isArray(db.documents)) {
+      db.documents.forEach((doc: any) => {
+        if (doc && doc.projectName) {
+          const standard = mapProjectNameToStandard(doc.projectName);
+          if (doc.projectName !== standard) {
+            console.log(`[Auto-Clean] Mapping doc ${doc.id} project from "${doc.projectName}" to standard "${standard}"`);
+            doc.projectName = standard;
+            changed = true;
+          }
+        }
+      });
+    }
+
+    if (changed) {
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+        console.log("[Auto-Clean] Database diagnostics cleaned up and mapped successfully.");
+      } catch (e) {
+        console.warn("Could not save auto-cleaned DB:", e);
+      }
+    }
+  } catch (err) {
+    console.error("[Auto-Clean] Error cleaning database diagnostics:", err);
   }
 }
 
@@ -2015,23 +2019,115 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
     return 0;
   };
 
-  const sWeight = getWeight(supabaseStatus);
-  const mWeight = getWeight(mongoStatus);
-  const lWeight = getWeight(localStatus);
+  let sWeight = getWeight(supabaseStatus);
+  let mWeight = getWeight(mongoStatus);
+  let lWeight = getWeight(localStatus);
 
-  const maxWeight = Math.max(sWeight, mWeight, lWeight);
+  let maxWeight = Math.max(sWeight, mWeight, lWeight);
   let resolvedStatus = 'pending';
+  let resolvedRole = 'user';
+  let matchedFingerprint: string | null = null;
+  let matchedRecord: any = null;
+
+  if (maxWeight === 0) {
+    // No identifier exists in database for this fingerprint.
+    // Look up an existing active device with same IP and device info.
+    // 1. Check Supabase
+    if (supabaseClient && !isSupabaseDevicesDisabled) {
+      try {
+        const { data, error } = await supabaseClient
+          .from('allowed_devices')
+          .select('*')
+          .eq('ip_address', ipAddress)
+          .eq('device_info', deviceInfo);
+        
+        if (!error && data && data.length > 0) {
+          // Sort by weight descending, picking the highest status first (excluding deleted)
+          const activeRecords = data.filter((d: any) => d.status !== 'deleted');
+          if (activeRecords.length > 0) {
+            activeRecords.sort((a: any, b: any) => getWeight(b.status) - getWeight(a.status));
+            matchedRecord = activeRecords[0];
+            matchedFingerprint = matchedRecord.device_fingerprint;
+          }
+        }
+      } catch (e) {
+        console.warn("[Device Auth] Match search in Supabase failed:", e);
+      }
+    }
+
+    // 2. Check MongoDB if not found in Supabase
+    if (!matchedFingerprint && mongoose.connection.readyState === 1) {
+      try {
+        const docs = await AllowedDevice.find({ ip_address: ipAddress, device_info: deviceInfo });
+        if (docs && docs.length > 0) {
+          const activeDocs = docs.filter((d: any) => d.status !== 'deleted');
+          if (activeDocs.length > 0) {
+            activeDocs.sort((a: any, b: any) => getWeight(b.status) - getWeight(a.status));
+            matchedRecord = activeDocs[0];
+            matchedFingerprint = matchedRecord.device_fingerprint;
+          }
+        }
+      } catch (e) {
+        console.warn("[Device Auth] Match search in MongoDB failed:", e);
+      }
+    }
+
+    // 3. Check Local JSON if not found in either
+    if (!matchedFingerprint) {
+      const dbSearch = getDb();
+      if (dbSearch.allowed_devices && Array.isArray(dbSearch.allowed_devices)) {
+        const localMatches = dbSearch.allowed_devices.filter((d: any) => d.ip_address === ipAddress && d.device_info === deviceInfo && d.status !== 'deleted');
+        if (localMatches.length > 0) {
+          localMatches.sort((a: any, b: any) => getWeight(b.status) - getWeight(a.status));
+          matchedRecord = localMatches[0];
+          matchedFingerprint = matchedRecord.device_fingerprint;
+        }
+      }
+    }
+
+    if (matchedFingerprint) {
+      console.log(`[Device Auth] Adopting existing device fingerprint: ${matchedFingerprint} for IP: ${ipAddress}, Info: ${deviceInfo}`);
+      // Adopt this old fingerprint
+      fingerprint = matchedFingerprint;
+      
+      // Inherit its values
+      if (matchedRecord) {
+        if (matchedRecord.status) {
+          if (matchedRecord.status === 'deleted') {
+            supabaseStatus = 'deleted';
+          } else {
+            supabaseStatus = matchedRecord.status;
+          }
+        }
+        if (matchedRecord.role) supabaseRole = matchedRecord.role;
+        mongoStatus = matchedRecord.status || null;
+        mongoRole = matchedRecord.role || null;
+        localStatus = matchedRecord.status || null;
+        localRole = matchedRecord.role || null;
+      }
+      
+      // Update weights and recalculate maxWeight
+      sWeight = getWeight(supabaseStatus);
+      mWeight = getWeight(mongoStatus);
+      lWeight = getWeight(localStatus);
+      maxWeight = Math.max(sWeight, mWeight, lWeight);
+    }
+  }
+
+  // Now resolve the status and role
   if (maxWeight === 4) resolvedStatus = 'deleted';
   else if (maxWeight === 3) resolvedStatus = 'blocked';
   else if (maxWeight === 2) resolvedStatus = 'approved';
   else if (maxWeight === 1) resolvedStatus = 'pending';
+  else resolvedStatus = 'pending';
 
-  // Resolve Role (if any is admin, make role admin)
-  let resolvedRole = 'user';
+  // Resolve Role
   if (resolvedStatus === 'deleted') {
     resolvedRole = 'user';
   } else if (supabaseRole === 'admin' || mongoRole === 'admin' || localRole === 'admin') {
     resolvedRole = 'admin';
+  } else {
+    resolvedRole = 'user';
   }
 
   // 5. Apply & Sync changes across all databases
@@ -2136,12 +2232,20 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
     }
   }
 
+  const resolvedNickname = 
+    (supabaseRecord?.nickname || supabaseRecord?.device_name) ||
+    (mongoRecord?.nickname || mongoRecord?.device_name) ||
+    (localRecord?.nickname || localRecord?.device_name) ||
+    (matchedRecord?.nickname || matchedRecord?.device_name) ||
+    "";
+
   return {
     device_fingerprint: fingerprint,
     status: resolvedStatus === 'deleted' ? 'blocked' : resolvedStatus,
     role: resolvedRole,
     ip_address: ipAddress,
-    device_info: deviceInfo
+    device_info: deviceInfo,
+    nickname: resolvedNickname
   };
 }
 
