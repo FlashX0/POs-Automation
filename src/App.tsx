@@ -69,6 +69,9 @@ import html2canvas from 'html2canvas';
 // @ts-ignore
 import deltaLogo from './assets/images/delta_road_logo_1781798697279.jpg';
 
+import { LoginPage } from './components/LoginPage';
+import { UserManagement } from './components/UserManagement';
+
 // Helper function to convert OKLCH & OKLAB color strings (used by Tailwind v4) to standard RGB/RGBA.
 // This prevents html2canvas from failing with the: "Attempting to parse an unsupported color function" error.
 function calculateRgbFromOklab(L: number, a: number, b: number, A: number): string {
@@ -575,52 +578,120 @@ export default function App() {
   });
 
   // Device Fingerprint & IP Verification States
-  const [deviceStatus, setDeviceStatus] = useState<'checking' | 'approved' | 'pending' | 'blocked'>(() => {
+  const [currentUser, setCurrentUser] = useState<any>(() => {
     if (typeof window !== 'undefined') {
-      const savedAdmin = localStorage.getItem('admin_session');
-      if (savedAdmin === 'true') {
-        return 'approved';
-      }
-      const savedStatus = localStorage.getItem('device_status');
-      if (savedStatus === 'approved') return 'approved';
-      if (savedStatus === 'blocked') return 'blocked';
-      if (savedStatus === 'pending') return 'pending';
-    }
-    return 'checking';
-  });
-  const [deviceRole, setDeviceRole] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const savedAdmin = localStorage.getItem('admin_session');
-      if (savedAdmin === 'true') return 'admin';
-    }
-    return 'user';
-  });
-  const [deviceFingerprint, setDeviceFingerprint] = useState<string>(() => {
-    return getOrGenerateDeviceFingerprint();
-  });
-  const [deviceInfoState, setDeviceInfoState] = useState<string>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const ua = navigator.userAgent;
-        let deviceName = "Unknown Device";
-        if (/android/i.test(ua)) {
-          deviceName = "Android Device";
-        } else if (/iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream) {
-          deviceName = "iOS Device";
-        } else if (/Macintosh/i.test(ua)) {
-          deviceName = "macOS";
-        } else if (/Windows/i.test(ua)) {
-          deviceName = "Windows PC";
-        } else if (/Linux/i.test(ua)) {
-          deviceName = "Linux PC";
+      const saved = localStorage.getItem('logged_in_user');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return null;
         }
-        return deviceName;
       }
-    } catch (e) {}
-    return "Device";
+    }
+    return null;
   });
-  const [adminDevices, setAdminDevices] = useState<any[]>([]);
-  const [adminLoading, setAdminLoading] = useState<boolean>(false);
+
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname;
+    }
+    return '/';
+  });
+
+  const [isVerifyingSession, setIsVerifyingSession] = useState<boolean>(true);
+
+  const navigateTo = (path: string) => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', path);
+      setCurrentPath(path);
+      if (path === '/admin') {
+        setIsAdminView(true);
+      } else {
+        setIsAdminView(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handlePopState = () => {
+        setCurrentPath(window.location.pathname);
+      };
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+    }
+  }, []);
+
+  useEffect(() => {
+    const verifySession = async () => {
+      // If path is login, no need to verify active session
+      if (currentPath === '/login') {
+        setIsVerifyingSession(false);
+        return;
+      }
+
+      const savedUserStr = localStorage.getItem('logged_in_user');
+      if (!savedUserStr) {
+        // No saved user, immediately redirect to login
+        setCurrentUser(null);
+        setIsVerifyingSession(false);
+        if (currentPath !== '/login') {
+          navigateTo('/login');
+        }
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(savedUserStr);
+        if (!parsed.email) {
+          throw new Error('Invalid user object in localStorage');
+        }
+
+        const res = await fetch('/api/auth/verify-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: parsed.email })
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.user) {
+            setCurrentUser(data.user);
+            localStorage.setItem('logged_in_user', JSON.stringify(data.user));
+            
+            // Strict Admin Route Security: Redirect normal users trying to access /admin
+            if (data.user.role !== 'admin' && (currentPath.includes('admin') || isAdminView || isUrlAdmin)) {
+              navigateTo('/');
+              setActiveTab('spreadsheet');
+            }
+          } else {
+            throw new Error('Session invalid');
+          }
+        } else {
+          throw new Error('Server returned error status');
+        }
+      } catch (err) {
+        console.warn("[Session Guard] Verification failed:", err);
+        localStorage.removeItem('logged_in_user');
+        localStorage.removeItem('admin_session');
+        setCurrentUser(null);
+        navigateTo('/login');
+      } finally {
+        setIsVerifyingSession(false);
+      }
+    };
+
+    setIsVerifyingSession(true);
+    verifySession();
+  }, [currentPath]);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'admin') {
+      setIsAdminView(false);
+    }
+  }, [currentUser]);
+
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState<boolean>(false);
   const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
   const [newPasswordInput, setNewPasswordInput] = useState<string>('');
@@ -666,436 +737,6 @@ export default function App() {
     (new URLSearchParams(window.location.search).get('bypass') === 'true') || 
     (new URLSearchParams(window.location.search).get('override') === 'true')
   );
-
-  const [adminPasswordInput, setAdminPasswordInput] = useState<string>('');
-  
-  const getLoggedInAdminDetails = () => {
-    if (typeof window === 'undefined') return null;
-    const authKey = sessionStorage.getItem('admin_authenticated_key');
-    if (authKey === '016135' || authKey === 'DeltaAdmin2026') return { name: 'المسؤول', role: 'مدير النظام' };
-    return null;
-  };
-
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const authKey = sessionStorage.getItem('admin_authenticated_key');
-      return authKey === '016135' || authKey === 'DeltaAdmin2026' || localStorage.getItem('admin_session') === 'true';
-    }
-    return false;
-  });
-  const isSecretAdminView = false;
-  const [passwordError, setPasswordError] = useState<string>('');
-
-  // Get or generate a permanent, lifetime UUID for this device
-  const getDeviceFingerprint = (): string => {
-    return getOrGenerateDeviceFingerprint();
-  };
-
-  const getDeviceInfo = (): string => {
-    try {
-      const ua = navigator.userAgent;
-      let deviceName = "Unknown Device";
-      if (/android/i.test(ua)) {
-        deviceName = "Android Device";
-      } else if (/iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream) {
-        deviceName = "iOS Device";
-      } else if (/Macintosh/i.test(ua)) {
-        deviceName = "macOS";
-      } else if (/Windows/i.test(ua)) {
-        deviceName = "Windows PC";
-      } else if (/Linux/i.test(ua)) {
-        deviceName = "Linux PC";
-      }
-      return deviceName;
-    } catch (e) {
-      return "Device";
-    }
-  };
-
-  const checkDeviceStatus = async (fp: string, info: string) => {
-    try {
-      const res = await fetch('/api/device/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fingerprint: fp, deviceInfo: info })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.device) {
-          // If the server adopted an existing fingerprint for us, update local storage/cookies
-          if (data.device.device_fingerprint && data.device.device_fingerprint !== fp) {
-            console.log("Adopted matched old fingerprint from server:", data.device.device_fingerprint);
-            setCookie('app_device_uuid', data.device.device_fingerprint);
-            try {
-              localStorage.setItem('app_device_uuid', data.device.device_fingerprint);
-            } catch (e) {}
-            setDeviceFingerprint(data.device.device_fingerprint);
-            fp = data.device.device_fingerprint; // Update local fp reference for downstream checks
-          }
-
-          const status = data.device.status;
-          const role = data.device.role || 'user';
-          const isDeleted = !!data.device.isDeleted || status === 'deleted';
-          setDeviceRole(role);
-          
-          if (isDeleted) {
-            console.warn("Device was deleted from the live database! Clearing local state immediately.");
-            // Wipe out cookies & local storages
-            document.cookie = 'app_device_uuid=; max-age=0; path=/; SameSite=None; Secure';
-            try {
-              localStorage.removeItem('app_device_uuid');
-              localStorage.removeItem('admin_session');
-              localStorage.removeItem('device_status');
-            } catch (e) {}
-            sessionStorage.removeItem('admin_authenticated_key');
-            setIsAdminAuthenticated(false);
-            setDeviceStatus('pending');
-            setDeviceRole('user');
-
-            // Force generate a clean new anonymous device fingerprint
-            let uuid = '';
-            if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-              uuid = crypto.randomUUID();
-            } else {
-              const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
-              uuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
-            }
-            const freshFp = 'dev_' + uuid;
-            setCookie('app_device_uuid', freshFp);
-            try {
-              localStorage.setItem('app_device_uuid', freshFp);
-            } catch (e) {}
-            setDeviceFingerprint(freshFp);
-            
-            alert('تنبيه أمني: جرى إلغاء تفعيل هذا الجهاز من قاعدة البيانات الرئيسية. تم مسح معرفات الجهاز، يرجى تقديم طلب موافقة جديد كجهاز مجهول.');
-            return;
-          }
-          
-          if (role === 'admin' && status === 'approved') {
-            localStorage.setItem('admin_session', 'true');
-            localStorage.setItem('device_status', 'approved');
-            sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
-            setIsAdminAuthenticated(true);
-            setDeviceStatus('approved');
-            setDeviceRole('admin');
-          } else {
-            const isSessionMasterAdmin = sessionStorage.getItem('admin_authenticated_key') === 'DeltaAdmin2026';
-            if (isSessionMasterAdmin) {
-              localStorage.setItem('admin_session', 'true');
-              localStorage.setItem('device_status', 'approved');
-              setIsAdminAuthenticated(true);
-              setDeviceStatus('approved');
-              setDeviceRole('admin');
-            } else {
-              // Regular user
-              localStorage.removeItem('admin_session');
-              sessionStorage.removeItem('admin_authenticated_key');
-              setIsAdminAuthenticated(false);
-              setDeviceRole(role);
-              
-              if (status === 'approved') {
-                localStorage.setItem('device_status', 'approved');
-                setDeviceStatus('approved');
-              } else if (status === 'blocked') {
-                localStorage.removeItem('device_status');
-                setDeviceStatus('blocked');
-              } else {
-                localStorage.setItem('device_status', 'pending');
-                setDeviceStatus('pending');
-              }
-            }
-          }
-        } else {
-          // If response succeeded but structure is unexpected, fall back to localStorage
-          const savedStatus = localStorage.getItem('device_status') as any;
-          const isAdminSession = localStorage.getItem('admin_session') === 'true';
-          if (isAdminSession) {
-            setDeviceStatus('approved');
-            setDeviceRole('admin');
-          } else {
-            setDeviceStatus(savedStatus || 'pending');
-            setDeviceRole('user');
-          }
-        }
-      } else {
-        const savedStatus = localStorage.getItem('device_status') as any;
-        const isAdminSession = localStorage.getItem('admin_session') === 'true';
-        if (isAdminSession) {
-          setDeviceStatus('approved');
-          setDeviceRole('admin');
-        } else {
-          setDeviceStatus(savedStatus || 'approved');
-          setDeviceRole('user');
-        }
-      }
-    } catch (err) {
-      console.error('Error checking device status:', err);
-      const savedStatus = localStorage.getItem('device_status') as any;
-      const isAdminSession = localStorage.getItem('admin_session') === 'true';
-      if (isAdminSession) {
-        setDeviceStatus('approved');
-        setDeviceRole('admin');
-      } else {
-        setDeviceStatus(savedStatus || 'approved');
-        setDeviceRole('user');
-      }
-    }
-  };
-
-  const fetchAdminDevices = async () => {
-    setAdminLoading(true);
-    try {
-      const res = await fetch('/api/admin/devices');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setAdminDevices(data.devices || []);
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching admin devices:', err);
-    } finally {
-      setAdminLoading(false);
-    }
-  };
-
-  const handleUpdateDeviceStatus = async (fp: string, status: 'approved' | 'blocked' | 'pending') => {
-    try {
-      const res = await fetch('/api/admin/devices/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fingerprint: fp, status })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          // Update locally
-          setAdminDevices(prev => prev.map(d => d.device_fingerprint === fp ? { ...d, status } : d));
-          // If we are updating our own device, sync state
-          if (fp === deviceFingerprint) {
-            setDeviceStatus(status);
-            if (status === 'approved') {
-              localStorage.setItem('device_status', 'approved');
-            } else if (status === 'blocked') {
-              localStorage.removeItem('device_status');
-              localStorage.removeItem('admin_session');
-              sessionStorage.removeItem('admin_authenticated_key');
-            } else {
-              localStorage.setItem('device_status', status);
-            }
-          }
-          alert('تم تحديث حالة الجهاز بنجاح!');
-          // Re-fetch all device and auth info from server immediately
-          fetchAdminDevices();
-          checkDeviceStatus(deviceFingerprint, deviceInfoState);
-        } else {
-          alert('فشل تحديث حالة الجهاز.');
-        }
-      } else {
-        alert('حدث خطأ في الاتصال بالسيرفر لتحديث الحالة.');
-      }
-    } catch (err) {
-      console.error('Error updating device status:', err);
-      alert('حدث خطأ غير متوقع أثناء تحديث الحالة.');
-    }
-  };
-
-  const handleUpdateDeviceRole = async (fp: string, role: string) => {
-    try {
-      const res = await fetch('/api/admin/devices/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fingerprint: fp, role })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          // Update locally
-          setAdminDevices(prev => prev.map(d => d.device_fingerprint === fp ? { ...d, role } : d));
-          // If we are updating our own device, check if our role changed
-          if (fp === deviceFingerprint) {
-            if (role === 'admin') {
-              localStorage.setItem('admin_session', 'true');
-              localStorage.setItem('device_status', 'approved');
-              sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
-              setIsAdminAuthenticated(true);
-              setDeviceStatus('approved');
-            } else {
-              localStorage.removeItem('admin_session');
-            }
-          }
-          alert('تم تحديث الرتبة بنجاح!');
-          // Re-fetch all device and auth info from server immediately
-          fetchAdminDevices();
-          checkDeviceStatus(deviceFingerprint, deviceInfoState);
-        } else {
-          alert('حدث خطأ أثناء محاولة تحديث الرتبة.');
-        }
-      } else {
-        alert('حدث خطأ في الاتصال بالخادم لتحديث الرتبة.');
-      }
-    } catch (err) {
-      console.error('Error updating device role:', err);
-      alert('حدث خطأ غير متوقع أثناء تحديث الرتبة.');
-    }
-  };
-
-  const handleUpdateDeviceNickname = async (fp: string, nickname: string) => {
-    setSavingNickname(prev => ({ ...prev, [fp]: true }));
-    try {
-      const res = await fetch('/api/admin/devices/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fingerprint: fp, nickname })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          // Update locally
-          setAdminDevices(prev => prev.map(d => d.device_fingerprint === fp ? { ...d, nickname, device_name: nickname } : d));
-          // Refresh device list and auth state from server immediately
-          fetchAdminDevices();
-          checkDeviceStatus(deviceFingerprint, deviceInfoState);
-          alert('تم حفظ اسم الجهاز المخصص بنجاح!');
-        } else {
-          alert('فشل حفظ الاسم المخصص.');
-        }
-      } else {
-        alert('حدث خطأ في الاتصال بالسيرفر لحفظ الاسم المخصص.');
-      }
-    } catch (err) {
-      console.error('Error updating device nickname:', err);
-      alert('حدث خطأ غير متوقع أثناء حفظ الاسم.');
-    } finally {
-      setSavingNickname(prev => ({ ...prev, [fp]: false }));
-    }
-  };
-
-  const handleDeleteDevice = async (fp: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا الجهاز نهائياً من النظام؟')) {
-      return;
-    }
-    try {
-      const res = await fetch('/api/admin/devices/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fingerprint: fp })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          // Remove from local state
-          setAdminDevices(prev => prev.filter(d => d.device_fingerprint !== fp));
-          alert('تم حذف الجهاز بنجاح!');
-        } else {
-          alert('حدث خطأ أثناء محاولة حذف الجهاز.');
-        }
-      } else {
-        alert('حدث خطأ في الاتصال بالخادم لحذف الجهاز.');
-      }
-    } catch (err) {
-      console.error('Error deleting device:', err);
-      alert('حدث خطأ غير متوقع أثناء حذف الجهاز.');
-    }
-  };
-
-  const handleLogoutAllDevices = async () => {
-    const confirmLogout = window.confirm("هل أنت متأكد من رغبتك في تسجيل خروج وإلغاء صلاحية كافة الأجهزة الأخرى؟ سيتعين على الجميع طلب الدخول وإدخل كلمة سر المدير مجدداً للوصول.");
-    if (!confirmLogout) return;
-
-    try {
-      const res = await fetch('/api/admin/devices/logout-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fingerprint: deviceFingerprint })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          alert('تم بنجاح تسجيل خروج وإلغاء تفعيل جميع الأجهزة الأخرى في النظام!');
-          fetchAdminDevices();
-        } else {
-          alert('حدث خطأ: ' + (data.error || 'غير معروف'));
-        }
-      } else {
-        alert('فشل الاتصال بالخادم لتسجيل خروج الأجهزة.');
-      }
-    } catch (err) {
-      console.error('Error logging out all devices:', err);
-      alert('حدث خطأ غير متوقع.');
-    }
-  };
-
-  const handleApproveMyCurrentDevice = async () => {
-    if (!isAdminAuthenticated) {
-      alert('غير مصرح! يجب تسجيل الدخول كمسؤول أولاً باستخدام كلمة المرور.');
-      return;
-    }
-    try {
-      // Approve both dev_7ae2a0cd and current calculated deviceFingerprint
-      await fetch('/api/admin/devices/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fingerprint: 'dev_7ae2a0cd', status: 'approved' })
-      });
-
-      if (deviceFingerprint && deviceFingerprint !== 'dev_7ae2a0cd') {
-        await fetch('/api/admin/devices/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fingerprint: deviceFingerprint, status: 'approved' })
-        });
-      }
-
-      setDeviceStatus('approved');
-      localStorage.setItem('device_status', 'approved');
-      alert('تم اعتماد جهازي الحالي كمسؤول فوراً بنجاح! تم تحديث الحالة في قاعدة البيانات.');
-      fetchAdminDevices();
-    } catch (err) {
-      console.error('Error approving current device:', err);
-      alert('حدث خطأ أثناء محاولة اعتماد الجهاز.');
-    }
-  };
-
-  const handleRequestReconnect = async () => {
-    try {
-      const res = await fetch('/api/device/request-reconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fingerprint: deviceFingerprint })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          alert('تم إرسال طلب الاتصال بنجاح! سيتم تحويلك لصفحة الانتظار (Pending).');
-          setDeviceStatus('pending');
-        } else {
-          alert('حدث خطأ أثناء محاولة طلب الاتصال.');
-        }
-      } else {
-        alert('حدث خطأ في الاتصال بالخادم لإعادة الطلب.');
-      }
-    } catch (err) {
-      console.error('Error requesting reconnect:', err);
-      alert('حدث خطأ غير متوقع.');
-    }
-  };
-
-  // Perform device check on load
-  useEffect(() => {
-    const fp = getDeviceFingerprint();
-    const info = getDeviceInfo();
-    setDeviceFingerprint(fp);
-    setDeviceInfoState(info);
-    
-    // Check device status
-    checkDeviceStatus(fp, info);
-    
-    // If we're on the admin page (and authenticated), load the device table
-    if (isAdminView && isAdminAuthenticated) {
-      fetchAdminDevices();
-    }
-  }, [isAdminView, isAdminAuthenticated]);
 
   // Sync print margins to localStorage whenever they change
   useEffect(() => {
@@ -4592,956 +4233,94 @@ export default function App() {
     );
   }
 
-  if (false) {
+
+
+
+
+
+
+
+
+
+
+
+  // --- NEW ROLE-BASED AUTHENTICATION ROUTING ---
+  // 0. Active Session Verification Guard
+  if (isVerifyingSession && currentPath !== '/login') {
     return (
-      <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans overflow-x-hidden w-full max-w-full p-6 text-right" dir="rtl">
-        <div className="max-w-7xl mx-auto w-full space-y-6">
-          
-          {/* Secret Admin Header */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 backdrop-blur-md flex flex-col md:flex-row justify-between items-center gap-4 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 left-0 h-[3px] bg-gradient-to-r from-emerald-500 via-sky-500 to-indigo-500"></div>
-            <div className="flex items-center gap-4 text-right md:order-2">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 border border-emerald-500/20 shadow-md">
-                <Lock className="w-6 h-6 animate-pulse" />
-              </div>
-              <div className="text-right">
-                <h1 className="text-2xl font-black text-white font-sans flex items-center gap-2">
-                  <span>لوحة التحكم السرية للأجهزة</span>
-                  <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full">Secret Bypass Path</span>
-                </h1>
-                <p className="text-xs text-slate-400 mt-1">تجاوز حماية النظام المباشرة وإدارة الأجهزة وبصمات الـ IP للتحكم في الوصول</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 md:order-1">
-              <button
-                onClick={() => {
-                  window.location.href = '/';
-                }}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 px-5 rounded-xl border border-slate-700 transition-all text-sm flex items-center gap-2 cursor-pointer shadow-md"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                الدخول للموقع الرئيسي
-              </button>
-
-              <button
-                onClick={fetchAdminDevices}
-                disabled={adminLoading}
-                className="bg-sky-500 hover:bg-sky-600 disabled:bg-sky-800 text-slate-950 font-bold py-2.5 px-5 rounded-xl shadow-lg shadow-sky-500/15 transition-all text-sm flex items-center gap-2 cursor-pointer"
-              >
-                <RefreshCw className={`w-4 h-4 ${adminLoading ? 'animate-spin' : ''}`} />
-                تحديث البيانات
-              </button>
-            </div>
+      <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right animate-none" dir="rtl">
+        <div className="max-w-md w-full bg-slate-900/60 border border-slate-800 rounded-3xl p-8 backdrop-blur-md shadow-2xl relative text-center">
+          <div className="w-16 h-16 rounded-2xl bg-sky-500/10 flex items-center justify-center text-sky-400 mx-auto mb-4 border border-sky-500/20 shadow-md">
+            <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
           </div>
-
-          {/* INSTANT APPROVE MY DEVICE HERO BLOCK */}
-          <div className="bg-gradient-to-br from-emerald-950/40 via-slate-900/80 to-slate-950 border-2 border-emerald-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="absolute -top-12 -left-12 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
-            <div className="text-right space-y-2 max-w-2xl">
-              <div className="flex items-center gap-2 text-emerald-400 justify-start">
-                <span className="text-xs font-bold font-mono tracking-wider">SECURE INSTANT BYPASS & AUTOPROMOTE</span>
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></div>
-              </div>
-              <h2 className="text-xl font-bold text-white font-sans">
-                هل أنت محجوز خارج النظام؟ اعتمد جهازك الحالي كمسؤول فوراً!
-              </h2>
-              <p className="text-sm text-slate-300 leading-relaxed">
-                عند الضغط على هذا الزر، سيقوم النظام بالتقاط بصمة جهازك الحالي بالإضافة للبصمة المسجلة <code className="bg-slate-950 px-1.5 py-0.5 rounded text-emerald-400 font-mono text-xs">dev_7ae2a0cd</code> ويرسل أمراً فورياً لقواعد البيانات (Supabase & DB) لتعديل الحالة إلى <strong className="text-emerald-400 font-bold">"مسموح / Approved"</strong>. بعد الاعتماد، ستتمكن من تصفح الموقع والوظائف بشكل طبيعي تماماً دون أي حظر.
-              </p>
-            </div>
-            
-            <div className="shrink-0">
-              <button
-                onClick={handleApproveMyCurrentDevice}
-                className="relative group bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-base py-4 px-8 rounded-2xl shadow-xl shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all hover:-translate-y-0.5 active:translate-y-0 cursor-pointer flex items-center gap-3 animate-shimmer"
-              >
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-2xl blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
-                <Check className="w-5 h-5 shrink-0" />
-                <span className="relative">اعتماد جهازي الحالي كمسؤول فوراً</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Stats Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex items-center justify-between text-right shadow-md">
-              <div>
-                <span className="text-xs text-slate-400 block mb-1">الأجهزة المعتمدة</span>
-                <span className="text-2xl font-black text-emerald-400 font-mono">
-                  {adminDevices.filter(d => d.status === 'approved').length}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                <Check className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex items-center justify-between text-right shadow-md">
-              <div>
-                <span className="text-xs text-slate-400 block mb-1">أجهزة في الانتظار</span>
-                <span className="text-2xl font-black text-amber-400 font-mono">
-                  {adminDevices.filter(d => d.status === 'pending' || !d.status).length}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex items-center justify-between text-right shadow-md">
-              <div>
-                <span className="text-xs text-slate-400 block mb-1">الأجهزة المحظورة</span>
-                <span className="text-2xl font-black text-red-400 font-mono">
-                  {adminDevices.filter(d => d.status === 'blocked').length}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-
-          {/* Your Current Device Card */}
-          <div className="bg-[#0e121a] border border-slate-800 rounded-3xl p-5 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="text-right">
-              <div className="flex items-center gap-2 text-sky-400 mb-1 justify-end sm:justify-start">
-                <span className="text-xs font-bold font-mono">CURRENT BROWSER INFO</span>
-                <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></div>
-              </div>
-              <h3 className="text-sm font-semibold text-slate-200">
-                تفاصيل اتصالك الحالي النشط في متصفحك الآن
-              </h3>
-            </div>
-            <div className="flex flex-wrap gap-4 bg-slate-950/80 py-3 px-5 rounded-2xl border border-slate-850 text-xs font-mono">
-              <div>
-                <span className="text-slate-500 block text-right">FINGERPRINT</span>
-                <span className="text-sky-300 font-bold">{deviceFingerprint || 'Unknown'}</span>
-              </div>
-              <div className="border-l border-slate-800 hidden sm:block"></div>
-              <div>
-                <span className="text-slate-500 block text-right">DEVICE TYPE</span>
-                <span className="text-slate-300 font-semibold">{deviceInfoState || 'Generic Platform'}</span>
-              </div>
-              <div className="border-l border-slate-800 hidden sm:block"></div>
-              <div>
-                <span className="text-slate-500 block text-right">STATUS</span>
-                <span className={`font-bold uppercase ${
-                  deviceStatus === 'approved' ? 'text-emerald-400' :
-                  deviceStatus === 'blocked' ? 'text-red-400' : 'text-amber-400'
-                }`}>{deviceStatus}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Device Management Table */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 bg-slate-950/40 flex justify-between items-center">
-              <span className="text-xs text-slate-400 font-mono">Synced database: Supabase & Local Cluster</span>
-              <h3 className="text-base font-bold text-white font-sans">قائمة الأجهزة المسجلة في النظام</h3>
-            </div>
-            {adminLoading ? (
-              <div className="p-20 flex flex-col items-center justify-center gap-3">
-                <Loader2 className="w-10 h-10 animate-spin text-sky-400" />
-                <span className="text-sm text-slate-400">جاري جلب قائمة الأجهزة وعناوين الـ IP المتاحة...</span>
-              </div>
-            ) : adminDevices.length === 0 ? (
-              <div className="p-20 text-center text-slate-500">
-                <AlertCircle className="w-12 h-12 mx-auto text-slate-600 mb-3" />
-                <span>لم يتم العثور على أي أجهزة مسجلة في قاعدة البيانات حالياً.</span>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-sm">
-                  <thead>
-                    <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 text-xs font-bold uppercase select-none">
-                      <th className="py-4 px-6 text-center">الحالة الحالية</th>
-                      <th className="py-4 px-6 text-center">التحكم الفوري بالصلاحية</th>
-                      <th className="py-4 px-6 text-right">اسم الجهاز المخصص</th>
-                      <th className="py-4 px-6 text-right">عنوان الـ IP</th>
-                      <th className="py-4 px-6 text-right">نوع الجهاز والـ User-Agent</th>
-                      <th className="py-4 px-6 text-right">بصمة الجهاز (Device Fingerprint)</th>
-                      <th className="py-4 px-6 text-center">#</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/40 bg-slate-900/10">
-                    {adminDevices.map((device, index) => {
-                      const isMyDevice = device.device_fingerprint === deviceFingerprint;
-                      return (
-                        <tr key={device.device_fingerprint || index} className={`hover:bg-slate-800/35 transition-all ${isMyDevice ? 'bg-emerald-500/5' : ''}`}>
-                          
-                          {/* Current Status Badge */}
-                          <td className="py-4 px-6 text-center align-middle">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold gap-1.5 ${
-                              device.status === 'approved' 
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                                : device.status === 'blocked'
-                                ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                                : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                            }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${
-                                device.status === 'approved' ? 'bg-emerald-400' :
-                                device.status === 'blocked' ? 'bg-red-400' : 'bg-amber-400'
-                              }`}></span>
-                              {device.status === 'approved' ? 'مسموح (Approved)' :
-                               device.status === 'blocked' ? 'محظور (Blocked)' : 'قيد المراجعة (Pending)'}
-                            </span>
-                          </td>
-
-                          {/* Quick Decision Operations */}
-                          <td className="py-4 px-6 align-middle text-center">
-                            <div className="flex gap-2 justify-center">
-                              <button
-                                onClick={() => handleUpdateDeviceStatus(device.device_fingerprint, 'approved')}
-                                disabled={device.status === 'approved'}
-                                className="bg-emerald-500/15 hover:bg-emerald-500 hover:text-slate-950 disabled:bg-slate-800/40 disabled:text-slate-600 text-emerald-400 px-3.5 py-1.5 rounded-xl border border-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                سماح
-                              </button>
-                              
-                              <button
-                                onClick={() => handleUpdateDeviceStatus(device.device_fingerprint, 'blocked')}
-                                disabled={device.status === 'blocked'}
-                                className="bg-red-500/15 hover:bg-red-500 hover:text-slate-950 disabled:bg-slate-800/40 disabled:text-slate-600 text-red-400 px-3.5 py-1.5 rounded-xl border border-red-500/20 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
-                              >
-                                <ShieldAlert className="w-3.5 h-3.5" />
-                                حظر
-                              </button>
-
-                              <button
-                                onClick={() => handleUpdateDeviceStatus(device.device_fingerprint, 'pending')}
-                                disabled={device.status === 'pending' || !device.status}
-                                className="bg-slate-800 hover:bg-slate-700 disabled:text-slate-600 text-slate-300 px-3.5 py-1.5 rounded-xl border border-slate-700 text-xs transition-all cursor-pointer flex items-center gap-1"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                                تصفير
-                              </button>
-                            </div>
-                          </td>
-
-                          {/* Custom Device Name */}
-                          <td className="py-4 px-6 align-middle text-right">
-                            <div className="flex items-center gap-2 justify-end">
-                              <input
-                                type="text"
-                                placeholder="اسم مخصص (مثال: لابتوب أحمد)"
-                                value={deviceNicknames[device.device_fingerprint] !== undefined 
-                                  ? deviceNicknames[device.device_fingerprint] 
-                                  : (device.nickname || '')}
-                                onChange={(e) => setDeviceNicknames(prev => ({ ...prev, [device.device_fingerprint]: e.target.value }))}
-                                className="bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-sky-500 transition-all text-right w-44"
-                                dir="rtl"
-                              />
-                              <button
-                                onClick={() => handleUpdateDeviceNickname(
-                                  device.device_fingerprint, 
-                                  deviceNicknames[device.device_fingerprint] !== undefined 
-                                    ? deviceNicknames[device.device_fingerprint] 
-                                    : (device.nickname || '')
-                                )}
-                                disabled={savingNickname[device.device_fingerprint]}
-                                className="bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 p-2 rounded-xl border border-sky-500/20 transition-all disabled:opacity-50 flex items-center justify-center cursor-pointer"
-                                title="حفظ الاسم المخصص"
-                              >
-                                {savingNickname[device.device_fingerprint] ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Save className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </div>
-                          </td>
-
-                          {/* IP Address */}
-                          <td className="py-4 px-6 font-mono text-xs text-slate-300 align-middle text-right" dir="ltr">
-                            {device.ip_address || "0.0.0.0"}
-                          </td>
-
-                          {/* Device Platform info */}
-                          <td className="py-4 px-6 align-middle text-right">
-                            <span className="text-slate-200 text-sm font-semibold block">{device.device_info || "Generic Client Web Browser"}</span>
-                            {isMyDevice && <span className="text-xs text-emerald-400 font-bold font-sans block mt-0.5">★ جهازك الحالي النشط</span>}
-                          </td>
-
-                          {/* Device unique hash */}
-                          <td className="py-4 px-6 font-mono text-xs text-sky-400 select-all align-middle text-right" dir="ltr">
-                            <div className="flex items-center gap-2 justify-end">
-                              <button 
-                                onClick={() => {
-                                  navigator.clipboard.writeText(device.device_fingerprint);
-                                  alert("تم نسخ بصمة الجهاز بنجاح!");
-                                }}
-                                className="text-slate-500 hover:text-sky-400 p-1 rounded-md hover:bg-slate-800 transition-all"
-                                title="Copy Fingerprint"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                              <span className="font-bold">{device.device_fingerprint}</span>
-                            </div>
-                          </td>
-
-                          {/* Index */}
-                          <td className="py-4 px-6 text-center text-slate-500 font-mono align-middle">
-                            {index + 1}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-          
-        </div>
-      </div>
-    );
-  }
-
-  if (isAdminView || isUrlAdmin) {
-    if (isAdminAuthenticated) {
-      if (deviceStatus === 'checking') {
-        return (
-          <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right animate-none" dir="rtl">
-            <div className="max-w-md w-full bg-slate-900/40 border border-slate-800 rounded-3xl p-8 backdrop-blur-md shadow-2xl relative text-center">
-              <Loader2 className="w-12 h-12 text-amber-500 animate-spin mx-auto mb-4" />
-              <h3 className="text-lg font-black text-white mb-2">جاري التحقق من الصلاحيات الأمنية الحية...</h3>
-              <p className="text-slate-400 text-sm">يرجى الانتظار، يتم فحص حالة ورتبة جهازك حالياً من قاعدة البيانات.</p>
-            </div>
-          </div>
-        );
-      }
-
-      if (deviceStatus !== 'approved' || deviceRole !== 'admin') {
-        // Strict role guard: they are not approved or they are not admin in database!
-        localStorage.removeItem('admin_session');
-        sessionStorage.removeItem('admin_authenticated_key');
-        
-        return (
-          <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right animate-none" dir="rtl">
-            <div className="max-w-md w-full bg-red-950/20 border border-red-500/20 rounded-3xl p-8 backdrop-blur-md shadow-2xl relative text-center">
-              <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-400 mx-auto mb-4 border border-red-500/20 shadow-md">
-                <ShieldAlert className="w-8 h-8 text-red-400 animate-bounce" />
-              </div>
-              <h2 className="text-2xl font-black text-red-500 mb-2 font-sans tracking-tight">غير مصرح بالوصول (Strict Role Guard) ⚠️</h2>
-              <p className="text-slate-400 text-sm leading-relaxed mb-6">
-                عذراً، نظام الحماية الصارم يمنع هذا الجهاز من الدخول. رتبتك الحالية في قاعدة البيانات هي <span className="text-amber-400 font-bold">{deviceRole === 'user' ? 'مستخدم عادي' : deviceRole || 'مجهول'}</span> وحالة جهازك <span className="text-amber-400 font-bold">{deviceStatus}</span>.
-                <br />
-                يسمح فقط لأجهزة الـ <span className="text-emerald-400 font-bold">Admin Approved</span> برؤية أو رندرة لوحة التحكم.
-              </p>
-              <button
-                onClick={() => {
-                  setIsAdminAuthenticated(false);
-                  setIsAdminView(false);
-                  window.location.href = '/';
-                }}
-                className="w-full bg-red-600 hover:bg-red-500 text-white font-black py-3.5 px-6 rounded-xl transition-all cursor-pointer text-sm shadow-lg shadow-red-500/10"
-              >
-                الخروج والعودة للموقع الرئيسي
-              </button>
-            </div>
-          </div>
-        );
-      }
-    }
-
-    if (!isAdminAuthenticated) {
-      return (
-        <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right" dir="rtl">
-          <div className="max-w-md w-full bg-slate-900/40 border border-slate-800 rounded-3xl p-8 backdrop-blur-md shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-sky-500 via-indigo-500 to-purple-500"></div>
-            
-            <div className="text-center flex flex-col items-center mb-6">
-              <div className="w-16 h-16 rounded-2xl bg-sky-500/10 flex items-center justify-center text-sky-400 mb-4 border border-sky-500/20 shadow-md">
-                <Lock className="w-8 h-8 animate-pulse" />
-              </div>
-              <h2 className="text-2xl font-black text-white mb-2 font-sans tracking-tight">بوابة إدارة الأجهزة</h2>
-              <p className="text-slate-400 text-sm leading-relaxed">
-                هذه الصفحة مخصصة لمسؤولي النظام فقط ومحمية ببروتوكولات الأمان. يرجى إدخال كلمة المرور للمتابعة.
-              </p>
-            </div>
-
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              setPasswordError('');
-              try {
-                const response = await fetch('/api/admin/verify-password', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ password: adminPasswordInput })
-                });
-                const data = await response.json();
-                if (data.success) {
-                  setIsAdminAuthenticated(true);
-                  sessionStorage.setItem('admin_authenticated_key', 'DeltaAdmin2026');
-                  localStorage.setItem('admin_session', 'true');
-                  localStorage.setItem('device_status', 'approved');
-                  
-                  // Live Sync: update current device role and status in database immediately
-                  try {
-                    await fetch('/api/admin/devices/update', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        fingerprint: deviceFingerprint,
-                        status: 'approved',
-                        role: 'admin',
-                        nickname: deviceInfoState + ' (Admin)'
-                      })
-                    });
-                    // Re-fetch all devices and check status
-                    fetchAdminDevices();
-                    checkDeviceStatus(deviceFingerprint, deviceInfoState);
-                  } catch (err) {
-                    console.error('Error auto-syncing admin device status on login:', err);
-                  }
-
-                  alert('أهلاً بك في لوحة التحكم!');
-                } else {
-                  setPasswordError(data.error || 'كلمة المرور غير صحيحة، يرجى المحاولة مرة أخرى.');
-                }
-              } catch (err) {
-                setPasswordError('فشل الاتصال بالخادم، يرجى المحاولة لاحقاً.');
-              }
-            }} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">كلمة مرور المسؤول (Admin Password)</label>
-                <div className="relative">
-                  <input 
-                    type="password"
-                    value={adminPasswordInput}
-                    onChange={(e) => setAdminPasswordInput(e.target.value)}
-                    placeholder="أدخل كلمة المرور..."
-                    className="w-full bg-slate-950/80 border border-slate-800 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-650 text-sm outline-none transition-all pr-10 text-center font-mono"
-                    autoFocus
-                  />
-                  <div className="absolute inset-y-0 right-3 flex items-center text-slate-500">
-                    <Lock className="w-5 h-5" />
-                  </div>
-                </div>
-              </div>
-
-              {passwordError && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs py-2.5 px-4 rounded-xl font-bold flex items-center gap-2 justify-start">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{passwordError}</span>
-                </div>
-              )}
-
-              <button 
-                type="submit"
-                className="w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-black py-3.5 px-6 rounded-xl shadow-lg shadow-sky-500/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans"
-              >
-                <Unlock className="w-4 h-4" />
-                تأكيد الدخول والتحقق
-              </button>
-            </form>
-
-            <div className="mt-6 pt-5 border-t border-slate-800/60 flex justify-center">
-              <button
-                onClick={() => {
-                  window.location.href = '/';
-                }}
-                className="text-xs text-slate-400 hover:text-white transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                العودة للموقع الرئيسي
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans overflow-x-hidden w-full max-w-full p-6 text-right" dir="rtl">
-        <div className="max-w-7xl mx-auto w-full space-y-6">
-          
-          {/* Admin Header */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 backdrop-blur-md flex flex-col md:flex-row justify-between items-center gap-4 shadow-xl">
-            <div className="flex items-center gap-4 text-right md:order-2">
-              <div className="w-12 h-12 rounded-2xl bg-sky-500/10 flex items-center justify-center text-sky-400 border border-sky-500/20 shadow-md">
-                <Shield className="w-6 h-6" />
-              </div>
-              <div className="text-right">
-                <h1 className="text-xl font-bold text-white font-sans flex items-center gap-2">
-                  <span>لوحة التحكم بالأجهزة المسموحة</span>
-                  <span className="text-xs bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2.5 py-1 rounded-full">Secure Admin Mode</span>
-                </h1>
-                <p className="text-xs text-slate-400 mt-1">إدارة الأجهزة وبصمات الـ IP للتحكم في الوصول إلى النظام</p>
-                {getLoggedInAdminDetails() && (
-                  <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold font-sans">
-                    <span>👤 مسؤول نشط (مدير النظام)</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 md:order-1">
-              <button
-                onClick={() => {
-                  window.location.href = '/';
-                }}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 px-5 rounded-xl border border-slate-700 transition-all text-sm flex items-center gap-2 cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                العودة للموقع الرئيسي
-              </button>
-
-              <button
-                onClick={fetchAdminDevices}
-                disabled={adminLoading}
-                className="bg-sky-500 hover:bg-sky-600 disabled:bg-sky-800 text-slate-950 font-bold py-2.5 px-5 rounded-xl shadow-lg shadow-sky-500/10 transition-all text-sm flex items-center gap-2 cursor-pointer"
-              >
-                <RefreshCw className={`w-4 h-4 ${adminLoading ? 'animate-spin' : ''}`} />
-                تحديث قائمة الأجهزة
-              </button>
-
-              <button
-                onClick={() => {
-                  setChangePasswordError('');
-                  setChangePasswordSuccess('');
-                  setCurrentPasswordInput('');
-                  setNewPasswordInput('');
-                  setConfirmNewPasswordInput('');
-                  setChangePasswordModalOpen(true);
-                }}
-                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 px-5 rounded-xl shadow-lg shadow-amber-500/10 transition-all text-sm flex items-center gap-2 cursor-pointer"
-              >
-                <Key className="w-4 h-4" />
-                تغيير كلمة المرور
-              </button>
-
-              <button
-                onClick={handleLogoutAllDevices}
-                className="bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 px-5 rounded-xl shadow-lg shadow-red-500/15 transition-all text-sm flex items-center gap-2 cursor-pointer"
-              >
-                <ShieldAlert className="w-4 h-4 text-white animate-pulse" />
-                تسجيل خروج كافة الأجهزة الأخرى ⚠️
-              </button>
-            </div>
-          </div>
-
-          {/* INSTANT APPROVE MY DEVICE HERO BLOCK */}
-          <div className="bg-gradient-to-br from-emerald-950/40 via-slate-900/80 to-slate-950 border-2 border-emerald-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="absolute -top-12 -left-12 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
-            <div className="text-right space-y-2 max-w-2xl">
-              <div className="flex items-center gap-2 text-emerald-400 justify-start">
-                <span className="text-xs font-bold font-mono tracking-wider">SECURE INSTANT BYPASS & AUTOPROMOTE</span>
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></div>
-              </div>
-              <h2 className="text-xl font-bold text-white font-sans">
-                اعتماد جهازي الحالي كمسؤول فوراً وبنقرة واحدة
-              </h2>
-              <p className="text-sm text-slate-300 leading-relaxed">
-                عند الضغط على هذا الزر، سيقوم النظام بالتقاط بصمة جهازك الحالي والـ IP والمنصة بالإضافة للبصمة المسجلة <code className="bg-slate-950 px-1.5 py-0.5 rounded text-emerald-400 font-mono text-xs">dev_7ae2a0cd</code> ثم يقوم بترقيتهم وتحديث حالتهم في قواعد بيانات Supabase والمخازن المحلية إلى <strong className="text-emerald-400 font-bold">"مسموح / Approved"</strong> لتصفح الموقع الأساسي فوراً دون قيود.
-              </p>
-            </div>
-            
-            <div className="shrink-0">
-              <button
-                onClick={handleApproveMyCurrentDevice}
-                className="relative group bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-base py-4 px-8 rounded-2xl shadow-xl shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all hover:-translate-y-0.5 active:translate-y-0 cursor-pointer flex items-center gap-3"
-              >
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-2xl blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
-                <Check className="w-5 h-5 shrink-0" />
-                <span className="relative">اعتماد جهازي الحالي كمسؤول فوراً</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Device Counter / Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 flex items-center justify-between text-right">
-              <div>
-                <span className="text-xs text-slate-400 block mb-1">الأجهزة المعتمدة</span>
-                <span className="text-2xl font-black text-emerald-400 font-mono">
-                  {adminDevices.filter(d => d.status === 'approved').length}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                <Check className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 flex items-center justify-between text-right">
-              <div>
-                <span className="text-xs text-slate-400 block mb-1">أجهزة في الانتظار</span>
-                <span className="text-2xl font-black text-amber-400 font-mono">
-                  {adminDevices.filter(d => d.status === 'pending' || !d.status).length}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 flex items-center justify-between text-right">
-              <div>
-                <span className="text-xs text-slate-400 block mb-1">الأجهزة المحظورة</span>
-                <span className="text-2xl font-black text-red-400 font-mono">
-                  {adminDevices.filter(d => d.status === 'blocked').length}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-
-          {/* Current Device Highlight Card */}
-          <div className="bg-gradient-to-r from-sky-950/30 to-indigo-950/30 border border-sky-500/20 rounded-3xl p-5 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="text-right">
-              <div className="flex items-center gap-2 text-sky-400 mb-1 justify-end sm:justify-start">
-                <span className="text-xs font-bold font-mono">YOUR CURRENT DEVICE</span>
-                <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></div>
-              </div>
-              <h3 className="text-sm font-semibold text-slate-200">
-                هذا هو جهازك الحالي الذي تستخدمه الآن للوصول إلى لوحة التحكم.
-              </h3>
-            </div>
-            <div className="flex gap-4 bg-slate-950/60 py-2.5 px-4 rounded-xl border border-slate-800/80 text-xs font-mono">
-              <div>
-                <span className="text-slate-500 block text-right">FINGERPRINT</span>
-                <span className="text-sky-300 font-bold">{deviceFingerprint}</span>
-              </div>
-              <div className="border-l border-slate-800"></div>
-              <div>
-                <span className="text-slate-500 block text-right">STATUS</span>
-                <span className={`font-bold uppercase ${
-                  deviceStatus === 'approved' ? 'text-emerald-400' :
-                  deviceStatus === 'blocked' ? 'text-red-400' : 'text-amber-400'
-                }`}>{deviceStatus}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Main List Table Card */}
-          <div className="bg-slate-900/40 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
-            {adminLoading ? (
-              <div className="p-20 flex flex-col items-center justify-center gap-3">
-                <Loader2 className="w-10 h-10 animate-spin text-sky-400" />
-                <span className="text-sm text-slate-400">جاري تحميل قائمة الأجهزة والتحقق من البيانات...</span>
-              </div>
-            ) : adminDevices.length === 0 ? (
-              <div className="p-20 text-center text-slate-500">
-                <AlertCircle className="w-12 h-12 mx-auto text-slate-600 mb-3" />
-                <span>لا توجد أجهزة مسجلة حالياً في النظام.</span>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-sm">
-                  <thead>
-                    <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 text-xs font-bold uppercase select-none">
-                      <th className="py-4 px-6 text-center">حالة الدخول والتحكم</th>
-                      <th className="py-4 px-6 text-center">الرتبة في النظام</th>
-                      <th className="py-4 px-6 text-right">اسم الجهاز المخصص</th>
-                      <th className="py-4 px-6 text-right">عنوان الـ IP</th>
-                      <th className="py-4 px-6 text-right">نوع ونظام الجهاز</th>
-                      <th className="py-4 px-6 text-right">بصمة الجهاز (Fingerprint)</th>
-                      <th className="py-4 px-6 text-center">#</th>
-                      <th className="py-4 px-6 text-center">إجراءات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/40 bg-slate-900/20">
-                    {adminDevices.map((device, index) => {
-                      const isCurrent = device.device_fingerprint === deviceFingerprint;
-                      return (
-                        <tr key={device.device_fingerprint || index} className={`hover:bg-slate-800/20 transition-all ${isCurrent ? 'bg-sky-500/5' : ''}`}>
-                          
-                          {/* Access Status Toggle Button */}
-                          <td className="py-4 px-6 align-middle text-center">
-                            <button
-                              onClick={() => handleUpdateDeviceStatus(device.device_fingerprint, device.status === 'approved' ? 'blocked' : 'approved')}
-                              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
-                                device.status === 'approved' 
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' 
-                                  : device.status === 'blocked'
-                                  ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
-                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
-                              }`}
-                            >
-                              {device.status === 'approved' && (
-                                <>
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span>مسموح (Approved) - اضغط للحظر</span>
-                                </>
-                              )}
-                              {device.status === 'blocked' && (
-                                <>
-                                  <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
-                                  <span>محظور (Blocked) - اضغط للسماح</span>
-                                </>
-                              )}
-                              {(device.status === 'pending' || !device.status) && (
-                                <>
-                                  <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-                                  <span>قيد المراجعة (Pending) - اضغط للقبول</span>
-                                </>
-                              )}
-                            </button>
-                          </td>
-
-                          {/* Role Select Dropdown */}
-                          <td className="py-4 px-6 align-middle text-center">
-                            <select
-                              value={device.role || 'user'}
-                              onChange={(e) => handleUpdateDeviceRole(device.device_fingerprint, e.target.value)}
-                              className="bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-sky-500 transition-all cursor-pointer font-bold font-sans text-center min-w-[150px]"
-                            >
-                              <option value="user">👨‍💻 مستخدم عادي POs Only</option>
-                              <option value="admin">👑 مسؤول النظام Admin Panel</option>
-                            </select>
-                          </td>
-
-                          {/* Custom Device Name */}
-                          <td className="py-4 px-6 align-middle text-right">
-                            <div className="flex items-center gap-2 justify-end">
-                              <input
-                                type="text"
-                                placeholder="اسم مخصص (مثال: لابتوب أحمد)"
-                                value={deviceNicknames[device.device_fingerprint] !== undefined 
-                                  ? deviceNicknames[device.device_fingerprint] 
-                                  : (device.nickname || '')}
-                                onChange={(e) => setDeviceNicknames(prev => ({ ...prev, [device.device_fingerprint]: e.target.value }))}
-                                className="bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-sky-500 transition-all text-right w-44"
-                                dir="rtl"
-                              />
-                              <button
-                                onClick={() => handleUpdateDeviceNickname(
-                                  device.device_fingerprint, 
-                                  deviceNicknames[device.device_fingerprint] !== undefined 
-                                    ? deviceNicknames[device.device_fingerprint] 
-                                    : (device.nickname || '')
-                                )}
-                                disabled={savingNickname[device.device_fingerprint]}
-                                className="bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 p-2 rounded-xl border border-sky-500/20 transition-all disabled:opacity-50 flex items-center justify-center cursor-pointer"
-                                title="حفظ الاسم المخصص"
-                              >
-                                {savingNickname[device.device_fingerprint] ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Save className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </div>
-                          </td>
-
-                          {/* IP Address */}
-                          <td className="py-4 px-6 font-mono text-xs text-slate-300 align-middle text-right" dir="ltr">
-                            {device.ip_address || "Unknown"}
-                          </td>
-
-                          {/* Device Info */}
-                          <td className="py-4 px-6 align-middle text-right">
-                            <span className="text-slate-200 text-sm font-semibold block">{device.device_info || "Generic Browser"}</span>
-                            {isCurrent && <span className="text-xs text-emerald-400 font-bold font-sans block mt-0.5">★ جهازك الحالي النشط</span>}
-                          </td>
-
-                          {/* Device Fingerprint */}
-                          <td className="py-4 px-6 font-mono text-xs text-sky-400 select-all align-middle text-right" dir="ltr">
-                            <div className="flex items-center gap-2 justify-end">
-                              <button 
-                                onClick={() => {
-                                  navigator.clipboard.writeText(device.device_fingerprint);
-                                  alert("تم نسخ البصمة!");
-                                }}
-                                className="text-slate-500 hover:text-sky-400 p-1 rounded-md hover:bg-slate-800 transition-all"
-                                title="Copy Fingerprint"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                              <span>{device.device_fingerprint}</span>
-                            </div>
-                          </td>
-
-                          {/* Index */}
-                          <td className="py-4 px-6 text-center text-slate-500 font-mono align-middle">
-                            {index + 1}
-                          </td>
-
-                          {/* Delete Device Action */}
-                          <td className="py-4 px-6 text-center align-middle">
-                            <button
-                              onClick={() => handleDeleteDevice(device.device_fingerprint)}
-                              className="text-red-500 hover:text-red-400 p-2 rounded-xl hover:bg-red-500/10 transition-all cursor-pointer inline-flex items-center justify-center"
-                              title="حذف الجهاز نهائياً"
-                            >
-                              <Trash2 className="w-4.5 h-4.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-          
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdminView && !isUrlAdmin && !isSecretAdminView && deviceStatus === 'checking') {
-    return (
-      <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6">
-        <div className="max-w-md w-full bg-slate-900/40 border border-slate-800/80 rounded-3xl p-8 backdrop-blur-md shadow-2xl text-center flex flex-col items-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-sky-500 via-indigo-500 to-purple-500"></div>
-          <div className="relative mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-sky-500/10 flex items-center justify-center text-sky-400">
-              <Loader2 className="w-8 h-8 animate-spin" />
-            </div>
-            <div className="absolute -inset-1 rounded-2xl bg-sky-500/20 blur animate-pulse -z-10"></div>
-          </div>
-          <h2 className="text-xl font-bold mb-3 tracking-tight text-white font-sans">جاري التحقق من الجهاز</h2>
-          <p className="text-slate-400 text-sm leading-relaxed mb-4">
-            يرجى الانتظار أثناء التحقق من بصمة جهازك والـ IP الخاص بك لتأمين الاتصال بالنظام...
+          <h2 className="text-xl font-black text-sky-400 mb-2 font-sans tracking-tight">جاري التحقق من الجلسة النشطة... 🔒</h2>
+          <p className="text-slate-400 text-sm leading-relaxed">
+            الرجاء الانتظار لحين فحص صلاحية حسابك وتأمين الاتصال بقواعد البيانات لمنع أي وصول غير مصرح به.
           </p>
-          <div className="w-full bg-slate-950/60 rounded-xl p-3 border border-slate-800/50">
-            <div className="text-xs text-slate-500 font-mono">SECURE AGENT HANDSHAKE</div>
-          </div>
         </div>
       </div>
     );
   }
 
-  if (!isAdminView && !isUrlAdmin && !isSecretAdminView && deviceStatus === 'pending') {
+  // 1. Force LoginPage if not authenticated or path is /login
+  if (!currentUser || currentPath === '/login') {
     return (
-      <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right" dir="rtl">
-        <div className="max-w-lg w-full bg-slate-900/50 border border-slate-800/80 rounded-3xl p-8 backdrop-blur-md shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-amber-500 to-yellow-500 animate-pulse"></div>
-          
-          <div className="text-center flex flex-col items-center mb-8">
-            <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 mb-4 shadow-inner">
-              <AlertCircle className="w-8 h-8" />
-            </div>
-            <h2 className="text-2xl font-black text-white mb-2 font-sans tracking-tight">في انتظار موافقة المسؤول</h2>
-            <p className="text-slate-300 text-sm leading-relaxed max-w-sm">
-              تم تسجيل جهازك بنجاح في النظام وهو قيد المراجعة حالياً. يرجى التواصل مع المسؤول لتفعيل حسابك.
-            </p>
-          </div>
-
-          <div className="space-y-4 bg-slate-950/70 p-5 rounded-2xl border border-slate-800/80 text-right">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 font-mono">تفاصيل الجهاز Device Details</h3>
-            
-            <div className="flex justify-between items-center bg-slate-900/60 px-4 py-3 rounded-xl border border-slate-800/40">
-              <span className="font-mono text-sm text-sky-400 select-all" dir="ltr">{deviceFingerprint}</span>
-              <span className="text-xs text-slate-400">بصمة الجهاز (Fingerprint)</span>
-            </div>
-
-            <div className="flex justify-between items-center bg-slate-900/60 px-4 py-3 rounded-xl border border-slate-800/40">
-              <span className="font-mono text-sm text-slate-200" dir="ltr">{deviceInfoState}</span>
-              <span className="text-xs text-slate-400">نوع الجهاز (Device Info)</span>
-            </div>
-
-            <div className="text-center text-[10px] text-slate-500 mt-2 font-sans">
-              سجل هذا الجهاز تلقائياً وسيظهر للمسؤول في لوحة التحكم فوراً.
-            </div>
-          </div>
-
-          <div className="mt-8 flex flex-col sm:flex-row gap-3 w-full">
-            <button 
-              onClick={() => checkDeviceStatus(deviceFingerprint, deviceInfoState)}
-              className="flex-1 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-slate-950 font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-amber-500/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans"
-            >
-              <RefreshCw className="w-4 h-4" />
-              تحديث الحالة
-            </button>
-            <button 
-              onClick={() => {
-                navigator.clipboard.writeText(`بصمة جهازي: ${deviceFingerprint}\nنوع الجهاز: ${deviceInfoState}`);
-                alert("تم نسخ تفاصيل الجهاز بنجاح!");
-              }}
-              className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-3.5 px-6 rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer font-sans"
-            >
-              <Copy className="w-4 h-4" />
-              نسخ بيانات الجهاز
-            </button>
-          </div>
-
-          {/* Secure Admin Gate Access Button */}
-          <div className="mt-6 pt-5 border-t border-slate-800/60 w-full text-center">
-            <button
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.history.pushState({}, '', '/admin');
-                  setIsAdminView(true);
-                }
-              }}
-              className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold py-3 px-6 rounded-xl border border-sky-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-xs"
-            >
-              <Shield className="w-4 h-4" />
-              الدخول للوحة التحكم والموافقة (للمسؤولين فقط)
-            </button>
-          </div>
-        </div>
-      </div>
+      <LoginPage
+        onLoginSuccess={(user: any) => {
+          setCurrentUser(user);
+          localStorage.setItem('logged_in_user', JSON.stringify(user));
+          if (user.role === 'admin') {
+            navigateTo('/admin');
+          } else {
+            navigateTo('/');
+            setActiveTab('spreadsheet');
+          }
+        }}
+      />
     );
   }
 
-  if (!isAdminView && !isUrlAdmin && !isSecretAdminView && deviceStatus === 'blocked') {
+  // 2. Strict Role Guard: Redirect normal users trying to access /admin or admin-related routes immediately
+  if (currentUser.role !== 'admin' && (currentPath.includes('admin') || isAdminView || isUrlAdmin)) {
+    // Immediate hard redirect to home main purchase/POs page
+    navigateTo('/');
+    setActiveTab('spreadsheet');
+    return null;
+  }
+
+  // 3. Render User Management dashboard for Admins visiting /admin
+  if (currentUser.role === 'admin' && (currentPath.includes('admin') || isAdminView || isUrlAdmin)) {
     return (
-      <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center justify-center font-sans p-6 text-right" dir="rtl">
-        <div className="max-w-md w-full bg-slate-900/50 border border-red-500/20 rounded-3xl p-8 backdrop-blur-md shadow-2xl text-center flex flex-col items-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-red-600 to-rose-500"></div>
-          
-          <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 mb-6 shadow-inner animate-bounce">
-            <ShieldAlert className="w-8 h-8" />
-          </div>
-
-          <h2 className="text-2xl font-black text-white mb-2 font-sans tracking-tight">تم حظر هذا الجهاز</h2>
-          <p className="text-slate-300 text-sm leading-relaxed mb-6 text-center">
-            لقد تم حظر وصول هذا الجهاز إلى النظام بواسطة مسؤول النظام. إذا كنت تعتقد أن هذا خطأ، يرجى مراجعة الإدارة المختصة لإلغاء الحظر.
-          </p>
-
-          <div className="w-full bg-slate-950/70 p-4 rounded-xl border border-slate-800/80 text-right space-y-2 mb-6">
-            <div className="flex justify-between items-center">
-              <span className="font-mono text-xs text-red-400 select-all font-semibold" dir="ltr">{deviceFingerprint}</span>
-              <span className="text-xs text-slate-400">بصمة الجهاز</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-red-500 font-bold">محظور (Blocked)</span>
-              <span className="text-xs text-slate-400">حالة الوصول</span>
-            </div>
-          </div>
-
-          {/* Request Reconnect Button */}
-          <div className="w-full mb-4">
-            <button
-              onClick={handleRequestReconnect}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black py-3.5 px-6 rounded-xl shadow-lg shadow-emerald-500/15 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-sm"
-            >
-              <RefreshCw className="w-4 h-4" />
-              طلب إعادة اتصال (إرسال طلب جديد للمسؤول)
-            </button>
-          </div>
-
-          {/* Secure Admin Gate Access Button */}
-          <div className="w-full mb-6">
-            <button
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.history.pushState({}, '', '/admin');
-                  setIsAdminView(true);
-                }
-              }}
-              className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold py-3 px-6 rounded-xl border border-sky-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer font-sans text-xs"
-            >
-              <Shield className="w-4 h-4" />
-              الدخول للوحة التحكم والموافقة (للمسؤولين فقط)
-            </button>
-          </div>
-
-          <div className="text-xs text-slate-500 font-mono">
-            SECURE SYSTEM BLOCK | DELTA ROAD CONSTRUCTION
-          </div>
-        </div>
-      </div>
+      <UserManagement
+        currentUser={currentUser}
+        onUpdateCurrentUser={(updatedUser: any) => {
+          setCurrentUser(updatedUser);
+          localStorage.setItem('logged_in_user', JSON.stringify(updatedUser));
+        }}
+        onBackToMain={() => {
+          navigateTo('/');
+          setActiveTab('spreadsheet');
+        }}
+      />
     );
   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   return (
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans overflow-x-hidden w-full max-w-full">
@@ -5579,16 +4358,34 @@ export default function App() {
             <div className="flex flex-wrap justify-center md:justify-end items-center gap-3 w-full md:w-auto">
               
               {/* Admin Panel Access button for recognized Admins */}
-              {localStorage.getItem('admin_session') === 'true' && (
+              {currentUser?.role === 'admin' && (
                 <button
                   onClick={() => {
-                    window.history.pushState({}, '', '/admin');
-                    setIsAdminView(true);
+                    navigateTo('/admin');
                   }}
                   className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 px-3.5 py-1.5 rounded-xl text-xs font-bold border border-indigo-500/30 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:scale-[1.02]"
                 >
                   <Shield className="w-3.5 h-3.5 text-indigo-400" />
                   <span>لوحة التحكم 👑</span>
+                </button>
+              )}
+
+              {/* Logout Button */}
+              {currentUser && (
+                <button
+                  onClick={() => {
+                    const confirmLogout = window.confirm("هل أنت متأكد من رغبتك في تسجيل الخروج من النظام؟");
+                    if (confirmLogout) {
+                      localStorage.removeItem('logged_in_user');
+                      localStorage.removeItem('admin_session');
+                      setCurrentUser(null);
+                      navigateTo('/login');
+                    }
+                  }}
+                  className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3.5 py-1.5 rounded-xl text-xs font-bold border border-red-500/20 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:scale-[1.02]"
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  <span>تسجيل الخروج</span>
                 </button>
               )}
 
