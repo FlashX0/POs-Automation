@@ -4350,7 +4350,7 @@ export default function App() {
                   <span>Delta For Road Construction</span>
                   <span className="text-xs bg-sky-600 text-white px-2 py-0.5 rounded-full font-normal">نظام أتمتة الفواتير</span>
                 </h1>
-                <p className="text-[11px] md:text-xs text-slate-400">التحليل والتصنيف التلقائي الذكي لعروض الأسعار وأوامر الشراء (POs) بواسطة الـ AI</p>
+                <p className="text-[11px] md:text-xs text-slate-400">التحليل والتصنيف لعروض الأسعار وأوامر الشراء (POs)</p>
               </div>
             </div>
 
