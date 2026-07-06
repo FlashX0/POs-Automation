@@ -411,6 +411,97 @@ async function seedDatabase() {
 }
 */
 
+async function seedAllRequiredUsers() {
+  try {
+    const db = getDb();
+    const changed = ensureLocalUsersSeeded(db);
+    if (changed) {
+      saveDb(db);
+      console.log("[Seeder] Local users successfully verified & seeded.");
+    }
+
+    const adminEmail = "khaled@delta.com";
+    const userEmail = "user@delta.com";
+    const hashedAdmin = bcrypt.hashSync("DeltaAdmin2026", 10);
+    const hashedUser = bcrypt.hashSync("DeltaUser2026", 10);
+
+    // MongoDB User Collection seed
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const mongoAdminExists = await User.findOne({ email: adminEmail });
+        if (!mongoAdminExists) {
+          await User.create({
+            name: "خالد",
+            email: adminEmail,
+            password: hashedAdmin,
+            role: "admin",
+            status: "active"
+          });
+          console.log("[Seeder] Seeded Admin (Khaled) to MongoDB Atlas.");
+        } else if (mongoAdminExists.role !== "admin") {
+          mongoAdminExists.role = "admin";
+          await mongoAdminExists.save();
+          console.log("[Seeder] Updated Admin (Khaled) role to 'admin' in MongoDB Atlas.");
+        }
+        
+        const mongoUserExists = await User.findOne({ email: userEmail });
+        if (!mongoUserExists) {
+          await User.create({
+            name: "موظف عادي",
+            email: userEmail,
+            password: hashedUser,
+            role: "user",
+            status: "active"
+          });
+          console.log("[Seeder] Seeded standard user to MongoDB Atlas.");
+        }
+      } catch (mongoErr: any) {
+        console.error("[Seeder] MongoDB user collection seed failed:", mongoErr.message);
+      }
+    }
+
+    // Supabase Auth seed
+    if (supabaseClient) {
+      try {
+        console.log("[Seeder] Attempting to verify/seed admin user in Supabase Auth...");
+        const { data: adminSb, error: adminSbError } = await supabaseClient.auth.signUp({
+          email: adminEmail,
+          password: "DeltaAdmin2026",
+          options: {
+            data: { name: "خالد", role: "admin" }
+          }
+        });
+        if (adminSbError) {
+          console.log(`[Seeder] Supabase Admin signup notice (this is normal if already exists): ${adminSbError.message}`);
+        } else {
+          console.log("[Seeder] Supabase Admin signed up successfully!");
+        }
+
+        console.log("[Seeder] Attempting to verify/seed standard user in Supabase Auth...");
+        const { data: userSb, error: userSbError } = await supabaseClient.auth.signUp({
+          email: userEmail,
+          password: "DeltaUser2026",
+          options: {
+            data: { name: "موظف عادي", role: "user" }
+          }
+        });
+        if (userSbError) {
+          console.log(`[Seeder] Supabase standard user signup notice: ${userSbError.message}`);
+        } else {
+          console.log("[Seeder] Supabase standard user signed up successfully!");
+        }
+      } catch (sbErr: any) {
+        console.warn("[Seeder] Supabase Auth seed failed:", sbErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error("[Seeder] General error seeding users:", err.message);
+  }
+}
+
+// Run immediate background seed
+seedAllRequiredUsers();
+
 // تشغيل الدالة بمجرد تمام الاتصال والمزامنة لضمان استرجاع كل المشاريع من أطلس
 mongoose.connection.once("open", async () => {
   try {
@@ -525,81 +616,7 @@ mongoose.connection.once("open", async () => {
   await fetchAndSyncDbFromMongo();
 
   // 5. Seed Users with Email/Password and Role (admin/user)
-  try {
-    const db = getDb();
-    db.users = db.users || [];
-    
-    const adminEmail = "khaled@delta.com";
-    const userEmail = "user@delta.com";
-    
-    // Hash passwords
-    const hashedAdmin = await bcrypt.hash("DeltaAdmin2026", 10);
-    const hashedUser = await bcrypt.hash("DeltaUser2026", 10);
-    
-    // Check local db
-    let changedUsers = false;
-    let localAdminExists = db.users.some((u: any) => u.email === adminEmail);
-    if (!localAdminExists) {
-      db.users.push({
-        id: "usr_admin_1",
-        name: "خالد",
-        email: adminEmail,
-        password: hashedAdmin,
-        role: "admin",
-        status: "active",
-        createdAt: new Date().toISOString()
-      });
-      changedUsers = true;
-    }
-    
-    let localUserExists = db.users.some((u: any) => u.email === userEmail);
-    if (!localUserExists) {
-      db.users.push({
-        id: "usr_user_1",
-        name: "موظف عادي",
-        email: userEmail,
-        password: hashedUser,
-        role: "user",
-        status: "active",
-        createdAt: new Date().toISOString()
-      });
-      changedUsers = true;
-    }
-    
-    if (changedUsers) {
-      saveDb(db);
-      console.log("[User Startup] Seeded local users.");
-    }
-
-    // Seed Mongo User Collection
-    if (mongoose.connection.readyState === 1) {
-      const mongoAdminExists = await User.findOne({ email: adminEmail });
-      if (!mongoAdminExists) {
-        await User.create({
-          name: "خالد",
-          email: adminEmail,
-          password: hashedAdmin,
-          role: "admin",
-          status: "active"
-        });
-        console.log("[User Startup] Seeded Admin (Khaled) to MongoDB Atlas.");
-      }
-      
-      const mongoUserExists = await User.findOne({ email: userEmail });
-      if (!mongoUserExists) {
-        await User.create({
-          name: "موظف عادي",
-          email: userEmail,
-          password: hashedUser,
-          role: "user",
-          status: "active"
-        });
-        console.log("[User Startup] Seeded standard user to MongoDB Atlas.");
-      }
-    }
-  } catch (err: any) {
-    console.error("[User Startup] Error seeding users:", err.message);
-  }
+  await seedAllRequiredUsers();
 
   try {
     const db = getDb();
@@ -719,8 +736,59 @@ function cleanDatabaseDiagnosticsInternal(db: any) {
   }
 }
 
+function ensureLocalUsersSeeded(db: any): boolean {
+  if (!db) return false;
+  db.users = db.users || [];
+  let changed = false;
+
+  const adminEmail = "khaled@delta.com";
+  const userEmail = "user@delta.com";
+
+  let adminExists = db.users.some((u: any) => u.email && u.email.toLowerCase() === adminEmail);
+  if (!adminExists) {
+    db.users.push({
+      id: "usr_admin_1",
+      name: "خالد",
+      email: adminEmail,
+      password: bcrypt.hashSync("DeltaAdmin2026", 10),
+      role: "admin",
+      status: "active",
+      createdAt: new Date().toISOString()
+    });
+    changed = true;
+  } else {
+    const adminUser = db.users.find((u: any) => u.email && u.email.toLowerCase() === adminEmail);
+    if (adminUser && adminUser.role !== "admin") {
+      adminUser.role = "admin";
+      changed = true;
+    }
+  }
+
+  let userExists = db.users.some((u: any) => u.email && u.email.toLowerCase() === userEmail);
+  if (!userExists) {
+    db.users.push({
+      id: "usr_user_1",
+      name: "موظف عادي",
+      email: userEmail,
+      password: bcrypt.hashSync("DeltaUser2026", 10),
+      role: "user",
+      status: "active",
+      createdAt: new Date().toISOString()
+    });
+    changed = true;
+  }
+
+  return changed;
+}
+
 function getDb() {
   if (memoryDb) {
+    const usersChanged = ensureLocalUsersSeeded(memoryDb);
+    if (usersChanged) {
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+      } catch (e) {}
+    }
     cleanDatabaseDiagnosticsInternal(memoryDb);
     return memoryDb;
   }
@@ -743,6 +811,12 @@ function getDb() {
       parsed.suppliers = [...defaultSuppliers];
       changed = true;
     }
+
+    const usersChanged = ensureLocalUsersSeeded(parsed);
+    if (usersChanged) {
+      changed = true;
+    }
+
     if (changed) {
       try {
         fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), "utf-8");
@@ -753,7 +827,11 @@ function getDb() {
     return parsed;
   } catch (err) {
     const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
+    ensureLocalUsersSeeded(fallback);
     memoryDb = fallback;
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(fallback, null, 2), "utf-8");
+    } catch (e) {}
     cleanDatabaseDiagnosticsInternal(memoryDb);
     return fallback;
   }
@@ -2345,6 +2423,9 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const lowerEmail = email.toLowerCase().trim();
+
+    // Dynamically ensure required users are verified and seeded on every login attempt
+    await seedAllRequiredUsers();
 
     // 1. Check local DB
     const db = getDb();
