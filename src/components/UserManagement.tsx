@@ -389,7 +389,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                   {users.map((user, index) => {
                     const isSelf = user.email.toLowerCase() === currentUser?.email?.toLowerCase();
                     return (
-                      <tr key={user.id || user.email} className={`hover:bg-slate-800/25 transition-all ${isSelf ? 'bg-sky-500/5' : ''}`}>
+                      <tr key={`${user.id || index}_${user.email}`} className={`hover:bg-slate-800/25 transition-all ${isSelf ? 'bg-sky-500/5' : ''}`}>
                         
                         {/* Account Status */}
                         <td className="py-4 px-6 align-middle text-center">

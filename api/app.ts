@@ -778,6 +778,17 @@ function ensureLocalUsersSeeded(db: any): boolean {
     changed = true;
   }
 
+  // Deduplicate user IDs to ensure strict uniqueness
+  const seenIds = new Set<string>();
+  db.users.forEach((u: any, idx: number) => {
+    if (!u.id || seenIds.has(u.id)) {
+      const generatedId = "usr_" + Date.now() + "_" + Math.floor(Math.random() * 1000) + "_" + idx;
+      u.id = generatedId;
+      changed = true;
+    }
+    seenIds.add(u.id);
+  });
+
   return changed;
 }
 
