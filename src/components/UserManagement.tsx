@@ -57,12 +57,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState('');
 
+  const safeJson = async (res: Response) => {
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error('تلقى المتصفح استجابة غير صالحة من السيرفر (ليست بتنسيق JSON). يرجى المحاولة لاحقاً.');
+    }
+    return await res.json();
+  };
+
   const fetchUsers = async () => {
     setLoading(true);
     setError('');
     try {
       const res = await fetch('/api/admin/users');
-      const data = await res.json();
+      const data = await safeJson(res);
       if (res.ok && data.success) {
         setUsers(data.users);
       } else {
@@ -100,7 +108,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
           role: newUserRole
         })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (res.ok && data.success) {
         setSuccess('تم إنشاء حساب الموظف الجديد بنجاح!');
         setNewUserName('');
@@ -128,7 +136,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, role })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (res.ok && data.success) {
         setSuccess('تم تحديث الرتبة بنجاح!');
         fetchUsers();
@@ -149,7 +157,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, status })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (res.ok && data.success) {
         setSuccess('تم تحديث حالة الموظف بنجاح!');
         fetchUsers();
@@ -201,7 +209,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (res.ok && data.success) {
         setSuccess(`تم تحديث بيانات الموظف ${editUserName} بنجاح!`);
 
@@ -240,7 +248,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (res.ok && data.success) {
         setSuccess('تم حذف الموظف بنجاح من قاعدة البيانات!');
         fetchUsers();

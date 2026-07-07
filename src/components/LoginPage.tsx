@@ -22,6 +22,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setLoading(true);
     setError('');
 
+    const safeJson = async (res: Response) => {
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('تلقى المتصفح استجابة غير صالحة من السيرفر (ليست بتنسيق JSON). يرجى المحاولة لاحقاً.');
+      }
+      return await res.json();
+    };
+
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
@@ -31,7 +39,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      const data = await safeJson(response);
       if (response.ok && data.success) {
         onLoginSuccess(data.user);
       } else {

@@ -655,6 +655,10 @@ export default function App() {
         });
         
         if (res.ok) {
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            throw new Error('Response is not JSON');
+          }
           const data = await res.json();
           if (data.success && data.user) {
             setCurrentUser(data.user);
@@ -788,6 +792,10 @@ export default function App() {
 
     try {
       if (!res || !res.ok) throw new Error('فشل جلب البيانات من الخادم');
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('استجابة غير صالحة من السيرفر (ليست بتنسيق JSON)');
+      }
       const data = await res.json();
       
       setDocuments(data.documents || []);
