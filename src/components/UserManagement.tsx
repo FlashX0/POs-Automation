@@ -49,6 +49,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
 
   // Edit User State (Edit User Modal)
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editUserId, setEditUserId] = useState('');
   const [editUserEmail, setEditUserEmail] = useState('');
   const [editUserNewEmail, setEditUserNewEmail] = useState('');
   const [editUserName, setEditUserName] = useState('');
@@ -177,6 +178,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
     setEditError('');
     try {
       const payload: any = {
+        id: editUserId,
         email: editUserEmail,
         name: editUserName.trim()
       };
@@ -454,6 +456,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                           <div className="flex items-center justify-center gap-3">
                             <button
                               onClick={() => {
+                                setEditUserId(user.id);
                                 setEditUserEmail(user.email);
                                 setEditUserNewEmail(user.email);
                                 setEditUserName(user.name);

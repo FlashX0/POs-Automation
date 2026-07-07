@@ -14,9 +14,12 @@ dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 let supabaseClient: any = null;
+let supabaseAdminClient: any = null;
 let isSupabaseDevicesDisabled = false;
+
 if (supabaseUrl && supabaseAnonKey) {
   try {
     supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
@@ -26,6 +29,22 @@ if (supabaseUrl && supabaseAnonKey) {
   }
 } else {
   console.warn("Supabase URL or Anon Key is missing! File uploads will automatically fallback to local storage simulation.");
+}
+
+if (supabaseUrl && supabaseServiceRoleKey) {
+  try {
+    supabaseAdminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+    console.log("Supabase Admin Client (Service Role) initialized successfully!");
+  } catch (err: any) {
+    console.error("Failed to initialize Supabase admin client:", err.message);
+  }
+} else {
+  console.warn("SUPABASE_SERVICE_ROLE_KEY is missing! Direct Auth user creation and updates will fallback to client-side actions.");
 }
 
 // دالة صارمة لتنظيف الأسماء من أي رموز خاصة أو مسافات زائدة
@@ -290,6 +309,23 @@ const defaultProjects = [
   "HP - Road Works"
 ];
 
+const defaultSuppliers: string[] = [];
+
+const defaultDb = {
+  documents: [] as any[],
+  telegramConfig: {
+    botToken: "",
+    isWebhookSet: false,
+    botUsername: null,
+    webhookUrl: ""
+  },
+  notifications: [] as any[],
+  projects: defaultProjects,
+  suppliers: defaultSuppliers
+};
+
+let memoryDb: any = null;
+
 function mapProjectNameToStandard(name: any): string {
   if (!name || typeof name !== "string") return "عام";
   const str = name.trim().toLowerCase();
@@ -422,7 +458,7 @@ async function seedAllRequiredUsers() {
 
     const adminEmail = "khaled@delta.com";
     const userEmail = "user@delta.com";
-    const hashedAdmin = bcrypt.hashSync("DeltaAdmin2026", 10);
+    const hashedAdmin = bcrypt.hashSync("016135", 10);
     const hashedUser = bcrypt.hashSync("DeltaUser2026", 10);
 
     // MongoDB User Collection seed
@@ -431,6 +467,7 @@ async function seedAllRequiredUsers() {
         const mongoAdminExists = await User.findOne({ email: adminEmail });
         if (!mongoAdminExists) {
           await User.create({
+            _id: "c45b9915-e6a3-4c65-81c5-b3206c6f3144",
             name: "خالد",
             email: adminEmail,
             password: hashedAdmin,
@@ -438,10 +475,16 @@ async function seedAllRequiredUsers() {
             status: "active"
           });
           console.log("[Seeder] Seeded Admin (Khaled) to MongoDB Atlas.");
-        } else if (mongoAdminExists.role !== "admin") {
-          mongoAdminExists.role = "admin";
-          await mongoAdminExists.save();
-          console.log("[Seeder] Updated Admin (Khaled) role to 'admin' in MongoDB Atlas.");
+        } else {
+          let mongoChanged = false;
+          if (mongoAdminExists.role !== "admin") {
+            mongoAdminExists.role = "admin";
+            mongoChanged = true;
+          }
+          if (mongoChanged) {
+            await mongoAdminExists.save();
+            console.log("[Seeder] Updated Admin (Khaled) role to 'admin' in MongoDB Atlas.");
+          }
         }
         
         const mongoUserExists = await User.findOne({ email: userEmail });
@@ -460,24 +503,114 @@ async function seedAllRequiredUsers() {
       }
     }
 
-    // Supabase Auth seed
-    if (supabaseClient) {
+    // Supabase Auth and database synchronization (Purge & Align)
+    if (supabaseAdminClient) {
       try {
-        console.log("[Seeder] Attempting to verify/seed admin user in Supabase Auth...");
+        console.log("[Seeder] Syncing database with Supabase Auth users using Admin Client...");
+        const { data: { users: sbUsers }, error: listError } = await supabaseAdminClient.auth.admin.listUsers();
+        if (listError) {
+          throw listError;
+        }
+
+        console.log(`[Seeder] Found ${sbUsers.length} users in Supabase Auth.`);
+
+        // 1. Ensure Khaled exists in Supabase Auth with ID c45b9915-e6a3-4c65-81c5-b3206c6f3144
+        const khaledSb = sbUsers.find((u: any) => u.email && u.email.toLowerCase() === adminEmail);
+        if (!khaledSb) {
+          console.log("[Seeder] Creating Khaled in Supabase Auth with exact ID...");
+          const { data: created, error: createErr } = await supabaseAdminClient.auth.admin.createUser({
+            id: "c45b9915-e6a3-4c65-81c5-b3206c6f3144",
+            email: adminEmail,
+            password: "016135",
+            email_confirm: true,
+            user_metadata: { name: "خالد", role: "admin" }
+          });
+          if (createErr) {
+            console.error("[Seeder] Failed to create Khaled in Supabase Auth:", createErr.message);
+          } else {
+            console.log("[Seeder] Khaled successfully created in Supabase Auth!");
+          }
+        }
+
+        // 2. Perform database purging of users that do not exist in Supabase Auth
+        // As requested: "قم بمسح أي حسابات عشوائية زائدة في جدول قاعدة البيانات لا تملك حساباً حقيقياً في الـ Supabase Auth (مثل حساب daly@delta.com الظاهر في الجدول وغير موجود في الـ Auth)."
+        const localDb = getDb();
+        localDb.users = localDb.users || [];
+        const originalCount = localDb.users.length;
+
+        // Collect all valid emails from Supabase Auth
+        const sbEmails = new Set<string>();
+        sbUsers.forEach((u: any) => {
+          if (u.email) sbEmails.add(u.email.toLowerCase());
+        });
+        // Always allow khaled
+        sbEmails.add(adminEmail);
+        // Also allow the default user@delta.com just in case Supabase is running locally/mocked
+        sbEmails.add(userEmail);
+
+        const initialLength = localDb.users.length;
+        localDb.users = localDb.users.filter((u: any) => {
+          if (!u.email) return false;
+          const lowerEmail = u.email.toLowerCase();
+          const existsInSb = sbEmails.has(lowerEmail);
+          if (!existsInSb) {
+            console.log(`[Seeder] Purging unsynced user from local database: ${u.email}`);
+          }
+          return existsInSb;
+        });
+
+        // 3. Keep local user IDs in sync with UIDs in Supabase Auth
+        localDb.users.forEach((u: any) => {
+          if (u.email && u.email.toLowerCase() === adminEmail) {
+            u.id = "c45b9915-e6a3-4c65-81c5-b3206c6f3144";
+            return;
+          }
+          const matchedSb = sbUsers.find((sb: any) => sb.email && sb.email.toLowerCase() === u.email.toLowerCase());
+          if (matchedSb && u.id !== matchedSb.id) {
+            console.log(`[Seeder] Syncing ID for ${u.email} to match Supabase Auth UID: ${matchedSb.id}`);
+            u.id = matchedSb.id;
+          }
+        });
+
+        if (localDb.users.length !== initialLength || originalCount !== localDb.users.length) {
+          saveDb(localDb);
+        }
+
+        // Also purge from MongoDB
+        if (mongoose.connection.readyState === 1) {
+          try {
+            const allMongoUsers = await User.find({});
+            for (const mUser of allMongoUsers) {
+              const mEmail = mUser.email.toLowerCase();
+              if (mEmail !== adminEmail && mEmail !== userEmail && !sbEmails.has(mEmail)) {
+                console.log(`[Seeder] Purging unsynced user from MongoDB: ${mUser.email}`);
+                await User.deleteOne({ _id: mUser._id });
+              }
+            }
+          } catch (mongoErr) {
+            console.error("[Seeder] MongoDB purge failed:", mongoErr);
+          }
+        }
+      } catch (sbErr: any) {
+        console.warn("[Seeder] Supabase Admin sync error:", sbErr.message);
+      }
+    } else if (supabaseClient) {
+      try {
+        console.log("[Seeder] Attempting to verify/seed admin user in Supabase Auth (Anon)...");
         const { data: adminSb, error: adminSbError } = await supabaseClient.auth.signUp({
           email: adminEmail,
-          password: "DeltaAdmin2026",
+          password: "016135",
           options: {
             data: { name: "خالد", role: "admin" }
           }
         });
         if (adminSbError) {
-          console.log(`[Seeder] Supabase Admin signup notice (this is normal if already exists): ${adminSbError.message}`);
+          console.log(`[Seeder] Supabase Admin signup notice: ${adminSbError.message}`);
         } else {
           console.log("[Seeder] Supabase Admin signed up successfully!");
         }
 
-        console.log("[Seeder] Attempting to verify/seed standard user in Supabase Auth...");
+        console.log("[Seeder] Attempting to verify/seed standard user in Supabase Auth (Anon)...");
         const { data: userSb, error: userSbError } = await supabaseClient.auth.signUp({
           email: userEmail,
           password: "DeltaUser2026",
@@ -649,21 +782,6 @@ mongoose.connection.once("open", async () => {
   }
 });
 
-const defaultSuppliers: string[] = [];
-
-const defaultDb = {
-  documents: [] as any[],
-  telegramConfig: {
-    botToken: "",
-    isWebhookSet: false,
-    botUsername: null,
-    webhookUrl: ""
-  },
-  notifications: [] as any[],
-  projects: defaultProjects,
-  suppliers: defaultSuppliers
-};
-
 // Populate initial DB on disk from committed repository template if available
 try {
   if (!fs.existsSync(DB_FILE)) {
@@ -677,9 +795,6 @@ try {
 } catch (e) {
   console.warn("Could not write initial default DB file (expected in read-only environments):", e);
 }
-
-// In-memory database state fallback to avoid crashing on read-only environments
-let memoryDb: any = null;
 
 // Helpers to read/write database state
 function cleanDatabaseDiagnosticsInternal(db: any) {
@@ -744,21 +859,24 @@ function ensureLocalUsersSeeded(db: any): boolean {
   const adminEmail = "khaled@delta.com";
   const userEmail = "user@delta.com";
 
-  let adminExists = db.users.some((u: any) => u.email && u.email.toLowerCase() === adminEmail);
-  if (!adminExists) {
+  let adminUser = db.users.find((u: any) => u.email && u.email.toLowerCase() === adminEmail);
+  if (!adminUser) {
     db.users.push({
-      id: "usr_admin_1",
+      id: "c45b9915-e6a3-4c65-81c5-b3206c6f3144",
       name: "خالد",
       email: adminEmail,
-      password: bcrypt.hashSync("DeltaAdmin2026", 10),
+      password: bcrypt.hashSync("016135", 10),
       role: "admin",
       status: "active",
       createdAt: new Date().toISOString()
     });
     changed = true;
   } else {
-    const adminUser = db.users.find((u: any) => u.email && u.email.toLowerCase() === adminEmail);
-    if (adminUser && adminUser.role !== "admin") {
+    if (adminUser.id !== "c45b9915-e6a3-4c65-81c5-b3206c6f3144") {
+      adminUser.id = "c45b9915-e6a3-4c65-81c5-b3206c6f3144";
+      changed = true;
+    }
+    if (adminUser.role !== "admin") {
       adminUser.role = "admin";
       changed = true;
     }
@@ -781,6 +899,11 @@ function ensureLocalUsersSeeded(db: any): boolean {
   // Deduplicate user IDs to ensure strict uniqueness
   const seenIds = new Set<string>();
   db.users.forEach((u: any, idx: number) => {
+    if (u.email && u.email.toLowerCase() === adminEmail) {
+      u.id = "c45b9915-e6a3-4c65-81c5-b3206c6f3144";
+      seenIds.add(u.id);
+      return;
+    }
     if (!u.id || seenIds.has(u.id)) {
       const generatedId = "usr_" + Date.now() + "_" + Math.floor(Math.random() * 1000) + "_" + idx;
       u.id = generatedId;
@@ -2438,49 +2561,11 @@ app.post("/api/auth/login", async (req, res) => {
     // Dynamically ensure required users are verified and seeded on every login attempt
     await seedAllRequiredUsers();
 
-    // 1. Check local DB
-    const db = getDb();
-    db.users = db.users || [];
-    let matchedUser = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
+    let matchedUser: any = null;
+    let authUid: string | null = null;
+    let loggedInViaSupabase = false;
 
-    // 2. Check MongoDB if not found or to sync
-    if (!matchedUser && mongoose.connection.readyState === 1) {
-      try {
-        const mongoUser = await User.findOne({ email: lowerEmail });
-        if (mongoUser) {
-          matchedUser = {
-            id: mongoUser._id.toString(),
-            name: mongoUser.name,
-            email: mongoUser.email,
-            password: mongoUser.password,
-            role: mongoUser.role || "user",
-            status: mongoUser.status || "active",
-            createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
-          };
-          // Sync to local db
-          db.users.push(matchedUser);
-          saveDb(db);
-        }
-      } catch (err) {
-        console.warn("[Login] MongoDB check failed:", err);
-      }
-    }
-
-    if (!matchedUser) {
-      return res.status(401).json({ success: false, error: "عذراً، البريد الإلكتروني غير مسجل في النظام" });
-    }
-
-    if (matchedUser.status === "blocked") {
-      return res.status(403).json({ success: false, error: "تم تعطيل حسابك من قبل الإدارة. يرجى التواصل مع المسؤول." });
-    }
-
-    // 3. Compare passwords using bcrypt
-    const passwordIsValid = await bcrypt.compare(password, matchedUser.password);
-    if (!passwordIsValid) {
-      return res.status(401).json({ success: false, error: "كلمة المرور غير صحيحة" });
-    }
-
-    // 4. Supabase Auth attempt to satisfy the "via Supabase Auth" requirement
+    // 1. Try Supabase Auth first to verify credentials and fetch UID
     if (supabaseClient) {
       try {
         const { data: sbData, error: sbError } = await supabaseClient.auth.signInWithPassword({
@@ -2489,12 +2574,113 @@ app.post("/api/auth/login", async (req, res) => {
         });
         if (sbError) {
           console.warn("[Supabase Auth] signInWithPassword notice:", sbError.message);
-        } else {
-          console.log("[Supabase Auth] signInWithPassword successful for:", lowerEmail);
+        } else if (sbData && sbData.user) {
+          authUid = sbData.user.id;
+          loggedInViaSupabase = true;
+          console.log("[Supabase Auth] signInWithPassword successful. UID:", authUid);
         }
       } catch (ex: any) {
-        console.warn("[Supabase Auth] login exception caught (continuing with local session):", ex.message);
+        console.warn("[Supabase Auth] login exception caught:", ex.message);
       }
+    }
+
+    const db = getDb();
+    db.users = db.users || [];
+
+    // 2. Fetch matchedUser based on the source of truth
+    if (loggedInViaSupabase && authUid) {
+      // Find by exact Supabase UID
+      matchedUser = db.users.find((u: any) => u.id === authUid);
+
+      // If not found by ID but found by email, link them and update DB
+      if (!matchedUser) {
+        matchedUser = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
+        if (matchedUser) {
+          console.log(`[Auth] Matching user by email to sync ID to Supabase UID: ${authUid}`);
+          matchedUser.id = authUid;
+          saveDb(db);
+        }
+      }
+
+      // Check MongoDB if still not found
+      if (!matchedUser && mongoose.connection.readyState === 1) {
+        try {
+          const mongoUser = await User.findOne({ $or: [{ _id: authUid }, { email: lowerEmail }] });
+          if (mongoUser) {
+            matchedUser = {
+              id: authUid,
+              name: mongoUser.name,
+              email: mongoUser.email,
+              password: mongoUser.password,
+              role: mongoUser.role || "user",
+              status: mongoUser.status || "active",
+              createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
+            };
+            db.users.push(matchedUser);
+            saveDb(db);
+          }
+        } catch (mongoErr) {
+          console.warn("[Login] MongoDB lookup by UID failed:", mongoErr);
+        }
+      }
+
+      // Auto-create local user entry if they are in Supabase Auth but not in our permissions DB
+      if (!matchedUser) {
+        const adminEmail = "khaled@delta.com";
+        const isKhaled = lowerEmail === adminEmail;
+        matchedUser = {
+          id: authUid,
+          name: isKhaled ? "خالد" : "موظف جديد",
+          email: lowerEmail,
+          password: await bcrypt.hash(password, 10),
+          role: isKhaled ? "admin" : "user",
+          status: "active",
+          createdAt: new Date().toISOString()
+        };
+        db.users.push(matchedUser);
+        saveDb(db);
+        console.log(`[Auth] Auto-created database entry for authenticated user: ${lowerEmail}`);
+      }
+    } else {
+      // Fallback: Authenticate locally if Supabase Client is not initialized or failed to connect
+      matchedUser = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
+
+      // Check MongoDB if not found or to sync
+      if (!matchedUser && mongoose.connection.readyState === 1) {
+        try {
+          const mongoUser = await User.findOne({ email: lowerEmail });
+          if (mongoUser) {
+            matchedUser = {
+              id: mongoUser._id.toString(),
+              name: mongoUser.name,
+              email: mongoUser.email,
+              password: mongoUser.password,
+              role: mongoUser.role || "user",
+              status: mongoUser.status || "active",
+              createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
+            };
+            // Sync to local db
+            db.users.push(matchedUser);
+            saveDb(db);
+          }
+        } catch (err) {
+          console.warn("[Login] MongoDB check failed:", err);
+        }
+      }
+
+      if (!matchedUser) {
+        return res.status(401).json({ success: false, error: "عذراً، البريد الإلكتروني غير مسجل في النظام" });
+      }
+
+      // Compare passwords using bcrypt
+      const passwordIsValid = await bcrypt.compare(password, matchedUser.password);
+      if (!passwordIsValid) {
+        return res.status(401).json({ success: false, error: "كلمة المرور غير صحيحة" });
+      }
+    }
+
+    if (matchedUser.status === "blocked") {
+      return res.status(403).json({ success: false, error: "تم تعطيل حسابك من قبل الإدارة. يرجى التواصل مع المسؤول." });
     }
 
     // Login success
@@ -2639,9 +2825,28 @@ app.post("/api/admin/users/create", async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    let finalUserId = "usr_" + Date.now();
 
-    // 1. Save to Supabase Auth if client is present
-    if (supabaseClient) {
+    // 1. Save to Supabase Auth if admin client is present, otherwise use standard signUp
+    if (supabaseAdminClient) {
+      try {
+        const { data: sbData, error: sbError } = await supabaseAdminClient.auth.admin.createUser({
+          email: lowerEmail,
+          password: password,
+          email_confirm: true,
+          user_metadata: { name, role: role || "user" }
+        });
+        if (sbError) {
+          console.warn("[Supabase Admin Auth] User creation failed:", sbError.message);
+          return res.status(400).json({ success: false, error: `فشل إنشاء الحساب في Supabase Auth: ${sbError.message}` });
+        } else if (sbData && sbData.user) {
+          finalUserId = sbData.user.id;
+          console.log("[Supabase Admin Auth] User created successfully. UID:", finalUserId);
+        }
+      } catch (ex: any) {
+        console.error("[Supabase Admin Auth] Exception caught during user creation:", ex.message);
+      }
+    } else if (supabaseClient) {
       try {
         const { data: sbData, error: sbError } = await supabaseClient.auth.signUp({
           email: lowerEmail,
@@ -2652,8 +2857,9 @@ app.post("/api/admin/users/create", async (req, res) => {
         });
         if (sbError) {
           console.warn("[Supabase Auth] User signUp warning:", sbError.message);
-        } else {
-          console.log("[Supabase Auth] User signUp successful:", lowerEmail);
+        } else if (sbData && sbData.user) {
+          finalUserId = sbData.user.id;
+          console.log("[Supabase Auth] User signUp successful. UID:", finalUserId);
         }
       } catch (ex: any) {
         console.warn("[Supabase Auth] signUp exception caught:", ex.message);
@@ -2662,7 +2868,7 @@ app.post("/api/admin/users/create", async (req, res) => {
 
     // 2. Save locally
     const newUser = {
-      id: "usr_" + Date.now(),
+      id: finalUserId,
       name: name.trim(),
       email: lowerEmail,
       password: hashedPassword,
@@ -2677,6 +2883,7 @@ app.post("/api/admin/users/create", async (req, res) => {
     // 3. Save to MongoDB Atlas
     if (mongoose.connection.readyState === 1) {
       await User.create({
+        _id: finalUserId,
         name: name.trim(),
         email: lowerEmail,
         password: hashedPassword,
@@ -2685,7 +2892,7 @@ app.post("/api/admin/users/create", async (req, res) => {
       });
     }
 
-    console.log(`[Auth] User ${name} successfully created by Admin as [${role || "user"}]`);
+    console.log(`[Auth] User ${name} successfully created by Admin as [${role || "user"}] with UID [${finalUserId}]`);
     return res.json({ success: true, message: "تم إنشاء حساب الموظف الجديد بنجاح!" });
   } catch (err: any) {
     console.error("[Auth] Create user error:", err);
@@ -2696,7 +2903,7 @@ app.post("/api/admin/users/create", async (req, res) => {
 // Admin Route: Update User (Edit Role or status or name or email or password)
 app.post("/api/admin/users/update", async (req, res) => {
   try {
-    const { email, name, role, status, password, newEmail } = req.body;
+    const { id, email, name, role, status, password, newEmail } = req.body;
     if (!email) {
       return res.status(400).json({ success: false, error: "البريد الإلكتروني للموظف مطلوب" });
     }
@@ -2705,7 +2912,14 @@ app.post("/api/admin/users/update", async (req, res) => {
     const db = getDb();
     db.users = db.users || [];
 
-    let userIndex = db.users.findIndex((u: any) => u.email.toLowerCase() === lowerEmail);
+    let userIndex = -1;
+    if (id) {
+      userIndex = db.users.findIndex((u: any) => u.id === id);
+    }
+    if (userIndex === -1) {
+      userIndex = db.users.findIndex((u: any) => u.email.toLowerCase() === lowerEmail);
+    }
+
     if (userIndex === -1 && mongoose.connection.readyState !== 1) {
       return res.status(404).json({ success: false, error: "الموظف غير موجود" });
     }
@@ -2725,7 +2939,46 @@ app.post("/api/admin/users/update", async (req, res) => {
       hashedPassword = await bcrypt.hash(password, 10);
     }
 
-    // Update locally
+    // 1. Update in Supabase Auth if service role client is present
+    if (supabaseAdminClient) {
+      const targetUserId = id || (userIndex !== -1 ? db.users[userIndex].id : null);
+      if (targetUserId) {
+        try {
+          const authUpdateObj: any = {};
+          if (lowerNewEmail) {
+            authUpdateObj.email = lowerNewEmail;
+            authUpdateObj.email_confirm = true;
+          }
+          if (password && password.trim().length > 0) {
+            authUpdateObj.password = password;
+          }
+          if (name) {
+            authUpdateObj.user_metadata = authUpdateObj.user_metadata || {};
+            authUpdateObj.user_metadata.name = name.trim();
+          }
+          if (role) {
+            authUpdateObj.user_metadata = authUpdateObj.user_metadata || {};
+            authUpdateObj.user_metadata.role = role;
+          }
+
+          if (Object.keys(authUpdateObj).length > 0) {
+            console.log(`[Supabase Admin Auth] Updating user ${targetUserId} in Auth...`, authUpdateObj);
+            const { error: sbUpdateErr } = await supabaseAdminClient.auth.admin.updateUserById(
+              targetUserId,
+              authUpdateObj
+            );
+            if (sbUpdateErr) {
+              console.error("[Supabase Admin Auth] Failed to update user:", sbUpdateErr.message);
+              return res.status(400).json({ success: false, error: `فشل التحديث في Supabase Auth: ${sbUpdateErr.message}` });
+            }
+          }
+        } catch (ex: any) {
+          console.error("[Supabase Admin Auth] Exception updating user:", ex.message);
+        }
+      }
+    }
+
+    // 2. Update locally
     if (userIndex !== -1) {
       if (name) db.users[userIndex].name = name.trim();
       if (lowerNewEmail) db.users[userIndex].email = lowerNewEmail;
@@ -2735,7 +2988,7 @@ app.post("/api/admin/users/update", async (req, res) => {
       saveDb(db);
     }
 
-    // Update in MongoDB
+    // 3. Update in MongoDB
     if (mongoose.connection.readyState === 1) {
       const updateData: any = {};
       if (name) updateData.name = name.trim();
