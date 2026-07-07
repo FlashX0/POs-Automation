@@ -20,32 +20,46 @@ let supabaseClient: any = null;
 let supabaseAdminClient: any = null;
 let isSupabaseDevicesDisabled = false;
 
-if (supabaseUrl && supabaseAnonKey) {
-  try {
-    supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-    console.log("Supabase Client initialized successfully!");
-  } catch (err: any) {
-    console.error("Failed to initialize Supabase client:", err.message);
+function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient;
+  const url = process.env.SUPABASE_URL || supabaseUrl;
+  const key = process.env.SUPABASE_ANON_KEY || supabaseAnonKey;
+  if (url && key) {
+    try {
+      supabaseClient = createClient(url, key);
+      console.log("Supabase Client dynamically initialized successfully!");
+      return supabaseClient;
+    } catch (err: any) {
+      console.error("Failed to dynamically initialize Supabase client:", err.message);
+    }
   }
-} else {
-  console.warn("Supabase URL or Anon Key is missing! File uploads will automatically fallback to local storage simulation.");
+  return null;
 }
 
-if (supabaseUrl && supabaseServiceRoleKey) {
-  try {
-    supabaseAdminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    });
-    console.log("Supabase Admin Client (Service Role) initialized successfully!");
-  } catch (err: any) {
-    console.error("Failed to initialize Supabase admin client:", err.message);
+function getSupabaseAdminClient() {
+  if (supabaseAdminClient) return supabaseAdminClient;
+  const url = process.env.SUPABASE_URL || supabaseUrl;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseServiceRoleKey;
+  if (url && key) {
+    try {
+      supabaseAdminClient = createClient(url, key, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      });
+      console.log("Supabase Admin Client (Service Role) dynamically initialized successfully!");
+      return supabaseAdminClient;
+    } catch (err: any) {
+      console.error("Failed to dynamically initialize Supabase admin client:", err.message);
+    }
   }
-} else {
-  console.warn("SUPABASE_SERVICE_ROLE_KEY is missing! Direct Auth user creation and updates will fallback to client-side actions.");
+  return null;
 }
+
+// Initial checks at startup
+getSupabaseClient();
+getSupabaseAdminClient();
 
 // دالة صارمة لتنظيف الأسماء من أي رموز خاصة أو مسافات زائدة
 function transliteratedArabic(text: string): string {
@@ -504,10 +518,13 @@ async function seedAllRequiredUsers() {
     }
 
     // Supabase Auth and database synchronization (Purge & Align)
-    if (supabaseAdminClient) {
+    const adminClient = getSupabaseAdminClient();
+    const publicClient = getSupabaseClient();
+
+    if (adminClient) {
       try {
         console.log("[Seeder] Syncing database with Supabase Auth users using Admin Client...");
-        const { data: { users: sbUsers }, error: listError } = await supabaseAdminClient.auth.admin.listUsers();
+        const { data: { users: sbUsers }, error: listError } = await adminClient.auth.admin.listUsers();
         if (listError) {
           throw listError;
         }
@@ -518,7 +535,7 @@ async function seedAllRequiredUsers() {
         const khaledSb = sbUsers.find((u: any) => u.email && u.email.toLowerCase() === adminEmail);
         if (!khaledSb) {
           console.log("[Seeder] Creating Khaled in Supabase Auth with exact ID...");
-          const { data: created, error: createErr } = await supabaseAdminClient.auth.admin.createUser({
+          const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
             id: "c45b9915-e6a3-4c65-81c5-b3206c6f3144",
             email: adminEmail,
             password: "016135",
@@ -594,10 +611,10 @@ async function seedAllRequiredUsers() {
       } catch (sbErr: any) {
         console.warn("[Seeder] Supabase Admin sync error:", sbErr.message);
       }
-    } else if (supabaseClient) {
+    } else if (publicClient) {
       try {
         console.log("[Seeder] Attempting to verify/seed admin user in Supabase Auth (Anon)...");
-        const { data: adminSb, error: adminSbError } = await supabaseClient.auth.signUp({
+        const { data: adminSb, error: adminSbError } = await publicClient.auth.signUp({
           email: adminEmail,
           password: "016135",
           options: {
@@ -611,7 +628,7 @@ async function seedAllRequiredUsers() {
         }
 
         console.log("[Seeder] Attempting to verify/seed standard user in Supabase Auth (Anon)...");
-        const { data: userSb, error: userSbError } = await supabaseClient.auth.signUp({
+        const { data: userSb, error: userSbError } = await publicClient.auth.signUp({
           email: userEmail,
           password: "DeltaUser2026",
           options: {
@@ -2566,9 +2583,10 @@ app.post("/api/auth/login", async (req, res) => {
     let loggedInViaSupabase = false;
 
     // 1. Try Supabase Auth first to verify credentials and fetch UID
-    if (supabaseClient) {
+    const publicClient = getSupabaseClient();
+    if (publicClient) {
       try {
-        const { data: sbData, error: sbError } = await supabaseClient.auth.signInWithPassword({
+        const { data: sbData, error: sbError } = await publicClient.auth.signInWithPassword({
           email: lowerEmail,
           password: password
         });
@@ -2824,49 +2842,52 @@ app.post("/api/admin/users/create", async (req, res) => {
       return res.status(400).json({ success: false, error: "عذراً، البريد الإلكتروني مسجل بالفعل لمستخدم آخر" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    let finalUserId = "usr_" + Date.now();
-
-    // 1. Save to Supabase Auth if admin client is present, otherwise use standard signUp
-    if (supabaseAdminClient) {
-      try {
-        const { data: sbData, error: sbError } = await supabaseAdminClient.auth.admin.createUser({
-          email: lowerEmail,
-          password: password,
-          email_confirm: true,
-          user_metadata: { name, role: role || "user" }
-        });
-        if (sbError) {
-          console.warn("[Supabase Admin Auth] User creation failed:", sbError.message);
-          return res.status(400).json({ success: false, error: `فشل إنشاء الحساب في Supabase Auth: ${sbError.message}` });
-        } else if (sbData && sbData.user) {
-          finalUserId = sbData.user.id;
-          console.log("[Supabase Admin Auth] User created successfully. UID:", finalUserId);
-        }
-      } catch (ex: any) {
-        console.error("[Supabase Admin Auth] Exception caught during user creation:", ex.message);
-      }
-    } else if (supabaseClient) {
-      try {
-        const { data: sbData, error: sbError } = await supabaseClient.auth.signUp({
-          email: lowerEmail,
-          password: password,
-          options: {
-            data: { name, role: role || "user" }
-          }
-        });
-        if (sbError) {
-          console.warn("[Supabase Auth] User signUp warning:", sbError.message);
-        } else if (sbData && sbData.user) {
-          finalUserId = sbData.user.id;
-          console.log("[Supabase Auth] User signUp successful. UID:", finalUserId);
-        }
-      } catch (ex: any) {
-        console.warn("[Supabase Auth] signUp exception caught:", ex.message);
-      }
+    // 1. Get dynamic Supabase Admin Client
+    const adminClient = getSupabaseAdminClient();
+    if (!adminClient) {
+      console.error("[Auth] SUPABASE_SERVICE_ROLE_KEY is missing or invalid on the server.");
+      return res.status(500).json({ 
+        success: false, 
+        error: "فشل إنشاء الحساب: مفتاح الخدمة SUPABASE_SERVICE_ROLE_KEY غير مهيأ على السيرفر. يرجى ضبط المتغيرات البيئية للمشروع." 
+      });
     }
 
-    // 2. Save locally
+    let finalUserId = "";
+
+    // 2. Create in Supabase Auth
+    try {
+      const { data: sbData, error: sbError } = await adminClient.auth.admin.createUser({
+        email: lowerEmail,
+        password: password,
+        email_confirm: true,
+        user_metadata: { name, role: role || "user" }
+      });
+      if (sbError) {
+        console.warn("[Supabase Admin Auth] User creation failed:", sbError.message);
+        return res.status(400).json({ 
+          success: false, 
+          error: `فشل إنشاء الحساب في Supabase Auth: ${sbError.message}` 
+        });
+      } else if (sbData && sbData.user) {
+        finalUserId = sbData.user.id;
+        console.log("[Supabase Admin Auth] User created successfully. UID:", finalUserId);
+      } else {
+        return res.status(400).json({ 
+          success: false, 
+          error: "فشل إنشاء الحساب في Supabase Auth: لم يتم إرجاع بيانات المستخدم." 
+        });
+      }
+    } catch (ex: any) {
+      console.error("[Supabase Admin Auth] Exception caught during user creation:", ex.message);
+      return res.status(500).json({ 
+        success: false, 
+        error: `خطأ استثنائي أثناء إنشاء الحساب في Supabase Auth: ${ex.message}` 
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 3. Save locally only after 100% success in Supabase Auth
     const newUser = {
       id: finalUserId,
       name: name.trim(),
@@ -2880,16 +2901,20 @@ app.post("/api/admin/users/create", async (req, res) => {
     db.users.push(newUser);
     saveDb(db);
 
-    // 3. Save to MongoDB Atlas
+    // 4. Save to MongoDB Atlas
     if (mongoose.connection.readyState === 1) {
-      await User.create({
-        _id: finalUserId,
-        name: name.trim(),
-        email: lowerEmail,
-        password: hashedPassword,
-        role: role || "user",
-        status: "active"
-      });
+      try {
+        await User.create({
+          _id: finalUserId,
+          name: name.trim(),
+          email: lowerEmail,
+          password: hashedPassword,
+          role: role || "user",
+          status: "active"
+        });
+      } catch (mongoErr: any) {
+        console.error("[Auth] Failed to write user to MongoDB:", mongoErr.message);
+      }
     }
 
     console.log(`[Auth] User ${name} successfully created by Admin as [${role || "user"}] with UID [${finalUserId}]`);
@@ -2940,7 +2965,8 @@ app.post("/api/admin/users/update", async (req, res) => {
     }
 
     // 1. Update in Supabase Auth if service role client is present
-    if (supabaseAdminClient) {
+    const adminClient = getSupabaseAdminClient();
+    if (adminClient) {
       const targetUserId = id || (userIndex !== -1 ? db.users[userIndex].id : null);
       if (targetUserId) {
         try {
@@ -2963,7 +2989,7 @@ app.post("/api/admin/users/update", async (req, res) => {
 
           if (Object.keys(authUpdateObj).length > 0) {
             console.log(`[Supabase Admin Auth] Updating user ${targetUserId} in Auth...`, authUpdateObj);
-            const { error: sbUpdateErr } = await supabaseAdminClient.auth.admin.updateUserById(
+            const { error: sbUpdateErr } = await adminClient.auth.admin.updateUserById(
               targetUserId,
               authUpdateObj
             );
@@ -2974,6 +3000,7 @@ app.post("/api/admin/users/update", async (req, res) => {
           }
         } catch (ex: any) {
           console.error("[Supabase Admin Auth] Exception updating user:", ex.message);
+          return res.status(400).json({ success: false, error: `فشل التحديث في Supabase Auth: ${ex.message}` });
         }
       }
     }
