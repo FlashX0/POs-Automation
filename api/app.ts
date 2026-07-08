@@ -2972,6 +2972,57 @@ app.post("/api/admin/users/create", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // 2.5 Save to Supabase DB (profiles or users table)
+    let sbDbSuccess = false;
+    let sbDbErrorMsg = "";
+    try {
+      console.log(`[Supabase DB] Attempting to insert into 'profiles' table for UID: ${finalUserId}`);
+      const { error: profErr } = await adminClient
+        .from('profiles')
+        .insert([
+          { 
+            id: finalUserId, 
+            email: lowerEmail, 
+            display_name: name.trim(), 
+            role: role || "user"
+          }
+        ]);
+      if (!profErr) {
+        sbDbSuccess = true;
+        console.log("[Supabase DB] Successfully inserted profile into 'profiles' table.");
+      } else {
+        console.warn("[Supabase DB] Failed to insert into 'profiles' table:", profErr.message);
+        sbDbErrorMsg = profErr.message;
+        
+        // Try inserting into 'users' table
+        console.log(`[Supabase DB] Attempting to insert into 'users' table for UID: ${finalUserId}`);
+        const { error: userErr } = await adminClient
+          .from('users')
+          .insert([
+            { 
+              id: finalUserId, 
+              email: lowerEmail, 
+              display_name: name.trim(), 
+              role: role || "user"
+            }
+          ]);
+        if (!userErr) {
+          sbDbSuccess = true;
+          console.log("[Supabase DB] Successfully inserted profile into 'users' table.");
+        } else {
+          console.warn("[Supabase DB] Failed to insert into 'users' table:", userErr.message);
+          sbDbErrorMsg = userErr.message;
+        }
+      }
+    } catch (dbErr: any) {
+      console.warn("[Supabase DB] Exception during Supabase insert:", dbErr.message);
+      sbDbErrorMsg = dbErr.message;
+    }
+
+    if (!sbDbSuccess) {
+      console.warn(`[Supabase DB] Database insert warning: ${sbDbErrorMsg}. But proceeding to update local/MongoDB database to maintain system synchronization.`);
+    }
+
     // 3. Save locally only after 100% success in Supabase Auth
     const newUser = {
       id: finalUserId,
@@ -4158,6 +4209,209 @@ app.post("/api/notifications/clear", async (req, res) => {
   } catch (error: any) {
     console.error("Clear notifications error:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================================
+// 6. Quotation Comparisons API
+// ========================================================
+
+// Get all comparisons
+app.get("/api/comparisons", async (req, res) => {
+  try {
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    db.quotation_comparisons = db.quotation_comparisons || [];
+    res.json({ success: true, comparisons: db.quotation_comparisons });
+  } catch (error: any) {
+    console.error("Fetch comparisons error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// AI Smart Quotations Analysis & Comparison
+app.post("/api/comparisons/analyze", upload.array("files", 10), async (req, res) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ success: false, error: "لم يتم رفع أي ملفات لعروض الأسعار." });
+    }
+
+    const { prId, fallbackMaterial, fallbackQuantity } = req.body;
+
+    // Load original PR if provided
+    let prDetails = "";
+    if (prId) {
+      await fetchAndSyncDbFromMongo();
+      const db = getDb();
+      const prDoc = (db.documents || []).find((d: any) => d.id === prId);
+      if (prDoc) {
+        const prItems = (prDoc.items || []).map((it: any) => `- ${it.description} (الكمية: ${it.quantity} ${it.unit || ''}, الفئة: ${it.unitPrice || 0})`).join("\n");
+        prDetails = `
+تفاصيل طلب الشراء الداخلي المرجعي (PR) رقم ${prDoc.docNumber || 'غير محدد'}:
+المشروع: ${prDoc.projectName || 'عام'}
+المورد المبدئي المذكور بالطلب: ${prDoc.clientName || 'غير محدد'}
+البنود المطلوبة:
+${prItems}
+ملاحظات طلب الشراء الأصلي: ${prDoc.notes || ''}
+        `;
+      }
+    }
+
+    if (!prDetails && fallbackMaterial) {
+      prDetails = `
+تفاصيل البند المرجعي المطلوب للمقارنة:
+البند: ${fallbackMaterial}
+الكمية المطلوبة: ${fallbackQuantity || 1}
+      `;
+    }
+
+    const parts: any[] = [];
+    // Convert files to Gemini parts
+    for (const file of files) {
+      parts.push({
+        inlineData: {
+          data: file.buffer.toString("base64"),
+          mimeType: file.mimetype,
+        }
+      });
+    }
+
+    const promptText = `
+أنت خبير مشتريات وتحليل مالي وفني لدى شركة "دلتا لإنشاء الطرق والمقاولات" (Delta Road Construction).
+لديك عروض أسعار مرفقة لعدة موردين (الملفات المرفقة بالترتيب).
+مهمتك هي تحليل عروض الأسعار هذه ومقارنتها بدقة، ومطابقتها مع طلب الشراء الداخلي (PR) إن وجد.
+
+${prDetails ? `فيما يلي تفاصيل طلب الشراء الداخلي المرجعي الذي يجب مطابقة العروض معه:\n${prDetails}` : ''}
+
+قم بقراءة عروض الأسعار المرفقة واستخلاص البيانات التالية لكل عرض أسعار:
+1. اسم المورد (supplierName) باللغة العربية.
+2. المواصفات الفنية للخدمات أو المواد المقدمة في العرض (specs) باللغة العربية بالتفصيل.
+3. مدى مطابقة المواصفات الفنية لعرض المورد مع متطلبات طلب الشراء (isTechnicalMatching) كقيمة منطقية (true/false). إذا كان هناك نقص أو عدم تطابق، حدده في حقل التحذير (technicalWarning) باللغة العربية، وإلا اتركه فارغاً.
+4. سعر الوحدة المعروض (unitPrice) كرقم.
+5. السعر الإجمالي المعروض (totalPrice) كرقم (سعر الوحدة مضروباً في الكمية).
+6. مدة أو فترة التوريد (deliveryTime) باللغة العربية (مثال: "3 أيام"، "فوري"، "أسبوعين").
+7. شروط الدفع والتحصيل (paymentTerms) باللغة العربية (مثال: "مقدم 100%"، "آجل 30 يوم"، "دفعات بعد التوريد").
+8. تقييم أثر شروط الدفع على السيولة والتدفقات النقدية للشركة (cashFlowImpactScore) باللغة العربية (مثال: "ممتاز - يمنح مرونة عالية بدون دفعة مقدمة"، "سلبي - يضغط على السيولة بطلب دفع كامل ومقدماً").
+
+قم بتحديد العرض الفائز (isWinner: true) بناءً على المعادلة المتوازنة: الأقل سعراً شريطة أن يكون مطابقاً فنياً ويوفر شروط دفع وتوريد مناسبة. إذا كان هناك عرض رخيص جداً ولكنه غير مطابق للمواصفات الفنية (isTechnicalMatching is false)، فلا تختره كعرض فائز، بل اختر العرض الفني الأفضل والأرخص المطابق واكتب تحذيراً فنياً واضحاً للمورد الأرخص غير المطابق.
+
+بعد تحديد الفائز والمقارنة، اكتب "مذكرة ترسية" واحترافية بالكامل باللغة العربية (recommendationMemo) موجهة لمدير المشروع أو صاحب الصلاحية في شركة دلتا لإنشاء الطرق والمقاولات، توضح بوضوح أسباب اختيار هذا المورد تحديداً مع تفاصيل المقارنة المالية والفنية وأثر التدفقات النقدية. يجب أن تبدو كمذكرة رسمية جاهزة للطباعة والاعتماد.
+
+يجب أن تكون الاستجابة بصيغة JSON مطابقة تماماً للمواصفات والمفاتيح التالية:
+{
+  "title": "عنوان مقارنة عروض الأسعار باللغة العربية (مثلاً: مقارنة عروض أسعار توريد حديد تسليح لعملية طريق...)",
+  "material": "اسم البند أو المادة الأساسية للمقارنة باللغة العربية",
+  "quantity": 1, // الكمية المطلوبة (مستنتجة من طلب الشراء أو المدخلات)
+  "offers": [
+    {
+      "supplierName": "اسم المورد",
+      "specs": "المواصفات الفنية المعروضة",
+      "isTechnicalMatching": true,
+      "technicalWarning": "تحذير عدم مطابقة المواصفات الفنية أو فارغ",
+      "unitPrice": 100,
+      "totalPrice": 100,
+      "deliveryTime": "فترة التوريد",
+      "paymentTerms": "شروط الدفع",
+      "cashFlowImpactScore": "تقييم أثر التدفقات النقدية",
+      "isWinner": false
+    }
+  ],
+  "recommendationMemo": "نص مذكرة الترسية الرسمية الموصى بها باللغة العربية بالكامل..."
+}
+    `;
+
+    parts.push({ text: promptText });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: { parts },
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "You are an elite procurement manager and financial analyst for a major construction company in the Middle East. Always reply in clean Arabic. Output strict JSON only.",
+      }
+    });
+
+    const resultText = response.text || "{}";
+    const resultJson = JSON.parse(resultText.trim());
+
+    res.json({ success: true, data: resultJson });
+  } catch (error: any) {
+    console.error("AI Quotation Analysis Error:", error);
+    res.status(500).json({ success: false, error: "فشل تحليل عروض الأسعار بالذكاء الاصطناعي: " + error.message });
+  }
+});
+
+// Save or update a comparison
+app.post("/api/comparisons", express.json(), async (req, res) => {
+  try {
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    db.quotation_comparisons = db.quotation_comparisons || [];
+
+    const { id, title, poId, material, quantity, offers, notes, recommendationMemo } = req.body;
+    if (!title || !offers || !Array.isArray(offers)) {
+      return res.status(400).json({ success: false, error: "الرجاء إدخال عنوان المقارنة والعروض بشكل صحيح" });
+    }
+
+    const comparisonId = id || "comp_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+    const date = new Date().toISOString();
+
+    const newComparison = {
+      id: comparisonId,
+      title,
+      poId: poId || "",
+      material: material || "",
+      quantity: Number(quantity) || 1,
+      offers: offers.map((offer: any) => ({
+        supplierName: offer.supplierName || "",
+        specs: offer.specs || "",
+        unitPrice: Number(offer.unitPrice) || 0,
+        totalPrice: (Number(offer.unitPrice) || 0) * (Number(quantity) || 1),
+        deliveryTime: offer.deliveryTime || "",
+        paymentTerms: offer.paymentTerms || "",
+        isTechnicalMatching: offer.isTechnicalMatching !== undefined ? !!offer.isTechnicalMatching : true,
+        technicalWarning: offer.technicalWarning || "",
+        cashFlowImpactScore: offer.cashFlowImpactScore || "",
+        isWinner: !!offer.isWinner
+      })),
+      notes: notes || "",
+      recommendationMemo: recommendationMemo || "",
+      updatedAt: date,
+      createdAt: date
+    };
+
+    const idx = db.quotation_comparisons.findIndex((c: any) => c.id === comparisonId);
+    if (idx > -1) {
+      newComparison.createdAt = db.quotation_comparisons[idx].createdAt || date;
+      db.quotation_comparisons[idx] = newComparison;
+    } else {
+      db.quotation_comparisons.push(newComparison);
+    }
+
+    saveDb(db);
+    res.json({ success: true, comparison: newComparison });
+  } catch (error: any) {
+    console.error("Save comparison error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete a comparison
+app.delete("/api/comparisons/:id", async (req, res) => {
+  try {
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    db.quotation_comparisons = db.quotation_comparisons || [];
+
+    const { id } = req.params;
+    db.quotation_comparisons = db.quotation_comparisons.filter((c: any) => c.id !== id);
+    saveDb(db);
+
+    res.json({ success: true, message: "تم حذف المقارنة بنجاح" });
+  } catch (error: any) {
+    console.error("Delete comparison error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

@@ -71,6 +71,7 @@ import deltaLogo from './assets/images/delta_road_logo_1781798697279.jpg';
 
 import { LoginPage } from './components/LoginPage';
 import { UserManagement } from './components/UserManagement';
+import { PriceComparison } from './components/PriceComparison';
 
 // Helper function to convert OKLCH & OKLAB color strings (used by Tailwind v4) to standard RGB/RGBA.
 // This prevents html2canvas from failing with the: "Attempting to parse an unsupported color function" error.
@@ -469,7 +470,7 @@ export default function App() {
   const [logoError, setLogoError] = useState<boolean>(false);
   
   // Navigation & Control States
-  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'files' | 'projects'>('spreadsheet');
+  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'files' | 'projects' | 'comparisons'>('spreadsheet');
   const [selectedDoc, setSelectedDoc] = useState<ProcessedDocument | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [uploading, setUploading] = useState<boolean>(false);
@@ -4620,6 +4621,18 @@ export default function App() {
               <span>تقسيم المشاريع ({Object.keys(documentsByProject).length})</span>
             </button>
 
+            <button
+              onClick={() => setActiveTab('comparisons')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 ${
+                activeTab === 'comparisons'
+                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                  : 'text-slate-400 hover:bg-[#111827] hover:text-white'
+              }`}
+            >
+              <Scale className="w-4 h-4" />
+              <span>تحليل ومقارنة الأسعار 📊</span>
+            </button>
+
           </div>
 
           <div className="text-[10px] md:text-xs font-medium text-slate-500 shrink-0 text-right">
@@ -6466,6 +6479,17 @@ export default function App() {
               )}
 
             </div>
+          )}
+
+          {/* TAB 4: PRICE COMPARISON DASHBOARD */}
+          {activeTab === 'comparisons' && (
+            <PriceComparison 
+              documents={documents} 
+              onNotify={(type, title, message) => {
+                const mappedType = type === 'warning' ? 'info' : (type === 'success' ? 'success' : (type === 'info' ? 'info' : 'error'));
+                triggerNotificationToast(mappedType, title, message);
+              }} 
+            />
           )}
 
         </div>
