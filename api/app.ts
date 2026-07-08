@@ -20,27 +20,100 @@ let supabaseClient: any = null;
 let supabaseAdminClient: any = null;
 let isSupabaseDevicesDisabled = false;
 
-function getSupabaseClient() {
-  if (supabaseClient) return supabaseClient;
-  const url = process.env.SUPABASE_URL || supabaseUrl;
-  const key = process.env.SUPABASE_ANON_KEY || supabaseAnonKey;
-  if (url && key) {
-    try {
-      supabaseClient = createClient(url, key);
-      console.log("Supabase Client dynamically initialized successfully!");
-      return supabaseClient;
-    } catch (err: any) {
-      console.error("Failed to dynamically initialize Supabase client:", err.message);
+let lastSupabaseUrl = "";
+let lastSupabaseKey = "";
+let lastSupabaseAdminUrl = "";
+let lastSupabaseAdminKey = "";
+
+function getJwtPayload(token: string): any {
+  try {
+    const parts = token.trim().split('.');
+    if (parts.length !== 3) return null;
+    const payloadJson = Buffer.from(parts[1], 'base64').toString('utf-8');
+    return JSON.parse(payloadJson);
+  } catch (e) {
+    return null;
+  }
+}
+
+function checkSupabaseKeysConfig(): { isValid: boolean; error?: string } {
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseServiceRoleKey || "").trim();
+  const anonKey = (process.env.SUPABASE_ANON_KEY || supabaseAnonKey || "").trim();
+
+  if (!serviceKey) {
+    return {
+      isValid: false,
+      error: "المتغير البيئي SUPABASE_SERVICE_ROLE_KEY غير موجود أو فارغ على السيرفر."
+    };
+  }
+
+  const servicePayload = getJwtPayload(serviceKey);
+  if (servicePayload) {
+    const role = servicePayload.role || "";
+    if (role === "anon") {
+      return {
+        isValid: false,
+        error: "تنبيه هام: لقد قمت بوضع مفتاح الـ ANON_KEY (المفتاح العام) في خانة مفتاح الخدمة SUPABASE_SERVICE_ROLE_KEY. يرجى الذهاب إلى إعدادات السيرفر واستبداله بمفتاح الـ service_role السري الخاص بـ Supabase (Settings -> API -> service_role) لتفعيل صلاحيات الأدمن."
+      };
     }
   }
-  return null;
+
+  const anonPayload = getJwtPayload(anonKey);
+  if (anonPayload) {
+    const role = anonPayload.role || "";
+    if (role === "service_role") {
+      return {
+        isValid: false,
+        error: "تنبيه هام: لقد قمت بوضع مفتاح الأدمن service_role السري في خانة مفتاح الـ SUPABASE_ANON_KEY (المفتاح العام). هذا يشكل خطراً أمنياً على مشروعك. يرجى تبديل المفاتيح ووضع كل مفتاح في خانته الصحيحة."
+      };
+    }
+  }
+
+  return { isValid: true };
+}
+
+function maskKey(key: string | undefined): string {
+  if (!key) return "undefined/empty";
+  const cleanKey = key.trim();
+  const len = cleanKey.length;
+  if (len <= 8) return `[length: ${len}, too short]`;
+  return `${cleanKey.slice(0, 4)}...${cleanKey.slice(-4)} (length: ${len})`;
+}
+
+function getSupabaseClient() {
+  const url = (process.env.SUPABASE_URL || supabaseUrl || "").trim();
+  const key = (process.env.SUPABASE_ANON_KEY || supabaseAnonKey || "").trim();
+  
+  if (!url || !key) {
+    return null;
+  }
+
+  if (!supabaseClient || lastSupabaseUrl !== url || lastSupabaseKey !== key) {
+    try {
+      supabaseClient = createClient(url, key);
+      lastSupabaseUrl = url;
+      lastSupabaseKey = key;
+      console.log(`[Supabase Debug] Supabase Client initialized successfully! URL: ${url.substring(0, 20)}..., Key: ${maskKey(key)}`);
+    } catch (err: any) {
+      console.error("[Supabase Debug] Failed to initialize Supabase client:", err.message);
+      return null;
+    }
+  }
+  return supabaseClient;
 }
 
 function getSupabaseAdminClient() {
-  if (supabaseAdminClient) return supabaseAdminClient;
-  const url = process.env.SUPABASE_URL || supabaseUrl;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseServiceRoleKey;
-  if (url && key) {
+  const url = (process.env.SUPABASE_URL || supabaseUrl || "").trim();
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseServiceRoleKey || "").trim();
+  
+  console.log(`[Supabase Admin Debug] getSupabaseAdminClient called. Current env URL: ${url ? url.substring(0, 20) + "..." : "empty"}, Key: ${maskKey(key)}`);
+
+  if (!url || !key) {
+    console.warn("[Supabase Admin Debug] Cannot initialize: URL or SERVICE_ROLE_KEY is missing/empty.");
+    return null;
+  }
+
+  if (!supabaseAdminClient || lastSupabaseAdminUrl !== url || lastSupabaseAdminKey !== key) {
     try {
       supabaseAdminClient = createClient(url, key, {
         auth: {
@@ -48,13 +121,15 @@ function getSupabaseAdminClient() {
           persistSession: false
         }
       });
-      console.log("Supabase Admin Client (Service Role) dynamically initialized successfully!");
-      return supabaseAdminClient;
+      lastSupabaseAdminUrl = url;
+      lastSupabaseAdminKey = key;
+      console.log(`[Supabase Admin Debug] Supabase Admin Client (Service Role) initialized successfully! URL: ${url.substring(0, 20)}..., Key: ${maskKey(key)}`);
     } catch (err: any) {
-      console.error("Failed to dynamically initialize Supabase admin client:", err.message);
+      console.error("[Supabase Admin Debug] Failed to initialize Supabase admin client:", err.message);
+      return null;
     }
   }
-  return null;
+  return supabaseAdminClient;
 }
 
 // Initial checks at startup
@@ -2840,6 +2915,16 @@ app.post("/api/admin/users/create", async (req, res) => {
 
     if (localExists || mongoExists) {
       return res.status(400).json({ success: false, error: "عذراً، البريد الإلكتروني مسجل بالفعل لمستخدم آخر" });
+    }
+
+    // Validate Supabase keys configuration
+    const configCheck = checkSupabaseKeysConfig();
+    if (!configCheck.isValid) {
+      console.error("[Auth] Supabase configuration check failed:", configCheck.error);
+      return res.status(400).json({
+        success: false,
+        error: configCheck.error
+      });
     }
 
     // 1. Get dynamic Supabase Admin Client
