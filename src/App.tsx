@@ -479,8 +479,37 @@ export default function App() {
   const [logoError, setLogoError] = useState<boolean>(false);
   
   // Navigation & Control States
-  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'files' | 'projects' | 'comparisons'>('spreadsheet');
-  const [selectedDepartment, setSelectedDepartment] = useState<'procurement' | 'petty_cash' | 'subcontractors' | 'labor_timesheet' | 'cost_analysis' | 'engineers'>('procurement');
+  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'files' | 'projects' | 'comparisons'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('activeTab');
+      if (saved && ['spreadsheet', 'files', 'projects', 'comparisons'].includes(saved)) {
+        return saved as any;
+      }
+    }
+    return 'spreadsheet';
+  });
+
+  const [selectedDepartment, setSelectedDepartment] = useState<'procurement' | 'petty_cash' | 'subcontractors' | 'labor_timesheet' | 'cost_analysis' | 'engineers'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('selectedDepartment');
+      if (saved && ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'].includes(saved)) {
+        return saved as any;
+      }
+    }
+    return 'procurement';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('activeTab', activeTab);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedDepartment', selectedDepartment);
+    }
+  }, [selectedDepartment]);
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState<boolean>(false);
 
   // --- Integrated Financial & Accounting States & Defaults ---
@@ -921,9 +950,10 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
+    if (isVerifyingSession) return;
     if (currentUser) {
       const allowed = currentUser.allowed_departments || [];
-      if (!allowed.includes(selectedDepartment)) {
+      if (allowed.length > 0 && !allowed.includes(selectedDepartment)) {
         if (allowed.includes('procurement')) {
           setSelectedDepartment('procurement');
         } else if (allowed.includes('petty_cash')) {
@@ -939,7 +969,7 @@ export default function App() {
         }
       }
     }
-  }, [currentUser, selectedDepartment]);
+  }, [isVerifyingSession, currentUser, selectedDepartment]);
 
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState<boolean>(false);
   const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
@@ -4672,7 +4702,7 @@ export default function App() {
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans overflow-x-hidden w-full max-w-full">
       
       {/* 1. Header / Navigation Bar */}
-      <header className="bg-[#111827] border-b border-slate-800 sticky top-0 z-40 shadow-lg shadow-black/15">
+      <header className="bg-[#111827] border-b border-slate-800 sticky top-0 z-40 shadow-lg shadow-black/15 no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center py-4 md:py-0 md:h-20 gap-4">
             

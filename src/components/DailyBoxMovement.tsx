@@ -742,7 +742,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
       <div className="hidden print:block w-full max-w-4xl mx-auto text-black font-sans portrait-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>
         <div className="border-4 border-dashed border-[#4F81BD] p-6 bg-white space-y-6">
           <div className="text-center pb-4 border-b-2 border-dashed border-[#4F81BD]">
-            <h2 className="text-2xl font-black text-[#1F4E78]">كشف حركة الصندوق وعُهد المهندسين</h2>
+            <h2 className="text-2xl font-black text-[#1F4E78]">حركة صندوق {selectedEngineer ? selectedEngineer : "العام"}</h2>
             <p className="text-sm font-bold text-slate-700 mt-1">المستخرج الرسمي المعتمد من النظام</p>
           </div>
 
@@ -772,67 +772,79 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
 
               return (
-                <div key={day.date} className="space-y-0.5 break-inside-avoid">
+                <div key={day.date} className="space-y-0.5 break-inside-avoid text-black bg-white p-4 border border-dashed border-[#4F81BD] rounded-lg">
                   {/* Day Title Row */}
-                  <div className="grid grid-cols-4 border-2 border-dashed border-[#4F81BD] bg-[#D9E1F2] text-center font-bold text-[#1F4E78] text-sm py-2">
-                    <div className="col-span-4 text-center">كشف حركة الصندوق ليوم {formattedDate}</div>
+                  <div className="text-center font-bold text-[#1F4E78] text-base py-2 bg-[#D9E1F2] border border-[#4F81BD]">
+                    حركة صندوق {selectedEngineer ? selectedEngineer : "العام"} ليوم {formattedDate}
                   </div>
 
-                  {/* Opening Balance Row */}
-                  <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] text-center font-bold text-sm py-2">
-                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-[#1F4E78]">
-                      {formatCurrency(startingBal)}
+                  {/* Opening Balance Block */}
+                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] py-2 px-3 font-bold text-xs bg-slate-50">
+                    <div className="col-span-1 text-left text-[#1F4E78] font-mono">
+                      {formatCurrency(startingBal)} EGP
                     </div>
-                    <div className="col-span-3 text-center text-slate-800">رصيد اول اليوم</div>
+                    <div className="col-span-4 text-right text-slate-700">رصيد أول اليوم (مرحل تلقائياً من إغلاق اليوم السابق)</div>
+                  </div>
+
+                  {/* Header Row */}
+                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] bg-slate-100 text-center font-bold text-[11px] py-1 text-slate-700">
+                    <div>مدين (+)</div>
+                    <div>طريقة الإيداع</div>
+                    <div>الوصف / البيان</div>
+                    <div>دائن (-)</div>
+                    <div>المشروع</div>
                   </div>
 
                   {/* Transactions */}
                   {dayTransactions.length === 0 ? (
-                    <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] text-center text-xs py-2 text-slate-500">
-                      <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">-</div>
-                      <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">0.00</div>
-                      <div className="col-span-2 text-center">لا توجد حركات لهذا اليوم</div>
+                    <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] text-center text-xs py-3 text-slate-500 font-bold bg-white">
+                      <div className="col-span-5 text-center">لا توجد حركات مسجلة لهذا اليوم</div>
                     </div>
                   ) : (
                     dayTransactions.map((tx) => {
-                      const amount = tx.inflow > 0 ? tx.inflow : tx.outflow;
-                      const projOrMethod = tx.outflow > 0 ? tx.project : tx.method;
-                      const sign = tx.inflow > 0 ? "+" : "";
-                      const signColor = tx.inflow > 0 ? "text-emerald-600" : "text-slate-800";
                       return (
-                        <div key={tx.id} className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] text-center text-xs py-2">
-                          <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">-</div>
-                          <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 font-mono font-bold">
-                            {formatCurrency(amount)}
+                        <div key={tx.id} className="grid grid-cols-5 border-x border-b border-[#4F81BD] text-center text-[11px] py-2 bg-white text-black">
+                          <div className="font-mono font-bold text-emerald-700 text-left px-2">
+                            {tx.inflow > 0 ? formatCurrency(tx.inflow) : '-'}
                           </div>
-                          <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-center font-bold text-slate-800">
+                          <div className="text-right px-2">
+                            {tx.inflow > 0 ? tx.method : '-'}
+                          </div>
+                          <div className="text-right px-2 font-medium">
                             {tx.description}
                           </div>
-                          <div className="col-span-1 text-right px-3 text-slate-600 font-medium">
-                            {projOrMethod}
+                          <div className="font-mono font-bold text-rose-700 text-left px-2">
+                            {tx.outflow > 0 ? formatCurrency(tx.outflow) : '-'}
+                          </div>
+                          <div className="text-right px-2 text-slate-600">
+                            {tx.project || '-'}
                           </div>
                         </div>
                       );
                     })
                   )}
 
-                  {/* Total Row */}
-                  <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] bg-[#F2F2F2] text-center font-bold text-xs py-2">
-                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-slate-700">
-                      {formatCurrency(startingBal + totalInflow)}
+                  {/* Totals Row */}
+                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] bg-[#F2F2F2] font-bold text-xs py-2 px-3">
+                    <div className="text-left text-emerald-700 font-mono">
+                      +{formatCurrency(totalInflow)} EGP
                     </div>
-                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-rose-600">
-                      {formatCurrency(totalOutflow)}
+                    <div className="text-center text-slate-500">-</div>
+                    <div className="text-right text-slate-700 font-extrabold text-[#1f4e78]">إجمالي الحركات اليومية:</div>
+                    <div className="text-left text-rose-700 font-mono">
+                      -{formatCurrency(totalOutflow)} EGP
                     </div>
-                    <div className="col-span-2 text-center text-slate-800">الاجمالي</div>
+                    <div className="text-right text-slate-600">-</div>
                   </div>
 
                   {/* Ending Balance Row */}
-                  <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] bg-[#E2EFDA] text-center font-black text-xs py-2">
-                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-[#375623]">
-                      {formatCurrency(dayEndingBal)}
+                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] bg-[#E2EFDA] font-black text-xs py-2 px-3 text-[#375623]">
+                    <div className="text-left font-mono">
+                      {formatCurrency(dayEndingBal)} EGP
                     </div>
-                    <div className="col-span-3 text-center text-[#375623]">رصيد اخر اليوم</div>
+                    <div className="col-span-4 text-right">
+                      رصيد آخر اليوم: (رصيد أول اليوم {formatCurrency(startingBal)} + إجمالي المدين {formatCurrency(totalInflow)} - إجمالي الدائن {formatCurrency(totalOutflow)})
+                    </div>
                   </div>
                 </div>
               );
@@ -1107,13 +1119,13 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
             <table className="w-full text-right border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 text-xs font-bold">
-                  <th className="pb-3 text-center">المدين (+)</th >
-                  <th className="pb-3 text-center">الدائن (-)</th >
-                  <th className="pb-3 pr-2">البيان</th >
-                  <th className="pb-3 pr-2">الطريقة</th >
-                  <th className="pb-3 pr-2">المشروع</th >
-                  <th className="pb-3 pr-2">المرفق</th >
-                  <th className="pb-3 text-center">إجراء</th >
+                  <th className="pb-3 text-center">مدين (+)</th>
+                  <th className="pb-3 pr-2">طريقة الإيداع</th>
+                  <th className="pb-3 pr-2">الوصف / البيان</th>
+                  <th className="pb-3 text-center">دائن (-)</th>
+                  <th className="pb-3 pr-2">المشروع</th>
+                  <th className="pb-3 pr-2">المرفق</th>
+                  <th className="pb-3 text-center">إجراء</th>
                 </tr>
               </thead>
               <tbody>
@@ -1129,16 +1141,18 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                       <td className="py-3.5 text-center font-mono font-bold text-emerald-400">
                         {tx.inflow > 0 ? formatCurrency(tx.inflow) : '-'}
                       </td>
-                      <td className="py-3.5 text-center font-mono font-bold text-rose-400">
-                        {tx.outflow > 0 ? formatCurrency(-tx.outflow) : '-'}
+                      <td className="py-3.5 pr-2">
+                        {tx.inflow > 0 ? (
+                          <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+                            {tx.method}
+                          </span>
+                        ) : '-'}
                       </td>
                       <td className="py-3.5 pr-2 font-bold max-w-xs truncate" title={tx.description}>
                         {tx.description}
                       </td>
-                      <td className="py-3.5 pr-2">
-                        <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-bold">
-                          {tx.method}
-                        </span>
+                      <td className="py-3.5 text-center font-mono font-bold text-rose-400">
+                        {tx.outflow > 0 ? formatCurrency(tx.outflow) : '-'}
                       </td>
                       <td className="py-3.5 pr-2 font-medium text-slate-400">
                         {tx.project}

@@ -445,18 +445,65 @@ html, body {
 }
 
 @media print {
-    body, html, #root, .main-container {
-        background: #ffffff !important;
-        color: #000000 !important;
-    }
-    .sidebar, .navbar, .no-print, button, input, .form-container {
-        display: none !important;
-    }
-    .printable-table-zone {
-        display: block !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-    }
+  body, html, #root, .main-container, main, .flex-1 {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    color-scheme: light !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+  }
+  
+  header, 
+  .sidebar, 
+  .navbar, 
+  .no-print, 
+  button, 
+  input, 
+  select, 
+  textarea, 
+  .form-container, 
+  section, 
+  .bento-stats,
+  #departments-dropdown-btn,
+  .alert-box {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  .printable-table-zone, 
+  .portrait-print, 
+  .print-me,
+  #printable-excel-sheet-delta-isolated {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Make sure background colors for cells print neatly but stay readable */
+  .bg-[#D9E1F2] {
+    background-color: #D9E1F2 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .bg-[#F2F2F2], .bg-slate-100 {
+    background-color: #F2F2F2 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .bg-[#E2EFDA] {
+    background-color: #E2EFDA !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }
 
