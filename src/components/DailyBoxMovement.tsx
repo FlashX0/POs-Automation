@@ -54,6 +54,14 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     new Date().toISOString().split('T')[0]
   );
 
+  const formatCurrency = (val: number): string => {
+    if (val < 0) {
+      const positiveVal = Math.abs(val);
+      return `(${positiveVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+    }
+    return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   const [selectedEngineer, setSelectedEngineer] = useState<string>(
     engineers.length > 0 ? engineers[0].name : ''
   );
@@ -767,14 +775,13 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                 <div key={day.date} className="space-y-0.5 break-inside-avoid">
                   {/* Day Title Row */}
                   <div className="grid grid-cols-4 border-2 border-dashed border-[#4F81BD] bg-[#D9E1F2] text-center font-bold text-[#1F4E78] text-sm py-2">
-                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">{formattedDate}</div>
-                    <div className="col-span-3 text-center">كشف حركة الصندوق ليوم</div>
+                    <div className="col-span-4 text-center">كشف حركة الصندوق ليوم {formattedDate}</div>
                   </div>
 
                   {/* Opening Balance Row */}
                   <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] text-center font-bold text-sm py-2">
                     <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-[#1F4E78]">
-                      {startingBal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {formatCurrency(startingBal)}
                     </div>
                     <div className="col-span-3 text-center text-slate-800">رصيد اول اليوم</div>
                   </div>
@@ -796,7 +803,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                         <div key={tx.id} className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] text-center text-xs py-2">
                           <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">-</div>
                           <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 font-mono font-bold">
-                            {amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {formatCurrency(amount)}
                           </div>
                           <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-center font-bold text-slate-800">
                             {tx.description}
@@ -812,10 +819,10 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                   {/* Total Row */}
                   <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] bg-[#F2F2F2] text-center font-bold text-xs py-2">
                     <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-slate-700">
-                      {(startingBal + totalInflow).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {formatCurrency(startingBal + totalInflow)}
                     </div>
                     <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-rose-600">
-                      {totalOutflow.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {formatCurrency(totalOutflow)}
                     </div>
                     <div className="col-span-2 text-center text-slate-800">الاجمالي</div>
                   </div>
@@ -823,7 +830,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                   {/* Ending Balance Row */}
                   <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] bg-[#E2EFDA] text-center font-black text-xs py-2">
                     <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-[#375623]">
-                      {dayEndingBal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {formatCurrency(dayEndingBal)}
                     </div>
                     <div className="col-span-3 text-center text-[#375623]">رصيد اخر اليوم</div>
                   </div>
@@ -843,7 +850,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           <div>
             <span className="text-xs text-slate-400 block font-bold">رصيد أول اليوم</span>
             <span className="text-lg font-black text-white">
-              {computedStartingBalance.toLocaleString()} <span className="text-xs text-slate-400">EGP</span>
+              {formatCurrency(computedStartingBalance)} <span className="text-xs text-slate-400">EGP</span>
             </span>
           </div>
         </div>
@@ -855,7 +862,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           <div>
             <span className="text-xs text-slate-400 block font-bold">إجمالي المقبوضات (المدين)</span>
             <span className="text-lg font-black text-emerald-400">
-              +{totalInflow.toLocaleString()} <span className="text-xs text-emerald-500">EGP</span>
+              +{formatCurrency(totalInflow)} <span className="text-xs text-emerald-500">EGP</span>
             </span>
           </div>
         </div>
@@ -867,7 +874,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           <div>
             <span className="text-xs text-slate-400 block font-bold">إجمالي المصروفات (الدائن)</span>
             <span className="text-lg font-black text-rose-400">
-              -{totalOutflow.toLocaleString()} <span className="text-xs text-rose-500">EGP</span>
+              -{formatCurrency(totalOutflow)} <span className="text-xs text-rose-500">EGP</span>
             </span>
           </div>
         </div>
@@ -879,7 +886,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           <div>
             <span className="text-xs text-slate-400 block font-bold">رصيد آخر اليوم المتوقع</span>
             <span className="text-lg font-black text-emerald-400">
-              {endingBalance.toLocaleString()} <span className="text-xs text-emerald-400">EGP</span>
+              {formatCurrency(endingBalance)} <span className="text-xs text-emerald-400">EGP</span>
             </span>
           </div>
         </div>
@@ -1091,7 +1098,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           <div className="flex justify-between items-center border-b border-slate-850 pb-3">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Layers className="text-emerald-400 w-4 h-4" />
-              <span>كشف حركة الصندوق اليومية</span>
+              <span>كشف حركة الصندوق ليوم {(() => { const parts = selectedDate.split('-'); return parts.length === 3 ? `${parts[2]} - ${parts[1]} - ${parts[0].slice(2)}` : selectedDate; })()}</span>
             </h3>
             <span className="text-xs text-slate-400 font-mono">تاريخ اليومية: {selectedDate}</span>
           </div>
@@ -1100,8 +1107,8 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
             <table className="w-full text-right border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 text-xs font-bold">
-                  <th className="pb-3 text-left">المدين (+)</th >
-                  <th className="pb-3 text-left">الدائن (-)</th >
+                  <th className="pb-3 text-center">المدين (+)</th >
+                  <th className="pb-3 text-center">الدائن (-)</th >
                   <th className="pb-3 pr-2">البيان</th >
                   <th className="pb-3 pr-2">الطريقة</th >
                   <th className="pb-3 pr-2">المشروع</th >
@@ -1119,11 +1126,11 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                 ) : (
                   transactions.map((tx) => (
                     <tr key={tx.id} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
-                      <td className="py-3.5 text-left font-mono font-bold text-emerald-400">
-                        {tx.inflow > 0 ? `+${tx.inflow.toLocaleString()}` : '-'}
+                      <td className="py-3.5 text-center font-mono font-bold text-emerald-400">
+                        {tx.inflow > 0 ? formatCurrency(tx.inflow) : '-'}
                       </td>
-                      <td className="py-3.5 text-left font-mono font-bold text-rose-400">
-                        {tx.outflow > 0 ? `-${tx.outflow.toLocaleString()}` : '-'}
+                      <td className="py-3.5 text-center font-mono font-bold text-rose-400">
+                        {tx.outflow > 0 ? formatCurrency(-tx.outflow) : '-'}
                       </td>
                       <td className="py-3.5 pr-2 font-bold max-w-xs truncate" title={tx.description}>
                         {tx.description}

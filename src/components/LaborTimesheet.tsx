@@ -110,6 +110,14 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   onUpdateArchives,
   onNotify,
 }) => {
+  const formatCurrency = (val: number): string => {
+    if (val < 0) {
+      const positiveVal = Math.abs(val);
+      return `(${positiveVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+    }
+    return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   // Navigation tabs state
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
@@ -1308,15 +1316,15 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                           <tbody>
                             <tr className="border-b border-slate-850 hover:bg-slate-900/10">
                               <td className="p-2.5 text-slate-300 font-medium text-right">الرصيد المتبقي التراكمي السابق (المنقول)</td>
-                              <td className="p-2.5 text-left font-mono font-bold text-rose-400">{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
+                              <td className="p-2.5 text-left font-mono font-bold text-rose-400">{formatCurrency(selectedSheet.previousRemaining)} EGP</td>
                             </tr>
                             <tr className="border-b border-slate-850 hover:bg-slate-900/10">
                               <td className="p-2.5 text-slate-300 font-medium text-right">إجمالي مستحقات الأسبوع الحالي</td>
-                              <td className="p-2.5 text-left font-mono font-bold text-indigo-400">+{computedSums.weeklyTotal.toLocaleString()} EGP</td>
+                              <td className="p-2.5 text-left font-mono font-bold text-indigo-400">+{formatCurrency(computedSums.weeklyTotal)} EGP</td>
                             </tr>
                             <tr className="border-b border-slate-850 bg-slate-900/30">
                               <td className="p-2.5 text-indigo-300 font-bold text-right">المجموع التراكمي المستحق (الإجمالي الكلي)</td>
-                              <td className="p-2.5 text-left font-mono font-extrabold text-amber-400">{computedSums.overallTotal.toLocaleString()} EGP</td>
+                              <td className="p-2.5 text-left font-mono font-extrabold text-amber-400">{formatCurrency(computedSums.overallTotal)} EGP</td>
                             </tr>
                             <tr className="border-b border-slate-850">
                               <td className="p-2.5 text-slate-300 font-medium text-right">
@@ -1330,14 +1338,31 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                                   />
                                 </div>
                               </td>
-                              <td className="p-2.5 text-left font-mono font-bold text-rose-500 align-middle">-{selectedSheet.currentPaid.toLocaleString()} EGP</td>
+                              <td className="p-2.5 text-left font-mono font-bold text-rose-500 align-middle">-{formatCurrency(selectedSheet.currentPaid)} EGP</td>
                             </tr>
                             <tr className="bg-[#10b981]/15 text-emerald-400">
                               <td className="p-2.5 font-extrabold text-right">الرصيد المتبقي الكلي الجديد (الصافي)</td>
-                              <td className="p-2.5 text-left font-mono font-black text-sm">{computedSums.remainingBalance.toLocaleString()} EGP</td>
+                              <td className="p-2.5 text-left font-mono font-black text-sm">{formatCurrency(computedSums.remainingBalance)} EGP</td>
                             </tr>
                           </tbody>
                         </table>
+                      </div>
+
+                      {/* Dynamic formula matching user request */}
+                      <div className="bg-indigo-950/20 border border-indigo-900/50 rounded-xl p-3 text-center text-xs text-indigo-300 font-bold space-y-1.5 mt-3" dir="rtl">
+                        <div className="font-extrabold text-slate-200">📊 معادلة مطابقة الرصيد التراكمي للعمالة:</div>
+                        <div className="flex flex-wrap items-center justify-center gap-1 font-mono font-bold text-[10.5px] text-slate-100">
+                          <span>({formatCurrency(selectedSheet.previousRemaining)})</span>
+                          <span className="text-indigo-400 font-bold">+</span>
+                          <span>({formatCurrency(computedSums.weeklyTotal)})</span>
+                          <span className="text-indigo-400 font-bold">=</span>
+                          <span className="text-amber-400">({formatCurrency(computedSums.overallTotal)})</span>
+                          <span className="text-indigo-400 font-bold">-</span>
+                          <span className="text-rose-500">({formatCurrency(selectedSheet.currentPaid)})</span>
+                          <span className="text-indigo-400 font-bold">=</span>
+                          <span className="text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded text-xs font-black">({formatCurrency(computedSums.remainingBalance)})</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-medium leading-normal">(الرصيد السابق) + (إجمالي الأسبوع الحالي) = (المجموع التراكمي) - (المسدد الحالي) = (الرصيد المتبقي)</div>
                       </div>
                     </div>
 
@@ -1860,45 +1885,62 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   <tr className="border-b border-[#4F81BD] hover:bg-slate-50">
                     <td className="py-2 border-r border-[#4F81BD] font-bold text-slate-700 text-center">الرصيد المتبقي التراكمي السابق (المنقول)</td>
                     <td className="py-2 border-r border-[#4F81BD] text-slate-500 font-mono text-center">الرصيد المتبقي المرحل سابقاً</td>
-                    <td className="py-2 font-black text-rose-700 font-mono text-center">{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
+                    <td className="py-2 font-black text-rose-700 font-mono text-center">{formatCurrency(selectedSheet.previousRemaining)} EGP</td>
                   </tr>
                   <tr className="border-b border-[#4F81BD] hover:bg-slate-50">
                     <td className="py-2 border-r border-[#4F81BD] font-bold text-slate-700 text-center">إجمالي مستحقات الأسبوع الحالي</td>
                     <td className="py-2 border-r border-[#4F81BD] text-slate-500 font-mono text-center">+ إجمالي الاستحقاق الأسبوعي</td>
-                    <td className="py-2 font-black text-indigo-700 font-mono text-center">+{computedSums.weeklyTotal.toLocaleString()} EGP</td>
+                    <td className="py-2 font-black text-indigo-700 font-mono text-center">+{formatCurrency(computedSums.weeklyTotal)} EGP</td>
                   </tr>
                   <tr className="border-b border-[#4F81BD] hover:bg-slate-50 bg-[#F9FBFD]">
                     <td className="py-2 border-r border-[#4F81BD] font-bold text-[#1F4E78] text-center">المجموع التراكمي المستحق (الإجمالي الكلي)</td>
                     <td className="py-2 border-r border-[#4F81BD] text-slate-500 font-mono text-center">الرصيد السابق + الاستحقاق الحالي</td>
-                    <td className="py-2 font-black text-[#1F4E78] font-mono text-center">{computedSums.overallTotal.toLocaleString()} EGP</td>
+                    <td className="py-2 font-black text-[#1F4E78] font-mono text-center">{formatCurrency(computedSums.overallTotal)} EGP</td>
                   </tr>
                   <tr className="border-b border-[#4F81BD] hover:bg-slate-50">
                     <td className="py-2 border-r border-[#4F81BD] font-bold text-slate-700 text-center">المسدد الجديد (المبلغ المدفوع حالياً)</td>
                     <td className="py-2 border-r border-[#4F81BD] text-slate-500 font-mono text-center">- المسدد الحالي من هذا الكشف</td>
-                    <td className="py-2 font-black text-rose-600 font-mono text-center">-{selectedSheet.currentPaid.toLocaleString()} EGP</td>
+                    <td className="py-2 font-black text-rose-600 font-mono text-center">-{formatCurrency(selectedSheet.currentPaid)} EGP</td>
                   </tr>
                   <tr className="bg-[#E2EFDA] text-[#375623]">
                     <td className="py-2.5 border-r border-[#4F81BD] font-black text-center">الرصيد المتبقي الكلي الجديد (الصافي)</td>
                     <td className="py-2.5 border-r border-[#4F81BD] font-bold text-center">المجموع الكلي - المسدد حالياً</td>
-                    <td className="py-2.5 font-black font-mono text-base text-center">{computedSums.remainingBalance.toLocaleString()} EGP</td>
+                    <td className="py-2.5 font-black font-mono text-base text-center">{formatCurrency(computedSums.remainingBalance)} EGP</td>
                   </tr>
                 </tbody>
               </table>
+
+              {/* Printed formula container */}
+              <div className="mt-3 border-2 border-dashed border-[#4F81BD] rounded-lg p-2.5 text-center text-xs text-[#1F4E78] font-bold space-y-1 bg-[#F2F6FA]" dir="rtl">
+                <div className="text-[11px] font-black">📊 معادلة مطابقة الرصيد التراكمي للعمالة (Labor Balance Equation):</div>
+                <div className="flex flex-wrap items-center justify-center gap-1 font-mono font-bold text-xs text-slate-800">
+                  <span>{formatCurrency(selectedSheet.previousRemaining)} EGP</span>
+                  <span className="text-[#4F81BD] font-bold">+</span>
+                  <span>{formatCurrency(computedSums.weeklyTotal)} EGP</span>
+                  <span className="text-[#4F81BD] font-bold">=</span>
+                  <span className="text-[#1F4E78]">{formatCurrency(computedSums.overallTotal)} EGP</span>
+                  <span className="text-[#4F81BD] font-bold">-</span>
+                  <span className="text-rose-600">{formatCurrency(selectedSheet.currentPaid)} EGP</span>
+                  <span className="text-[#4F81BD] font-bold">=</span>
+                  <span className="text-[#375623] bg-[#E2EFDA] px-2 py-0.5 rounded text-sm font-black">{formatCurrency(computedSums.remainingBalance)} EGP</span>
+                </div>
+                <div className="text-[10px] text-slate-600 font-bold">(الرصيد السابق) + (إجمالي الأسبوع الحالي) = (المجموع التراكمي) - (المسدد الحالي) = (الرصيد المتبقي)</div>
+              </div>
             </div>
 
             {/* Bottom calculation cards aligned horizontally */}
             <div className="grid grid-cols-4 gap-4 pt-4 break-inside-avoid text-center">
               <div className="border-2 border-dashed border-[#4F81BD] rounded-xl p-3 bg-[#E2EFDA]">
                 <div className="text-[10px] font-bold text-slate-600 block mb-1">الصافي المتبقي للعمل والمنصرف</div>
-                <div className="text-base font-black text-[#375623]">{computedSums.remainingBalance.toLocaleString()} EGP</div>
+                <div className="text-base font-black text-[#375623]">{formatCurrency(computedSums.remainingBalance)} EGP</div>
               </div>
               <div className="border-2 border-dashed border-[#4F81BD] rounded-xl p-3 bg-slate-50">
                 <div className="text-[10px] font-bold text-slate-600 block mb-1">المسدد الجديد (المنصرف)</div>
-                <div className="text-base font-black text-emerald-700">{selectedSheet.currentPaid.toLocaleString()} EGP</div>
+                <div className="text-base font-black text-emerald-700">{formatCurrency(selectedSheet.currentPaid)} EGP</div>
               </div>
               <div className="border-2 border-dashed border-[#4F81BD] rounded-xl p-3 bg-[#F2F6FA]">
                 <div className="text-[10px] font-bold text-slate-600 block mb-1">الإجمالي الكلي شامل المستحقات السابقة</div>
-                <div className="text-base font-black text-[#1F4E78]">{computedSums.overallTotal.toLocaleString()} EGP</div>
+                <div className="text-base font-black text-[#1F4E78]">{formatCurrency(computedSums.overallTotal)} EGP</div>
               </div>
               <div className="border-2 border-dashed border-[#4F81BD] rounded-xl p-3 bg-[#F2F2F2]">
                 <div className="text-[10px] font-bold text-slate-600 block mb-1">إجمالي الإستحقاق الأسبوعي الحالي</div>

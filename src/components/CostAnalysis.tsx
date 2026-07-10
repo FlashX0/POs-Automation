@@ -12,7 +12,8 @@ import {
   Filter, 
   PieChart as PieIcon, 
   Grid,
-  Sparkles
+  Sparkles,
+  Printer
 } from 'lucide-react';
 import { 
   PieChart, 
@@ -529,8 +530,26 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Print-only beautifully styled header */}
+      <div className="hidden print:block w-full text-right mb-6 font-sans text-black" dir="rtl">
+        <div className="border-4 border-dashed border-[#4F81BD] p-5 bg-white space-y-4">
+          <div className="text-center pb-3 border-b-2 border-dashed border-[#4F81BD]">
+            <h2 className="text-xl font-black text-[#1F4E78]">كشف تحليل وتصنيف بنود مصروفات المشاريع</h2>
+            <p className="text-xs font-bold text-slate-700 mt-1">التقرير التحليلي المالي المستخرج من النظام الذكي</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-xs font-bold text-slate-800">
+            <div>المشروع المستهدف: <span className="font-black text-[#1F4E78]">{filterProject === 'all' ? 'كافة المشاريع' : filterProject}</span></div>
+            <div>بند التكلفة: <span className="font-black text-[#1F4E78]">{filterCategory === 'all' ? 'كافة البنود' : filterCategory}</span></div>
+            <div>المهندس المسؤول: <span className="font-black text-[#1F4E78]">{filterEngineer === 'all' ? 'كافة المهندسين' : filterEngineer}</span></div>
+            <div>الفترة الزمنية: <span className="font-black text-[#1F4E78]">{filterMonthYear === 'all' ? 'كافة التواريخ والأشهر' : filterMonthYear}</span></div>
+          </div>
+          <div className="text-[10px] text-slate-500 font-bold border-t border-dashed border-slate-300 pt-2 text-left">
+            تاريخ استخراج التقرير: {new Date().toLocaleDateString('ar-EG')} | عدد البنود المدرجة: {filteredEntries.length} | إجمالي المصروفات: {totalFilteredAmount.toLocaleString()} EGP
+          </div>
+        </div>
+      </div>
       {/* AI Monthly Engineer Cost Aggregation Action Panel */}
-      <div className="bg-[#111827] border border-amber-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden">
+      <div className="bg-[#111827] border border-amber-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden no-print">
         <div className="absolute right-0 top-0 h-full w-1.5 bg-gradient-to-b from-indigo-500 to-amber-500" />
         
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -712,7 +731,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
       )}
 
       {/* Input Entry Form */}
-      <div id="cost-entry-form" className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md space-y-4">
+      <div id="cost-entry-form" className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md space-y-4 no-print">
         <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
           <div className="w-6 h-6 rounded-lg bg-indigo-500/15 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
             <Sparkles className="w-3.5 h-3.5" />
@@ -940,6 +959,13 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
           <div className="flex flex-wrap gap-2 w-full md:w-auto">
             <button
+              onClick={() => window.print()}
+              className="px-3.5 py-1.5 bg-[#4F81BD]/20 hover:bg-[#4F81BD]/30 text-[#4F81BD] rounded-xl text-xs font-bold border border-[#4F81BD]/25 transition-all flex items-center gap-1.5 cursor-pointer no-print"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>طباعة كشف التحليل المالي 🖨️</span>
+            </button>
+            <button
               onClick={handleAiAggregate}
               disabled={isAggregating}
               className="px-3.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-xl text-xs font-bold border border-indigo-500/25 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
@@ -1074,7 +1100,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
                 <th className="py-3 px-4 text-left">المبلغ المصروف</th>
                 <th className="py-3 px-4">التاريخ</th>
                 <th className="py-3 px-4">شرح والبيان التفصيلي للعهدة والمشروع</th>
-                <th className="py-3 px-4 text-center">خيارات التحكم</th>
+                <th className="py-3 px-4 text-center no-print">خيارات التحكم</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-850">
@@ -1101,7 +1127,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
                     <td className="py-3 px-4 text-slate-300 leading-relaxed max-w-xs truncate" title={item.description}>
                       {item.description}
                     </td>
-                    <td className="py-3 px-4 text-center">
+                    <td className="py-3 px-4 text-center no-print">
                       <div className="flex justify-center gap-1.5">
                         <button
                           onClick={() => handleStartEdit(item)}
@@ -1129,7 +1155,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
                   <td className="py-3.5 px-4 text-left font-mono text-emerald-400 text-sm">
                     {totalFilteredAmount.toLocaleString()} <span className="text-xs">EGP</span>
                   </td>
-                  <td className="py-3.5 px-4" colSpan={3}></td>
+                  <td className="py-3.5 px-4 no-print" colSpan={3}></td>
                 </tr>
               </tfoot>
             )}

@@ -444,3 +444,19 @@ html, body {
   }
 }
 
+@media print {
+    body, html, #root, .main-container {
+        background: #ffffff !important;
+        color: #000000 !important;
+    }
+    .sidebar, .navbar, .no-print, button, input, .form-container {
+        display: none !important;
+    }
+    .printable-table-zone {
+        display: block !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+}
+

@@ -724,6 +724,7 @@ export default function App() {
   const [compareDocBId, setCompareDocBId] = useState<string | null>(null);
   const [printDirection, setPrintDirection] = useState<'rtl' | 'ltr'>('ltr');
   const [showExcelGrid, setShowExcelGrid] = useState<boolean>(false);
+  const [printDensity, setPrintDensity] = useState<'compact' | 'normal' | 'spacious'>('normal');
   const [showPrintInstructions, setShowPrintInstructions] = useState<boolean>(false);
   const [isSavingDrawer, setIsSavingDrawer] = useState<boolean>(false);
 
@@ -790,6 +791,14 @@ export default function App() {
       if (saved !== null) return Number(saved);
     }
     return 15;
+  });
+
+  const [printRowHeight, setPrintRowHeight] = useState<'tight' | 'medium' | 'wide'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('printRowHeight');
+      if (saved) return saved as 'tight' | 'medium' | 'wide';
+    }
+    return 'medium';
   });
 
   // Device Fingerprint & IP Verification States
@@ -3752,6 +3761,45 @@ export default function App() {
 
           <div className="flex flex-col gap-2.5 bg-slate-800/40 p-4 rounded-xl border border-slate-800 mt-2 text-right">
             <span className="text-xs font-extrabold text-slate-300 flex items-center gap-1.5 justify-end">
+              <span>ارتفاع الأسطر وحشو الخلايا (Cell Padding):</span>
+              <span>↕️</span>
+            </span>
+            <div className="flex flex-wrap gap-2.5 text-xs font-black justify-end mt-1 items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintRowHeight('tight');
+                  localStorage.setItem('printRowHeight', 'tight');
+                }}
+                className={`px-3 py-1.5 rounded-lg font-black transition-all cursor-pointer ${printRowHeight === 'tight' ? 'bg-sky-650 text-white shadow' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+              >
+                🤏 ضيق (Tight)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintRowHeight('medium');
+                  localStorage.setItem('printRowHeight', 'medium');
+                }}
+                className={`px-3 py-1.5 rounded-lg font-black transition-all cursor-pointer ${printRowHeight === 'medium' ? 'bg-sky-650 text-white shadow' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+              >
+                📏 متوسط (Medium)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintRowHeight('wide');
+                  localStorage.setItem('printRowHeight', 'wide');
+                }}
+                className={`px-3 py-1.5 rounded-lg font-black transition-all cursor-pointer ${printRowHeight === 'wide' ? 'bg-sky-650 text-white shadow' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+              >
+                👐 واسع (Wide)
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2.5 bg-slate-800/40 p-4 rounded-xl border border-slate-800 mt-2 text-right">
+            <span className="text-xs font-extrabold text-slate-300 flex items-center gap-1.5 justify-end">
               <span>تخصيص هوامش صفحة الطباعة (mm):</span>
               <span>📐</span>
             </span>
@@ -3899,57 +3947,73 @@ export default function App() {
         )}
 
         {/* Dynamic User Custom Margins and @page overrider injection */}
-        <style dangerouslySetInnerHTML={{ __html: `
-          #printable-excel-sheet-delta-isolated,
-          #printable-excel-sheet-delta-isolated table,
-          #printable-excel-sheet-delta-isolated th,
-          #printable-excel-sheet-delta-isolated td,
-          #printable-excel-sheet-delta-isolated span,
-          #printable-excel-sheet-delta-isolated div {
-            font-size: 11px !important;
-          }
-          #printable-excel-sheet-delta-isolated tr {
-            height: auto !important;
-            min-height: auto !important;
-            max-height: auto !important;
-          }
-          #printable-excel-sheet-delta-isolated td,
-          #printable-excel-sheet-delta-isolated th {
-            display: table-cell !important;
-            height: auto !important;
-            min-height: auto !important;
-            max-height: auto !important;
-            line-height: 1.4 !important;
-          }
-          @media print {
-            @page {
-              size: A4 portrait !important;
-              margin: ${printMarginTop}mm ${printMarginRight}mm ${printMarginBottom}mm ${printMarginLeft}mm !important;
-            }
-            #printable-excel-sheet-delta-isolated,
-            #printable-excel-sheet-delta-isolated table,
-            #printable-excel-sheet-delta-isolated th,
-            #printable-excel-sheet-delta-isolated td,
-            #printable-excel-sheet-delta-isolated span,
-            #printable-excel-sheet-delta-isolated div {
-              font-size: 11px !important;
-            }
-            #printable-excel-sheet-delta-isolated tr {
-              height: auto !important;
-              min-height: auto !important;
-              max-height: auto !important;
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
-            }
-            #printable-excel-sheet-delta-isolated td,
-            #printable-excel-sheet-delta-isolated th {
-              display: table-cell !important;
-              height: auto !important;
-              min-height: auto !important;
-              max-height: auto !important;
-              line-height: 1.4 !important;
-              padding: 12px 10px !important;
-            }
+        {(() => {
+          const lineHeights = {
+            tight: '1.1',
+            medium: '1.4',
+            wide: '1.8'
+          };
+          const paddings = {
+            tight: '4px 6px',
+            medium: '12px 10px',
+            wide: '18px 14px'
+          };
+          const currentLineHeight = lineHeights[printRowHeight] || '1.4';
+          const currentPadding = paddings[printRowHeight] || '12px 10px';
+
+          return (
+            <style dangerouslySetInnerHTML={{ __html: `
+              #printable-excel-sheet-delta-isolated,
+              #printable-excel-sheet-delta-isolated table,
+              #printable-excel-sheet-delta-isolated th,
+              #printable-excel-sheet-delta-isolated td,
+              #printable-excel-sheet-delta-isolated span,
+              #printable-excel-sheet-delta-isolated div {
+                font-size: 11px !important;
+              }
+              #printable-excel-sheet-delta-isolated tr {
+                height: auto !important;
+                min-height: auto !important;
+                max-height: auto !important;
+              }
+              #printable-excel-sheet-delta-isolated td,
+              #printable-excel-sheet-delta-isolated th {
+                display: table-cell !important;
+                height: auto !important;
+                min-height: auto !important;
+                max-height: auto !important;
+                line-height: ${currentLineHeight} !important;
+                padding: ${currentPadding} !important;
+              }
+              @media print {
+                @page {
+                  size: A4 portrait !important;
+                  margin: ${printMarginTop}mm ${printMarginRight}mm ${printMarginBottom}mm ${printMarginLeft}mm !important;
+                }
+                #printable-excel-sheet-delta-isolated,
+                #printable-excel-sheet-delta-isolated table,
+                #printable-excel-sheet-delta-isolated th,
+                #printable-excel-sheet-delta-isolated td,
+                #printable-excel-sheet-delta-isolated span,
+                #printable-excel-sheet-delta-isolated div {
+                  font-size: 11px !important;
+                }
+                #printable-excel-sheet-delta-isolated tr {
+                  height: auto !important;
+                  min-height: auto !important;
+                  max-height: auto !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
+                #printable-excel-sheet-delta-isolated td,
+                #printable-excel-sheet-delta-isolated th {
+                  display: table-cell !important;
+                  height: auto !important;
+                  min-height: auto !important;
+                  max-height: auto !important;
+                  line-height: ${currentLineHeight} !important;
+                  padding: ${currentPadding} !important;
+                }
             .col-print-no {
               width: 5% !important;
               min-width: 5% !important;
@@ -3991,6 +4055,8 @@ export default function App() {
             }
           }
         `}} />
+          );
+        })()}
 
         {/* PRISTINE VIRTUAL EXCEL SHEET FOR PRINT */}
         <div className="w-full max-w-4xl mx-auto print-me-wrapper">
@@ -4179,17 +4245,17 @@ export default function App() {
                       {printDirectionParam === 'rtl' ? 'الوصف التفصيلي (Description)' : 'Description'}
                     </th>
                     {hasAnyBrand && (
-                      <th className="border-e border-slate-300 py-4 w-24 min-w-[96px] max-w-[96px] font-sans text-center align-middle font-bold text-black col-print-brand" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                      <th className="border-e border-[#B0B0B0] py-4 w-24 min-w-[96px] max-w-[96px] font-sans text-center align-middle font-bold text-black col-print-brand" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                         {printDirectionParam === 'rtl' ? 'البراند (Brand)' : 'Brand'}
                       </th>
                     )}
-                    <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black col-print-unit" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-[#B0B0B0] py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black col-print-unit" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Unit
                     </th>
-                    <th className="border-e border-slate-300 py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black col-print-qty" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-[#B0B0B0] py-4 w-16 min-w-[64px] max-w-[64px] text-center align-middle font-bold text-black col-print-qty" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Qty
                     </th>
-                    <th className="border-e border-slate-300 py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black col-print-price" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                    <th className="border-e border-[#B0B0B0] py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black col-print-price" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                       Price
                     </th>
                     <th className="py-4 w-28 min-w-[112px] max-w-[112px] text-center align-middle font-bold text-black col-print-amount" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
@@ -4200,6 +4266,7 @@ export default function App() {
                 <tbody>
                   {(() => {
                     const printTotalBaseCount = printDoc.items?.length || 0;
+                    const pyClass = printDensity === 'compact' ? 'py-1.5' : printDensity === 'spacious' ? 'py-7' : 'py-5';
                     
                     return (
                       <>
@@ -4211,8 +4278,6 @@ export default function App() {
                             const pricesIncludeTax = printDoc.pricesIncludeTax !== false;
                             const taxAddPercentEnabled = !pricesIncludeTax && !!printDoc.taxAddPercentEnabled;
                             const taxAddPercentRate = printDoc.taxAddPercentRate ?? 14;
-                            const isDescVeryLarge = item.description && (item.description.length > 100 || item.description.includes('\n') || item.description.includes('<br'));
-                            const shouldBreak = false; // تم إيقاف فصل الصفحات الإجباري بناءً على طلب المستخدم لتبدو البنود متتالية
                             return (
                               <tr 
                                 key={idx} 
@@ -4225,17 +4290,17 @@ export default function App() {
                                 }}
                               >
                                 {showExcelGrid && (
-                                  <td className="border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-400 py-5 w-12 min-w-[48px] max-w-[48px] select-none align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                  <td className={`border-e border-slate-200 bg-[#EFEFEF] text-center text-[10px] font-mono font-bold text-slate-400 ${pyClass} w-12 min-w-[48px] max-w-[48px] select-none align-middle`} style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                     {rowNo}
                                   </td>
                                 )}
                                 {showExcelGrid && (
-                                  <td className="border-e border-slate-200 py-5 text-center text-slate-500 font-mono font-semibold w-12 min-w-[48px] max-w-[48px] select-none align-middle" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                  <td className={`border-e border-slate-200 ${pyClass} text-center text-slate-500 font-mono font-semibold w-12 min-w-[48px] max-w-[48px] select-none align-middle`} style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                     {sequenceNo}
                                   </td>
                                 )}
-                                <td className="border-e border-slate-200 py-5 text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] align-middle col-print-no" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{idx + 1}</td>
-                                <td className="border-e border-slate-200 py-5 px-3 min-w-[260px] align-middle text-center col-print-desc" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className={`border-e border-slate-200 ${pyClass} text-center font-bold text-black w-12 min-w-[48px] max-w-[48px] align-middle col-print-no`} style={{ verticalAlign: 'middle', textAlign: 'center' }}>{idx + 1}</td>
+                                <td className={`border-e border-slate-200 ${pyClass} px-3 min-w-[260px] align-middle text-center col-print-desc`} dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div 
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -4251,7 +4316,7 @@ export default function App() {
                                   </div>
                                 </td>
                                 {hasAnyBrand && (
-                                  <td className="border-e border-slate-200 py-5 text-black font-bold w-24 min-w-[96px] max-w-[96px] break-words whitespace-normal font-sans text-center align-middle col-print-brand" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                  <td className={`border-e border-slate-200 ${pyClass} text-black font-bold w-24 min-w-[96px] max-w-[96px] break-words whitespace-normal font-sans text-center align-middle col-print-brand`} dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                     <div
                                       contentEditable={true}
                                       suppressContentEditableWarning={true}
@@ -4266,7 +4331,7 @@ export default function App() {
                                     </div>
                                   </td>
                                 )}
-                                <td className="border-e border-slate-200 py-5 text-black font-bold w-16 min-w-[64px] max-w-[64px] break-words whitespace-normal text-center align-middle col-print-unit" dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className={`border-e border-slate-200 ${pyClass} text-black font-bold w-16 min-w-[64px] max-w-[64px] break-words whitespace-normal text-center align-middle col-print-unit`} dir="auto" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -4285,7 +4350,7 @@ export default function App() {
                                     {item.unit && !item.unit.includes('عئد') && item.unit !== 'عئد.' && item.unit !== 'عئد' ? convertEasternToWesternNumerals(item.unit) : "عدد"}
                                   </div>
                                 </td>
-                                <td className="border-e border-slate-200 py-5 font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle col-print-qty" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className={`border-e border-slate-200 ${pyClass} font-bold text-black w-16 min-w-[64px] max-w-[64px] text-center align-middle col-print-qty`} style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -4299,7 +4364,7 @@ export default function App() {
                                     {item.quantity || "1"}
                                   </div>
                                 </td>
-                                <td className="border-e border-slate-200 py-5 font-bold text-black w-28 min-w-[112px] max-w-[112px] text-center align-middle font-mono text-[12px] whitespace-nowrap text-nowrap col-print-price" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className={`border-e border-slate-200 ${pyClass} font-bold text-black w-28 min-w-[112px] max-w-[112px] text-center align-middle font-mono text-[12px] whitespace-nowrap text-nowrap col-print-price`} style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div
                                     contentEditable={true}
                                     suppressContentEditableWarning={true}
@@ -4320,7 +4385,7 @@ export default function App() {
                                     })()}
                                   </div>
                                 </td>
-                                <td className="py-5 w-28 min-w-[112px] max-w-[112px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono whitespace-nowrap text-nowrap col-print-amount" style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <td className={`${pyClass} w-28 min-w-[112px] max-w-[112px] select-text font-black text-black font-mono text-[12px] text-center align-middle font-mono whitespace-nowrap text-nowrap col-print-amount`} style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                                   <div className="whitespace-nowrap text-nowrap text-center w-full">
                                     {(() => {
                                       const baseTotal = item.total ? item.total : ((item.quantity || 0) * (item.unitPrice || 0));
@@ -7322,6 +7387,53 @@ export default function App() {
                               )}
                             </div>
                           )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row Height & Density Controls */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100">
+                      <div className="flex flex-wrap items-center gap-2.5 text-right w-full justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div>
+                          <span className="text-xs font-bold text-slate-700">ارتفاع الخلايا والأسطر لضغط المستند (Row Height):</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="inline-flex rounded-xl border border-slate-200 p-0.5 bg-white shadow-2xs">
+                            <button
+                              type="button"
+                              onClick={() => setPrintDensity('compact')}
+                              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                printDensity === 'compact'
+                                  ? 'bg-indigo-600 text-white shadow-3xs'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                              }`}
+                            >
+                              ضيق / Compact (تجميع التوقيعات) 🗜️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPrintDensity('normal')}
+                              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                printDensity === 'normal'
+                                  ? 'bg-indigo-600 text-white shadow-3xs'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                              }`}
+                            >
+                              متوسط / Normal (افتراضي) 📏
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPrintDensity('spacious')}
+                              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                printDensity === 'spacious'
+                                  ? 'bg-indigo-600 text-white shadow-3xs'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                              }`}
+                            >
+                              واسع / Spacious 🔍
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
