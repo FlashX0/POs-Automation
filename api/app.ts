@@ -3146,33 +3146,6 @@ app.get("/api/admin/users", async (req, res) => {
           });
           saveDb(db);
         }
-
-        console.log("[Users Fetch] Checking Supabase 'users' table...");
-        const { data: sUsers, error: sUsersErr } = await adminClient.from('users').select('*');
-        if (!sUsersErr && sUsers) {
-          sUsers.forEach((su: any) => {
-            const emailLower = su.email?.toLowerCase().trim();
-            if (emailLower && !usersList.some((u: any) => u.email.toLowerCase() === emailLower)) {
-              const mapped = {
-                id: su.id,
-                name: su.display_name || su.name || "موظف جديد",
-                email: emailLower,
-                role: su.role || "user",
-                status: su.status || "active",
-                allowed_departments: su.allowed_departments || su.allowed_sections || su.user_metadata?.allowed_departments || su.user_metadata?.allowed_sections || [],
-                createdAt: su.created_at || su.createdAt || new Date().toISOString()
-              };
-              usersList.push(mapped);
-              db.users.push({ ...mapped, password: "" });
-            } else if (emailLower) {
-              const existing = usersList.find((u: any) => u.email.toLowerCase() === emailLower);
-              if (existing) {
-                existing.allowed_departments = su.allowed_departments || su.allowed_sections || su.user_metadata?.allowed_departments || su.user_metadata?.allowed_sections || existing.allowed_departments || [];
-              }
-            }
-          });
-          saveDb(db);
-        }
       } catch (sbErr: any) {
         console.warn("[Users Fetch] Supabase DB fetch failed:", sbErr.message);
       }
@@ -3367,66 +3340,7 @@ app.post("/api/admin/users/create", async (req, res) => {
       }
 
       if (!sbDbSuccess) {
-        // Try inserting into 'users' table
-        console.log(`[Supabase DB] Attempting to insert into 'users' table for UID: ${finalUserId}`);
-        const { error: userErr } = await adminClient
-          .from('users')
-          .insert([
-            { 
-              id: finalUserId, 
-              email: lowerEmail, 
-              display_name: name.trim(), 
-              role: role || "user",
-              allowed_departments: finalDeps
-            }
-          ]);
-        
-        if (userErr) {
-          console.error("[Supabase DB] users table insert error details (console.log dbError):", userErr);
-          sbDbErrorMsg = userErr.message;
-
-          // If failed due to missing column, try with allowed_sections, then without any department column
-          if (userErr.message?.includes("allowed_departments") || userErr.code === "PGRST204" || userErr.code === "42703") {
-            console.warn("[Supabase DB] allowed_departments column might be missing on 'users' table, retrying insert with allowed_sections...");
-            const { error: retrySectErr } = await adminClient
-              .from('users')
-              .insert([
-                { 
-                  id: finalUserId, 
-                  email: lowerEmail, 
-                  display_name: name.trim(), 
-                  role: role || "user",
-                  allowed_sections: finalDeps
-                }
-              ]);
-            if (!retrySectErr) {
-              sbDbSuccess = true;
-              console.log("[Supabase DB] Successfully inserted into 'users' table with allowed_sections.");
-            } else {
-              console.warn("[Supabase DB] allowed_sections column also missing on 'users' table, retrying insert without any departments column...");
-              const { error: retryUserErr } = await adminClient
-                .from('users')
-                .insert([
-                  { 
-                    id: finalUserId, 
-                    email: lowerEmail, 
-                    display_name: name.trim(), 
-                    role: role || "user"
-                  }
-                ]);
-              if (!retryUserErr) {
-                sbDbSuccess = true;
-                console.log("[Supabase DB] Successfully inserted into 'users' table (without any departments column).");
-              } else {
-                console.error("[Supabase DB] Fallback users insert failed:", retryUserErr.message);
-                sbDbErrorMsg = retryUserErr.message;
-              }
-            }
-          }
-        } else {
-          sbDbSuccess = true;
-          console.log("[Supabase DB] Successfully inserted profile into 'users' table.");
-        }
+        console.warn("[Supabase DB] profiles table insert failed entirely.");
       }
     } catch (dbErr: any) {
       console.error("[Supabase DB] Exception during Supabase insert (console.log dbError):", dbErr);
@@ -3628,55 +3542,7 @@ app.post("/api/admin/users/update", async (req, res) => {
             }
 
             if (profDbErr) {
-              // Fallback users table
-              console.log(`[Supabase DB] Attempting update on 'users' table for UID: ${targetUserId}...`);
-              let { error: usersDbErr } = await adminClient
-                .from('users')
-                .update(dbUpdateObj)
-                .eq('id', targetUserId);
-
-              if (usersDbErr) {
-                console.warn("[Supabase DB] users update raw error (console.log dbError):", usersDbErr);
-                
-                // Smart column-by-column fallback for 'users' table
-                console.log("[Supabase DB] Attempting granular update for 'users' table...");
-                for (const [key, val] of Object.entries(dbUpdateObj)) {
-                  let { error: singleErr } = await adminClient
-                    .from('users')
-                    .update({ [key]: val })
-                    .eq('id', targetUserId);
-                  
-                  if (singleErr && key === 'display_name') {
-                    console.log("[Supabase DB] users display_name update failed, trying fallback to 'name' column...");
-                    const { error: nameErr } = await adminClient
-                      .from('users')
-                      .update({ name: val })
-                      .eq('id', targetUserId);
-                    if (nameErr) {
-                      console.warn("[Supabase DB] users 'name' column update also failed:", nameErr.message);
-                    } else {
-                      console.log("[Supabase DB] Successfully updated 'name' column in 'users' table.");
-                    }
-                  } else if (singleErr && key === 'allowed_departments') {
-                    console.log("[Supabase DB] users allowed_departments update failed, trying fallback to 'allowed_sections' column...");
-                    const { error: sectErr } = await adminClient
-                      .from('users')
-                      .update({ allowed_sections: val })
-                      .eq('id', targetUserId);
-                    if (sectErr) {
-                      console.warn("[Supabase DB] users 'allowed_sections' column update also failed:", sectErr.message);
-                    } else {
-                      console.log("[Supabase DB] Successfully updated 'allowed_sections' column in 'users' table.");
-                    }
-                  } else if (!singleErr) {
-                    console.log(`[Supabase DB] Successfully updated column '${key}' in 'users' table.`);
-                  } else {
-                    console.warn(`[Supabase DB] users update failed for column '${key}':`, singleErr.message);
-                  }
-                }
-              } else {
-                console.log("[Supabase DB] Successfully updated profile details in 'users' table.");
-              }
+              console.error("[Supabase DB] profiles update failed completely.");
             }
           }
         }
@@ -3767,15 +3633,6 @@ app.post("/api/admin/users/delete", async (req, res) => {
         if (authUserId) {
           const { error: profDelIdErr } = await adminClient.from('profiles').delete().eq('id', authUserId);
           if (profDelIdErr) console.warn("[Supabase Delete] Delete profiles by id error:", profDelIdErr.message);
-        }
-        
-        // Delete from users table by email and id
-        const { error: userDelEmailErr } = await adminClient.from('users').delete().eq('email', lowerEmail);
-        if (userDelEmailErr) console.warn("[Supabase Delete] Delete users by email error:", userDelEmailErr.message);
-
-        if (authUserId) {
-          const { error: userDelIdErr } = await adminClient.from('users').delete().eq('id', authUserId);
-          if (userDelIdErr) console.warn("[Supabase Delete] Delete users by id error:", userDelIdErr.message);
         }
         
         if (authUserId) {

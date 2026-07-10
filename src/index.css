@@ -92,12 +92,9 @@ html, body {
     margin: 8mm 10mm 8mm 10mm; /* Symmetrical crisp margins to prevent empty secondary pages */
   }
 
-  /* Hide all sibling elements of main sections or non-printable interface elements */
-  header, 
-  footer, 
-  section,
-  aside,
-  nav,
+  /* Hide only the Sidebar, Navbar, Buttons, and designated non-printable elements */
+  .sidebar,
+  .navbar,
   .no-print,
   button,
   .no-print * {
