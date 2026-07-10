@@ -1,0 +1,1199 @@
+import React, { useState, useMemo } from 'react';
+import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye } from 'lucide-react';
+import * as XLSX from 'xlsx-js-style';
+
+interface Transaction {
+  id: string;
+  inflow: number;
+  outflow: number;
+  description: string;
+  method: string;
+  project: string;
+  attachment?: string;
+  attachmentName?: string;
+}
+
+interface BoxDay {
+  date: string;
+  transactions: Transaction[];
+  startingBalanceOverride?: number;
+  engineer?: string;
+}
+
+interface PendingTransaction {
+  id: string;
+  inflow: number;
+  outflow: number;
+  description: string;
+  method: string;
+  project: string;
+  status: string;
+  date: string;
+}
+
+interface DailyBoxMovementProps {
+  projectsList: string[];
+  boxDays: BoxDay[];
+  onSave: (updatedBoxDays: BoxDay[]) => void;
+  pendingTransactions?: PendingTransaction[];
+  onSavePending?: (updatedPending: PendingTransaction[]) => void;
+  onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
+  engineers?: { id: string; name: string; project: string; initialBalance?: number }[];
+}
+
+export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
+  projectsList,
+  boxDays,
+  onSave,
+  pendingTransactions = [],
+  onSavePending = (updatedPending) => {},
+  onNotify = (type, title, message) => {},
+  engineers = [],
+}) => {
+  const [selectedDate, setSelectedDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
+
+  const [selectedEngineer, setSelectedEngineer] = useState<string>(
+    engineers.length > 0 ? engineers[0].name : ''
+  );
+  const [pendingAttachmentPath, setPendingAttachmentPath] = useState<string>('');
+  const [pendingAttachmentName, setPendingAttachmentName] = useState<string>('');
+
+  // Form states
+  const [inflow, setInflow] = useState<string>('');
+  const [outflow, setOutflow] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [method, setMethod] = useState<string>('انستاباي');
+  const [project, setProject] = useState<string>('');
+  const [editingStartingBalance, setEditingStartingBalance] = useState<boolean>(false);
+  const [startingBalanceInput, setStartingBalanceInput] = useState<string>('0');
+
+  // Sort box days chronologically to compute cumulative balances
+  const sortedDays = useMemo(() => {
+    return [...boxDays]
+      .filter((d) => !selectedEngineer || d.engineer === selectedEngineer)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [boxDays, selectedEngineer]);
+
+  // Find index of selected date
+  const selectedDayIndex = useMemo(() => {
+    return sortedDays.findIndex((d) => d.date === selectedDate);
+  }, [sortedDays, selectedDate]);
+
+  const defaultInitialBalance = useMemo(() => {
+    const engObj = engineers?.find(e => e.name === selectedEngineer);
+    return engObj?.initialBalance !== undefined ? engObj.initialBalance : -177656;
+  }, [engineers, selectedEngineer]);
+
+  // Calculate starting balance of the selected date
+  const computedStartingBalance = useMemo(() => {
+    if (sortedDays.length === 0) {
+      return defaultInitialBalance;
+    }
+    const firstDay = sortedDays[0];
+    let balance = firstDay.startingBalanceOverride !== undefined ? firstDay.startingBalanceOverride : defaultInitialBalance;
+    
+    for (const d of sortedDays) {
+      if (d.date < selectedDate) {
+        const dayInflow = d.transactions.reduce((acc, t) => acc + t.inflow, 0);
+        const dayOutflow = d.transactions.reduce((acc, t) => acc + t.outflow, 0);
+        balance = balance + dayInflow - dayOutflow;
+      } else {
+        break;
+      }
+    }
+    return balance;
+  }, [sortedDays, selectedDate, defaultInitialBalance]);
+
+  // Current day data
+  const currentDay = useMemo(() => {
+    return boxDays.find((d) => d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer)) || {
+      date: selectedDate,
+      engineer: selectedEngineer,
+      transactions: [],
+    };
+  }, [boxDays, selectedDate, selectedEngineer]);
+
+  const transactions = currentDay.transactions;
+
+  const totalInflow = useMemo(() => {
+    return transactions.reduce((acc, t) => acc + t.inflow, 0);
+  }, [transactions]);
+
+  const totalOutflow = useMemo(() => {
+    return transactions.reduce((acc, t) => acc + t.outflow, 0);
+  }, [transactions]);
+
+  const endingBalance = useMemo(() => {
+    return computedStartingBalance + totalInflow - totalOutflow;
+  }, [computedStartingBalance, totalInflow, totalOutflow]);
+
+  // Handlers
+  const handleAddTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!project) {
+      alert('حقل اختيار المشروع إجباري لإتمام العملية!');
+      return;
+    }
+    if (!description.trim()) {
+      alert('الرجاء إدخال البيان!');
+      return;
+    }
+
+    // Process the pending attachment path if present
+    let finalAttachmentPath = '';
+    if (pendingAttachmentPath) {
+      try {
+        const orgRes = await fetch('/api/ai/organize-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tempPath: pendingAttachmentPath,
+            originalName: pendingAttachmentName,
+            type: 'petty_cash',
+            metadata: {
+              engineer: selectedEngineer || 'عام',
+              project: project || 'عام',
+              date: selectedDate
+            }
+          })
+        });
+        if (orgRes.ok) {
+          const orgData = await orgRes.json();
+          if (orgData.success) {
+            finalAttachmentPath = orgData.organizedPath;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to organize uploaded file:", err);
+      }
+    }
+
+    const newTx: Transaction = {
+      id: `tx-${Date.now()}`,
+      inflow: parseFloat(inflow) || 0,
+      outflow: parseFloat(outflow) || 0,
+      description: description.trim(),
+      method: method.trim() || 'نقدي',
+      project: project,
+      attachment: finalAttachmentPath || undefined,
+      attachmentName: pendingAttachmentName || undefined
+    };
+
+    let updatedDays = [...boxDays];
+    const dayIdx = updatedDays.findIndex((d) => d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer));
+
+    if (dayIdx > -1) {
+      updatedDays[dayIdx] = {
+        ...updatedDays[dayIdx],
+        engineer: selectedEngineer,
+        transactions: [...updatedDays[dayIdx].transactions, newTx],
+      };
+    } else {
+      updatedDays.push({
+        date: selectedDate,
+        engineer: selectedEngineer,
+        transactions: [newTx],
+      });
+    }
+
+    onSave(updatedDays);
+    setInflow('');
+    setOutflow('');
+    setDescription('');
+    setPendingAttachmentPath('');
+    setPendingAttachmentName('');
+  };
+
+  const handleDeleteTransaction = (txId: string) => {
+    const updatedDays = boxDays.map((d) => {
+      if (d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer)) {
+        return {
+          ...d,
+          transactions: d.transactions.filter((t) => t.id !== txId),
+        };
+      }
+      return d;
+    }).filter((d) => d.transactions.length > 0 || d.startingBalanceOverride !== undefined);
+
+    onSave(updatedDays);
+  };
+
+  const handleUpdateStartingBalance = () => {
+    const val = parseFloat(startingBalanceInput) || 0;
+    let updatedDays = [...boxDays];
+    const dayIdx = updatedDays.findIndex((d) => d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer));
+
+    if (dayIdx > -1) {
+      updatedDays[dayIdx] = {
+        ...updatedDays[dayIdx],
+        startingBalanceOverride: val,
+        engineer: selectedEngineer,
+      };
+    } else {
+      updatedDays.push({
+        date: selectedDate,
+        engineer: selectedEngineer,
+        transactions: [],
+        startingBalanceOverride: val,
+      });
+    }
+
+    onSave(updatedDays);
+    setEditingStartingBalance(false);
+  };
+
+  // Excel Export with formulas - Custom format matching image_282819.png with blue dashed borders
+  const handleExportExcel = () => {
+    const rows: any[][] = [];
+    const merges: any[] = [];
+    
+    // Title Row
+    rows.push(["كشف حركة الصندوق اليومية وعهد المهندسين", "", "", ""]);
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } });
+    rows.push(["", "", "", ""]); // empty divider
+    
+    let currentExcelRow = 2; // 0-indexed in rows (Excel row 3)
+    let prevEndingBalanceRowIdx: number | null = null;
+    
+    // Stacking all logged days to match the format of image_282819.png
+    sortedDays.forEach((day, dayIdx) => {
+      // Calculate starting balance for this day
+      let startingBal = 0;
+      if (dayIdx === 0) {
+        startingBal = day.startingBalanceOverride !== undefined ? day.startingBalanceOverride : defaultInitialBalance;
+      } else {
+        let tempBal = sortedDays[0].startingBalanceOverride !== undefined ? sortedDays[0].startingBalanceOverride : defaultInitialBalance;
+        for (let i = 0; i < dayIdx; i++) {
+          const d = sortedDays[i];
+          const inflows = d.transactions.reduce((acc, t) => acc + t.inflow, 0);
+          const outflows = d.transactions.reduce((acc, t) => acc + t.outflow, 0);
+          tempBal = tempBal + inflows - outflows;
+        }
+        startingBal = tempBal;
+      }
+      
+      const dayTransactions = day.transactions;
+      
+      // Row 1: Header Row for Day
+      // Col A: Date formatted as DD - MM - YY
+      // Col B, C, D merged: كشف حركة الصندوق ليوم
+      const dateParts = day.date.split('-');
+      const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
+      
+      rows.push([formattedDate, "كشف حركة الصندوق ليوم", "", ""]);
+      merges.push({ s: { r: currentExcelRow, c: 1 }, e: { r: currentExcelRow, c: 3 } });
+      const headerRowIdx = currentExcelRow + 1; // 1-indexed
+      currentExcelRow++;
+      
+      // Row 2: Opening Balance Row
+      // Col A: Value. Formula if dayIdx > 0 and prevEndingBalanceRowIdx is available: `=A${prevEndingBalanceRowIdx}`
+      // Col B, C, D merged: رصيد اول اليوم
+      const openingCell = dayIdx > 0 && prevEndingBalanceRowIdx !== null 
+        ? { f: `A${prevEndingBalanceRowIdx}` } 
+        : startingBal;
+      rows.push([openingCell, "رصيد اول اليوم", "", ""]);
+      merges.push({ s: { r: currentExcelRow, c: 1 }, e: { r: currentExcelRow, c: 3 } });
+      const openingRowIdx = currentExcelRow + 1; // 1-indexed
+      currentExcelRow++;
+      
+      // Transaction rows
+      const transStartRowIdx = currentExcelRow + 1; // 1-indexed
+      if (dayTransactions.length === 0) {
+        rows.push(["", 0, "لا توجد حركات لهذا اليوم", ""]);
+        currentExcelRow++;
+      } else {
+        dayTransactions.forEach((tx) => {
+          const amount = tx.inflow > 0 ? tx.inflow : tx.outflow;
+          const projOrMethod = tx.outflow > 0 ? tx.project : tx.method;
+          rows.push(["", amount, tx.description, projOrMethod]);
+          currentExcelRow++;
+        });
+      }
+      const transEndRowIdx = currentExcelRow; // 1-indexed
+      
+      // Total Row ("الاجمالي")
+      // Col A: Opening balance + sum of inflows
+      const inflowRows: number[] = [];
+      dayTransactions.forEach((tx, idx) => {
+        if (tx.inflow > 0) {
+          inflowRows.push(transStartRowIdx + idx);
+        }
+      });
+      let totalAFormula = `A${openingRowIdx}`;
+      if (inflowRows.length > 0) {
+        totalAFormula += `+` + inflowRows.map(r => `B${r}`).join('+');
+      }
+      
+      // Col B: Sum of outflows
+      const outflowRows: number[] = [];
+      dayTransactions.forEach((tx, idx) => {
+        if (tx.outflow > 0) {
+          outflowRows.push(transStartRowIdx + idx);
+        }
+      });
+      let totalBFormula = "0";
+      if (outflowRows.length > 0) {
+        totalBFormula = outflowRows.map(r => `B${r}`).join('+');
+      }
+      
+      rows.push([
+        { f: totalAFormula },
+        { f: totalBFormula },
+        "الاجمالي",
+        ""
+      ]);
+      const totalRowIdx = currentExcelRow + 1; // 1-indexed
+      currentExcelRow++;
+      
+      // Ending Balance Row ("رصيد اخر اليوم")
+      // Col A: `=A{totalRowIdx}-B{totalRowIdx}`
+      rows.push([
+        { f: `A${totalRowIdx}-B${totalRowIdx}` },
+        "رصيد اخر اليوم",
+        "",
+        ""
+      ]);
+      merges.push({ s: { r: currentExcelRow, c: 1 }, e: { r: currentExcelRow, c: 3 } });
+      const endingRowIdx = currentExcelRow + 1; // 1-indexed
+      
+      prevEndingBalanceRowIdx = endingRowIdx; // Store for next day's opening balance
+      currentExcelRow++;
+      
+      // Separator Empty Row
+      rows.push(["", "", "", ""]);
+      currentExcelRow++;
+    });
+    
+    // Create worksheet
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!merges'] = merges;
+    
+    // Set view to Right-To-Left to match Arabic layout exactly
+    ws['!views'] = [{ RTL: true }];
+    
+    // Columns widths
+    ws['!cols'] = [
+      { wch: 18 }, // Col A: Running Balances
+      { wch: 15 }, // Col B: Amounts
+      { wch: 35 }, // Col C: Descriptions
+      { wch: 22 }, // Col D: Projects / Methods
+    ];
+    
+    // Blue dashed borders style
+    const borderDashedBlue = {
+      top: { style: "dashed", color: { rgb: "4F81BD" } },
+      bottom: { style: "dashed", color: { rgb: "4F81BD" } },
+      left: { style: "dashed", color: { rgb: "4F81BD" } },
+      right: { style: "dashed", color: { rgb: "4F81BD" } }
+    };
+    
+    const fontMain = { name: "Arial", sz: 11 };
+    const fontBold = { name: "Arial", sz: 11, bold: true };
+    const fontTitle = { name: "Arial", sz: 14, bold: true, color: { rgb: "1F4E78" } };
+    
+    // Style Title Row (A1)
+    if (ws['A1']) {
+      ws['A1'].s = {
+        font: fontTitle,
+        alignment: { horizontal: "center", vertical: "center" },
+        fill: { fgColor: { rgb: "F2F6FA" } },
+        border: borderDashedBlue
+      };
+    }
+    
+    // Styling all standard cells with blue dashed borders and proper alignment
+    for (let r = 2; r < currentExcelRow; r++) {
+      ['A', 'B', 'C', 'D'].forEach(col => {
+        const ref = `${col}${r+1}`;
+        if (!ws[ref]) {
+          ws[ref] = { v: "" };
+        }
+        ws[ref].s = {
+          font: fontMain,
+          border: borderDashedBlue,
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+        
+        if (col === 'A' || col === 'B') {
+          ws[ref].s.numFmt = '#,##0.00';
+          ws[ref].s.alignment = { horizontal: "left", vertical: "center" };
+        }
+      });
+    }
+    
+    // Apply specific backgrounds and bold fonts to headers and totals
+    let curRow = 2; // start from row 3 (0-indexed 2)
+    sortedDays.forEach((day, dayIdx) => {
+      // Header row style
+      const rHeader = curRow + 1;
+      ['A', 'B', 'C', 'D'].forEach(col => {
+        const ref = `${col}${rHeader}`;
+        if (ws[ref]) {
+          ws[ref].s.font = fontBold;
+          ws[ref].s.fill = { fgColor: { rgb: "D9E1F2" } }; // Soft blue header
+        }
+      });
+      curRow++; // move to opening balance row
+      
+      // Opening balance row style
+      const rOpening = curRow + 1;
+      ['A', 'B', 'C', 'D'].forEach(col => {
+        const ref = `${col}${rOpening}`;
+        if (ws[ref]) {
+          ws[ref].s.font = fontBold;
+          if (col === 'A') ws[ref].s.font.color = { rgb: "1F4E78" };
+        }
+      });
+      curRow++; // move to transactions
+      
+      const dayTransactions = day.transactions;
+      const transCount = dayTransactions.length === 0 ? 1 : dayTransactions.length;
+      for (let t = 0; t < transCount; t++) {
+        const rTrans = curRow + 1;
+        if (ws[`C${rTrans}`]) {
+          ws[`C${rTrans}`].s.alignment = { horizontal: "center", vertical: "center" };
+        }
+        if (ws[`D${rTrans}`]) {
+          ws[`D${rTrans}`].s.alignment = { horizontal: "right", vertical: "center" };
+        }
+        curRow++;
+      }
+      
+      // Total Row ("الاجمالي")
+      const rTotal = curRow + 1;
+      ['A', 'B', 'C', 'D'].forEach(col => {
+        const ref = `${col}${rTotal}`;
+        if (ws[ref]) {
+          ws[ref].s.font = fontBold;
+          ws[ref].s.fill = { fgColor: { rgb: "F2F2F2" } };
+        }
+      });
+      curRow++;
+      
+      // Ending balance row style
+      const rEnding = curRow + 1;
+      ['A', 'B', 'C', 'D'].forEach(col => {
+        const ref = `${col}${rEnding}`;
+        if (ws[ref]) {
+          ws[ref].s.font = fontBold;
+          ws[ref].s.fill = { fgColor: { rgb: "E2EFDA" } }; // Soft green ending balance
+          if (col === 'A') ws[ref].s.font.color = { rgb: "375623" };
+        }
+      });
+      curRow++;
+      
+      // Empty separator row - clean borders
+      ['A', 'B', 'C', 'D'].forEach(col => {
+        const ref = `${col}${curRow + 1}`;
+        if (ws[ref]) {
+          ws[ref].s = { border: {} }; // no borders for separator
+        }
+      });
+      curRow++;
+    });
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "حركة الصندوق");
+    XLSX.writeFile(wb, `كشف_حركة_الصندوق_عهد_المهندسين.xlsx`);
+  };
+
+  const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
+
+  const refreshFinancialsFromServer = async () => {
+    try {
+      const res = await fetch('/api/financial-data');
+      if (res.ok) {
+        const finData = await res.json();
+        if (finData.success) {
+          if (finData.pettyCashBoxDays) onSave(finData.pettyCashBoxDays);
+          if (finData.pendingTransactions) onSavePending(finData.pendingTransactions);
+        }
+      }
+    } catch (e) {
+      console.error("Error refreshing financials:", e);
+    }
+  };
+
+  const handleScreenshotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingAI(true);
+    onNotify('info', 'جاري تحليل المستند بالذكاء الاصطناعي 🤖', 'يتم رفع وقراءة الفاتورة/الإيصال واستخراج البيانات المالية باستخدام Gemini OCR...');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', 'petty_cash');
+
+    try {
+      const res = await fetch('/api/ai/ocr', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data) {
+          const ext = data.data;
+          onNotify('success', 'تم استخراج البيانات بنجاح 🎉', 'تم ملء حقول الفاتورة تلقائياً. يرجى مراجعتها وتعديلها إذا لزم الأمر قبل الإضافة.');
+          
+          if (ext.date) setSelectedDate(ext.date);
+          if (ext.inflow) setInflow(ext.inflow.toString());
+          if (ext.outflow) setOutflow(ext.outflow.toString());
+          if (ext.description) setDescription(ext.description);
+          if (ext.method) setMethod(ext.method);
+          if (ext.project) setProject(ext.project);
+          if (ext.engineer) {
+            const matched = engineers?.find(eng => eng.name.includes(ext.engineer) || ext.engineer.includes(eng.name));
+            if (matched) setSelectedEngineer(matched.name);
+          }
+          
+          if (data.tempPath) {
+            setPendingAttachmentPath(data.tempPath);
+            setPendingAttachmentName(file.name);
+          }
+        } else {
+          onNotify('error', 'فشل تحليل المستند', data.error || 'حدث خطأ في قراءة المستند بالذكاء الاصطناعي.');
+        }
+      } else {
+        onNotify('error', 'خطأ في الاتصال بالخادم', 'فشل إرسال المستند إلى معالج الذكاء الاصطناعي.');
+      }
+    } catch (err: any) {
+      onNotify('error', 'فشل معالجة المستند بالذكاء الاصطناعي', err.message || 'خطأ في الشبكة.');
+    } finally {
+      setIsProcessingAI(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleApprovePending = (pendingTx: PendingTransaction) => {
+    if (!pendingTx.date) {
+      alert('يرجى تحديد تاريخ الحركة أولاً لاعتمادها وترحيلها إلى هذا التاريخ!');
+      return;
+    }
+
+    const updatedPending = pendingTransactions.filter((pt) => pt.id !== pendingTx.id);
+
+    const cleanTx = {
+      id: pendingTx.id,
+      inflow: pendingTx.inflow,
+      outflow: pendingTx.outflow,
+      description: pendingTx.description,
+      method: pendingTx.method,
+      project: pendingTx.project
+    };
+
+    let updatedBoxDays = [...boxDays];
+    const dayIdx = updatedBoxDays.findIndex((d) => d.date === pendingTx.date);
+
+    if (dayIdx > -1) {
+      updatedBoxDays[dayIdx] = {
+        ...updatedBoxDays[dayIdx],
+        transactions: [...updatedBoxDays[dayIdx].transactions, cleanTx],
+      };
+    } else {
+      updatedBoxDays.push({
+        date: pendingTx.date,
+        transactions: [cleanTx],
+      });
+    }
+
+    onSave(updatedBoxDays);
+    onSavePending(updatedPending);
+    onNotify('success', 'تم اعتماد الحركة بنجاح 🚀', `تم ترحيل الحركة وتثبيتها في يوم ${pendingTx.date}.`);
+  };
+
+  const handleDeletePending = (pendingId: string) => {
+    if (confirm('هل أنت متأكد من رغبتك في حذف وإلغاء هذه الحركة المعلقة؟')) {
+      const updatedPending = pendingTransactions.filter((pt) => pt.id !== pendingId);
+      onSavePending(updatedPending);
+      onNotify('info', 'تم حذف الحركة المعلقة', 'تمت إزالة القيد المعلق بنجاح.');
+    }
+  };
+
+  const handlePendingDateChange = (pendingId: string, dateVal: string) => {
+    const updatedPending = pendingTransactions.map((pt) => {
+      if (pt.id === pendingId) {
+        return { ...pt, date: dateVal };
+      }
+      return pt;
+    });
+    onSavePending(updatedPending);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Date & Starting Balance Panel */}
+      <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+          <div className="flex items-center gap-3">
+            <User className="text-indigo-400 w-5 h-5" />
+            <span className="text-sm font-bold text-slate-300">عُهدة المهندس:</span>
+            <select
+              value={selectedEngineer}
+              onChange={(e) => setSelectedEngineer(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500 transition-all cursor-pointer"
+            >
+              <option value="">-- كشف الصندوق العام --</option>
+              {engineers.map((eng) => (
+                <option key={eng.id} value={eng.name}>
+                  {eng.name} ({eng.project})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Calendar className="text-emerald-400 w-5 h-5" />
+            <span className="text-sm font-bold text-slate-300">اختر تاريخ كشف الحركة:</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-emerald-500 transition-all cursor-pointer"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+          <div className="text-right">
+            <span className="text-xs text-slate-400 block font-bold">رصيد أول اليوم:</span>
+            {editingStartingBalance ? (
+              <div className="flex gap-2 items-center mt-1">
+                <input
+                  type="number"
+                  value={startingBalanceInput}
+                  onChange={(e) => setStartingBalanceInput(e.target.value)}
+                  className="w-28 bg-slate-900 border border-emerald-500 text-white text-xs rounded-lg px-2 py-1 outline-none text-left"
+                />
+                <button
+                  onClick={handleUpdateStartingBalance}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] px-2.5 py-1 rounded-lg font-bold cursor-pointer"
+                >
+                  حفظ
+                </button>
+                <button
+                  onClick={() => setEditingStartingBalance(false)}
+                  className="bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] px-2 py-1 rounded-lg cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-lg font-black text-white">
+                  {computedStartingBalance.toLocaleString()} <span className="text-xs text-slate-400">EGP</span>
+                </span>
+                <button
+                  onClick={() => {
+                    setStartingBalanceInput(computedStartingBalance.toString());
+                    setEditingStartingBalance(true);
+                  }}
+                  className="text-slate-400 hover:text-white text-[10px] border border-slate-700 hover:border-slate-500 px-1.5 py-0.5 rounded cursor-pointer"
+                >
+                  تعديل
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className={`bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md ${isProcessingAI ? 'opacity-60 pointer-events-none' : ''}`}>
+              <Upload className={`w-4 h-4 text-emerald-400 ${isProcessingAI ? 'animate-spin' : ''}`} />
+              <span>{isProcessingAI ? 'جاري تحليل الصورة 🤖...' : 'تحليل تصفية بالذكاء الاصطناعي 🤖'}</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleScreenshotUpload}
+                className="hidden"
+                disabled={isProcessingAI}
+              />
+            </label>
+
+            <button
+              onClick={handleExportExcel}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"
+            >
+              <Download className="w-4 h-4" />
+              <span>تصدير إلى Excel (بالمعادلات) 📥</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"
+            >
+              <Printer className="w-4 h-4" />
+              <span>طباعة الكشف اليومي 🖨️</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Portrait print-only layout matching image_282819.png */}
+      <div className="hidden print:block w-full max-w-4xl mx-auto text-black font-sans portrait-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>
+        <div className="border-4 border-dashed border-[#4F81BD] p-6 bg-white space-y-6">
+          <div className="text-center pb-4 border-b-2 border-dashed border-[#4F81BD]">
+            <h2 className="text-2xl font-black text-[#1F4E78]">كشف حركة الصندوق وعُهد المهندسين</h2>
+            <p className="text-sm font-bold text-slate-700 mt-1">المستخرج الرسمي المعتمد من النظام</p>
+          </div>
+
+          <div className="space-y-8">
+            {sortedDays.map((day, dayIdx) => {
+              // Calculate day starting balance
+              let startingBal = 0;
+              if (dayIdx === 0) {
+                startingBal = day.startingBalanceOverride !== undefined ? day.startingBalanceOverride : defaultInitialBalance;
+              } else {
+                let tempBal = sortedDays[0].startingBalanceOverride !== undefined ? sortedDays[0].startingBalanceOverride : defaultInitialBalance;
+                for (let i = 0; i < dayIdx; i++) {
+                  const d = sortedDays[i];
+                  const inflows = d.transactions.reduce((acc, t) => acc + t.inflow, 0);
+                  const outflows = d.transactions.reduce((acc, t) => acc + t.outflow, 0);
+                  tempBal = tempBal + inflows - outflows;
+                }
+                startingBal = tempBal;
+              }
+
+              const dayTransactions = day.transactions;
+              const totalInflow = dayTransactions.reduce((acc, t) => acc + t.inflow, 0);
+              const totalOutflow = dayTransactions.reduce((acc, t) => acc + t.outflow, 0);
+              const dayEndingBal = startingBal + totalInflow - totalOutflow;
+
+              const dateParts = day.date.split('-');
+              const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
+
+              return (
+                <div key={day.date} className="space-y-0.5 break-inside-avoid">
+                  {/* Day Title Row */}
+                  <div className="grid grid-cols-4 border-2 border-dashed border-[#4F81BD] bg-[#D9E1F2] text-center font-bold text-[#1F4E78] text-sm py-2">
+                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">{formattedDate}</div>
+                    <div className="col-span-3 text-center">كشف حركة الصندوق ليوم</div>
+                  </div>
+
+                  {/* Opening Balance Row */}
+                  <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] text-center font-bold text-sm py-2">
+                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-[#1F4E78]">
+                      {startingBal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="col-span-3 text-center text-slate-800">رصيد اول اليوم</div>
+                  </div>
+
+                  {/* Transactions */}
+                  {dayTransactions.length === 0 ? (
+                    <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] text-center text-xs py-2 text-slate-500">
+                      <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">-</div>
+                      <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">0.00</div>
+                      <div className="col-span-2 text-center">لا توجد حركات لهذا اليوم</div>
+                    </div>
+                  ) : (
+                    dayTransactions.map((tx) => {
+                      const amount = tx.inflow > 0 ? tx.inflow : tx.outflow;
+                      const projOrMethod = tx.outflow > 0 ? tx.project : tx.method;
+                      const sign = tx.inflow > 0 ? "+" : "";
+                      const signColor = tx.inflow > 0 ? "text-emerald-600" : "text-slate-800";
+                      return (
+                        <div key={tx.id} className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] text-center text-xs py-2">
+                          <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD]">-</div>
+                          <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 font-mono font-bold">
+                            {amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </div>
+                          <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-center font-bold text-slate-800">
+                            {tx.description}
+                          </div>
+                          <div className="col-span-1 text-right px-3 text-slate-600 font-medium">
+                            {projOrMethod}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* Total Row */}
+                  <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] bg-[#F2F2F2] text-center font-bold text-xs py-2">
+                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-slate-700">
+                      {(startingBal + totalInflow).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-rose-600">
+                      {totalOutflow.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="col-span-2 text-center text-slate-800">الاجمالي</div>
+                  </div>
+
+                  {/* Ending Balance Row */}
+                  <div className="grid grid-cols-4 border-x-2 border-b-2 border-dashed border-[#4F81BD] bg-[#E2EFDA] text-center font-black text-xs py-2">
+                    <div className="col-span-1 border-e-2 border-dashed border-[#4F81BD] text-left px-3 text-[#375623]">
+                      {dayEndingBal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="col-span-3 text-center text-[#375623]">رصيد اخر اليوم</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Overview Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-md flex items-center gap-4">
+          <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl">
+            <DollarSign className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-xs text-slate-400 block font-bold">رصيد أول اليوم</span>
+            <span className="text-lg font-black text-white">
+              {computedStartingBalance.toLocaleString()} <span className="text-xs text-slate-400">EGP</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-md flex items-center gap-4">
+          <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+            <TrendingUp className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-xs text-slate-400 block font-bold">إجمالي المقبوضات (المدين)</span>
+            <span className="text-lg font-black text-emerald-400">
+              +{totalInflow.toLocaleString()} <span className="text-xs text-emerald-500">EGP</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-md flex items-center gap-4">
+          <div className="p-3 bg-rose-500/10 text-rose-400 rounded-xl">
+            <TrendingDown className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-xs text-slate-400 block font-bold">إجمالي المصروفات (الدائن)</span>
+            <span className="text-lg font-black text-rose-400">
+              -{totalOutflow.toLocaleString()} <span className="text-xs text-rose-500">EGP</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-md flex items-center gap-4">
+          <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+            <CheckCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-xs text-slate-400 block font-bold">رصيد آخر اليوم المتوقع</span>
+            <span className="text-lg font-black text-emerald-400">
+              {endingBalance.toLocaleString()} <span className="text-xs text-emerald-400">EGP</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Pending Transactions Section */}
+      {pendingTransactions.length > 0 && (
+        <div className="bg-[#111827] border-2 border-amber-500/30 rounded-2xl p-6 shadow-md space-y-4">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-3 gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-amber-400 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 animate-pulse" />
+                <span>مصروفات عهدة معلقة بانتظار تحديد التاريخ ({pendingTransactions.length}) ⏳</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                تم استخراج هذه الحركات بالذكاء الاصطناعي من لقطة تصفية العهدة ولكن بدون تاريخ محدد بجانبها. حدد تاريخ كل حركة يدويًا واضغط "اعتماد وترحيل" لحفظها وتثبيتها.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-right border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 text-xs font-bold">
+                  <th className="pb-3 text-left">المدين (+)</th >
+                  <th className="pb-3 text-left">الدائن (-)</th >
+                  <th className="pb-3 pr-2">البيان / الشرح</th >
+                  <th className="pb-3 pr-2">المشروع المستنتج</th >
+                  <th className="pb-3 pr-2">طريقة الدفع</th >
+                  <th className="pb-3 text-center">تاريخ الحركة (Date Picker)</th >
+                  <th className="pb-3 text-center">إجراءات الاعتماد</th >
+                </tr>
+              </thead>
+              <tbody>
+                {pendingTransactions.map((pt) => (
+                  <tr key={pt.id} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
+                    <td className="py-3.5 text-left font-mono font-bold text-emerald-400">
+                      {pt.inflow > 0 ? `+${pt.inflow.toLocaleString()}` : '-'}
+                    </td>
+                    <td className="py-3.5 text-left font-mono font-bold text-rose-400">
+                      {pt.outflow > 0 ? `-${pt.outflow.toLocaleString()}` : '-'}
+                    </td>
+                    <td className="py-3.5 pr-2 font-bold max-w-xs truncate" title={pt.description}>
+                      {pt.description}
+                    </td>
+                    <td className="py-3.5 pr-2">
+                      <select
+                        value={pt.project}
+                        onChange={(e) => {
+                          const updated = pendingTransactions.map(item => item.id === pt.id ? { ...item, project: e.target.value } : item);
+                          onSavePending(updated);
+                        }}
+                        className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1 text-[11px] outline-none cursor-pointer"
+                      >
+                        {projectsList.map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-3.5 pr-2">
+                      <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+                        {pt.method}
+                      </span>
+                    </td>
+                    <td className="py-3.5 text-center">
+                      <input
+                        type="date"
+                        value={pt.date || ''}
+                        onChange={(e) => handlePendingDateChange(pt.id, e.target.value)}
+                        className="bg-slate-900 border border-amber-500/50 text-white rounded-lg px-2.5 py-1 text-xs font-bold outline-none cursor-pointer"
+                      />
+                    </td>
+                    <td className="py-3.5 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => handleApprovePending(pt)}
+                          disabled={!pt.date}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                            pt.date 
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm' 
+                              : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                          }`}
+                          title={pt.date ? "اعتماد وترحيل الحركة إلى اليوم المحدد" : "يرجى تحديد التاريخ أولاً"}
+                        >
+                          اعتماد وترحيل 🚀
+                        </button>
+                        <button
+                          onClick={() => handleDeletePending(pt.id)}
+                          className="text-rose-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 cursor-pointer"
+                          title="حذف الحركة المعلقة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Main Grid Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Input Form Card */}
+        <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md h-fit space-y-4">
+          <h3 className="text-sm font-bold text-white border-b border-slate-850 pb-3 flex items-center gap-2">
+            <Plus className="text-emerald-400 w-4 h-4" />
+            <span>تسجيل حركة صندوق جديدة</span>
+          </h3>
+
+          <form onSubmit={handleAddTransaction} className="space-y-4 text-right">
+            <div>
+              <label className="text-xs text-slate-400 font-bold block mb-1.5">المشروع الحالي (إجباري) *</label>
+              <select
+                value={project}
+                onChange={(e) => setProject(e.target.value)}
+                required
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs font-bold outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="">-- اختر المشروع --</option>
+                {projectsList.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 font-bold block mb-1.5">المبالغ المستلمة (المدين)</label>
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  value={inflow}
+                  onChange={(e) => setInflow(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs text-left outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 font-bold block mb-1.5">المصروفات المدفوعة (الدائن)</label>
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  value={outflow}
+                  onChange={(e) => setOutflow(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs text-left outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-400 font-bold block mb-1.5">البيان / الشرح *</label>
+              <input
+                type="text"
+                placeholder="مثال: دفعة عمال شاهر، تحويل من إنستاباي"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                required
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-400 font-bold block mb-1.5">طريقة الدفع / التمويل</label>
+              <input
+                type="text"
+                placeholder="انستاباي، نقدي، شيك، إلخ"
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {pendingAttachmentName && (
+              <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-400">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="font-bold truncate max-w-[180px]">{pendingAttachmentName}</span>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setPendingAttachmentPath('');
+                    setPendingAttachmentName('');
+                  }}
+                  className="text-rose-500 hover:text-rose-400 font-bold"
+                >
+                  حذف
+                </button>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>إضافة الحركة الحالية 📌</span>
+            </button>
+          </form>
+        </div>
+
+        {/* Transactions Table Card */}
+        <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md lg:col-span-2 space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-850 pb-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Layers className="text-emerald-400 w-4 h-4" />
+              <span>كشف حركة الصندوق اليومية</span>
+            </h3>
+            <span className="text-xs text-slate-400 font-mono">تاريخ اليومية: {selectedDate}</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-right border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 text-xs font-bold">
+                  <th className="pb-3 text-left">المدين (+)</th >
+                  <th className="pb-3 text-left">الدائن (-)</th >
+                  <th className="pb-3 pr-2">البيان</th >
+                  <th className="pb-3 pr-2">الطريقة</th >
+                  <th className="pb-3 pr-2">المشروع</th >
+                  <th className="pb-3 pr-2">المرفق</th >
+                  <th className="pb-3 text-center">إجراء</th >
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center py-8 text-xs text-slate-500 font-bold">
+                      لا توجد حركات مسجلة لهذا اليوم. يرجى إضافة حركة جديدة من النموذج الجانبي.
+                    </td>
+                  </tr>
+                ) : (
+                  transactions.map((tx) => (
+                    <tr key={tx.id} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
+                      <td className="py-3.5 text-left font-mono font-bold text-emerald-400">
+                        {tx.inflow > 0 ? `+${tx.inflow.toLocaleString()}` : '-'}
+                      </td>
+                      <td className="py-3.5 text-left font-mono font-bold text-rose-400">
+                        {tx.outflow > 0 ? `-${tx.outflow.toLocaleString()}` : '-'}
+                      </td>
+                      <td className="py-3.5 pr-2 font-bold max-w-xs truncate" title={tx.description}>
+                        {tx.description}
+                      </td>
+                      <td className="py-3.5 pr-2">
+                        <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+                          {tx.method}
+                        </span>
+                      </td>
+                      <td className="py-3.5 pr-2 font-medium text-slate-400">
+                        {tx.project}
+                      </td>
+                      <td className="py-3.5 pr-2">
+                        {tx.attachment ? (
+                          <a 
+                            href={`/api/documents/download?path=${encodeURIComponent(tx.attachment)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-400 border border-indigo-900/50 px-2 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>عرض المستند 📄</span>
+                          </a>
+                        ) : (
+                          <span className="text-slate-600 text-[10px]">-</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 text-center">
+                        <button
+                          onClick={() => handleDeleteTransaction(tx.id)}
+                          className="text-rose-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 cursor-pointer"
+                          title="حذف الحركة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bottom Totals Summary bar */}
+          <div className="bg-slate-900/50 border border-slate-850 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center text-xs gap-3">
+            <div className="flex gap-4">
+              <div>
+                <span className="text-slate-400 font-bold block">إجمالي المدين (+)</span>
+                <span className="text-sm font-black text-emerald-400 mt-1 block">
+                  +{totalInflow.toLocaleString()} EGP
+                </span>
+              </div>
+              <div className="border-l border-slate-800 mx-2"></div>
+              <div>
+                <span className="text-slate-400 font-bold block">إجمالي الدائن (-)</span>
+                <span className="text-sm font-black text-rose-400 mt-1 block">
+                  -{totalOutflow.toLocaleString()} EGP
+                </span>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <span className="text-slate-400 font-bold block">رصيد آخر اليوم:</span>
+              <span className="text-sm font-black text-emerald-400 mt-1 block">
+                {endingBalance.toLocaleString()} EGP
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -42,6 +42,7 @@ import {
   CircleDot,
   Save,
   TrendingUp,
+  TrendingDown,
   BarChart2,
   Layers,
   PlusCircle,
@@ -59,7 +60,10 @@ import {
   Unlock,
   Key,
   Eye,
-  EyeOff
+  EyeOff,
+  Menu,
+  ChevronDown,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 // @ts-ignore
 import * as XLSX from 'xlsx-js-style';
@@ -72,6 +76,11 @@ import deltaLogo from './assets/images/delta_road_logo_1781798697279.jpg';
 import { LoginPage } from './components/LoginPage';
 import { UserManagement } from './components/UserManagement';
 import { PriceComparison } from './components/PriceComparison';
+import { DailyBoxMovement } from './components/DailyBoxMovement';
+import { SubcontractorCertificates } from './components/SubcontractorCertificates';
+import { LaborTimesheet } from './components/LaborTimesheet';
+import { CostAnalysis } from './components/CostAnalysis';
+import EngineerManagement from './components/EngineerManagement';
 
 // Helper function to convert OKLCH & OKLAB color strings (used by Tailwind v4) to standard RGB/RGBA.
 // This prevents html2canvas from failing with the: "Attempting to parse an unsupported color function" error.
@@ -471,6 +480,211 @@ export default function App() {
   
   // Navigation & Control States
   const [activeTab, setActiveTab] = useState<'spreadsheet' | 'files' | 'projects' | 'comparisons'>('spreadsheet');
+  const [selectedDepartment, setSelectedDepartment] = useState<'procurement' | 'petty_cash' | 'subcontractors' | 'labor_timesheet' | 'cost_analysis' | 'engineers'>('procurement');
+  const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState<boolean>(false);
+
+  // --- Integrated Financial & Accounting States & Defaults ---
+  const [engineers, setEngineers] = useState<any[]>([
+    { id: 'eng-1', name: 'م. أحمد علي', phone: '01012345678', project: 'June - Main Gate', code: 'ENG-101' },
+    { id: 'eng-2', name: 'م. عمرو حسن', phone: '01123456789', project: 'Al Burouj - Sitewide', code: 'ENG-102' },
+    { id: 'eng-3', name: 'م. مصطفى محمود', phone: '01234567890', project: 'EDNC', code: 'ENG-103' }
+  ]);
+
+  const [pettyCashBoxDays, setPettyCashBoxDays] = useState<any[]>([
+    {
+      date: '2026-06-23',
+      startingBalanceOverride: -177656,
+      transactions: [
+        {
+          id: 'tx-1',
+          inflow: 3000,
+          outflow: 0,
+          description: 'تحويل من استاذ احمد فتح الله',
+          method: 'انستاباي',
+          project: 'June - Main Gate'
+        }
+      ]
+    },
+    {
+      date: '2026-06-24',
+      transactions: [
+        {
+          id: 'tx-2',
+          inflow: 0,
+          outflow: 2000,
+          description: 'دفعة عمال شاهر',
+          method: 'نقدي',
+          project: 'Al Burouj - Sitewide'
+        }
+      ]
+    }
+  ]);
+
+  const [subcontractorContracts, setSubcontractorContracts] = useState<any[]>([
+    {
+      id: 'sub-con-1',
+      subcontractor: 'صنايعي الاستبنج',
+      project: 'June - Main Gate',
+      statementNo: '01',
+      supervisor: 'م. محمد حمدي',
+      accountant: 'أ. محمد إبراهيم',
+      items: [
+        {
+          id: 'work-item-1',
+          date: '2026-06-25',
+          description: 'عامل تشوين وتجهيز الاعمال',
+          unit: 'يومية',
+          rate: 500,
+          previousQty: 0,
+          currentQty: 8,
+          completionPercent: 100
+        }
+      ],
+      payments: [
+        {
+          id: 'pay-1',
+          date: '2026-06-25',
+          description: 'دفعه محمد سعيد',
+          amount: 3000
+        },
+        {
+          id: 'pay-2',
+          date: '2026-06-25',
+          description: 'دفعه محمد سعيد',
+          amount: 2000
+        }
+      ]
+    }
+  ]);
+
+  const [laborTimesheets, setLaborTimesheets] = useState<any[]>([
+    {
+      id: 'timesheet-1',
+      workerName: 'شاهر',
+      startDate: '2026-06-24',
+      endDate: '2026-06-30',
+      previousTotal: 19030,
+      previousPaid: 0,
+      previousRemaining: 19030,
+      currentPaid: 8000,
+      dailyRate: 300,
+      overtimeRate: 300,
+      sohraRate: 45,
+      days: [
+        { dayName: 'الأربعاء', date: '2026-06-24', dailySahel: 2, dailyBurouj: 4, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 7, sohraHyde: 0 },
+        { dayName: 'الخميس', date: '2026-06-25', dailySahel: 2, dailyBurouj: 4, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 28, sohraHyde: 0 },
+        { dayName: 'الجمعة', date: '2026-06-26', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 0, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 2, sohraBurouj: 2, sohraHyde: 0 },
+        { dayName: 'السبت', date: '2026-06-27', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 2, sohraHyde: 0 },
+        { dayName: 'الأحد', date: '2026-06-28', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 2, sohraHyde: 0 },
+        { dayName: 'الإثنين', date: '2026-06-29', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 2, sohraHyde: 0 },
+        { dayName: 'الثلاثاء', date: '2026-06-30', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 2, sohraHyde: 0 }
+      ]
+    }
+  ]);
+
+  const [costAnalysisEntries, setCostAnalysisEntries] = useState<any[]>([
+    { id: 'cost-1', project: 'June - Main Gate', category: 'بوفيه وضيافة', amount: 1500, date: '2026-06-25', description: 'ضيافة وفد استشاري بالموقع' },
+    { id: 'cost-2', project: 'June - Main Gate', category: 'حديد تسليح', amount: 45000, date: '2026-06-26', description: 'شراء أسياخ حديد تكميلية' },
+    { id: 'cost-3', project: 'Al Burouj - Sitewide', category: 'مواد تشغيل', amount: 8000, date: '2026-06-27', description: 'ديزل وزيوت تشغيل اللودر' }
+  ]);
+  const [costAnalysisCategories, setCostAnalysisCategories] = useState<string[]>([
+    'مواد تشغيل', 'بوفيه وضيافة', 'منتجات أسمنتية', 'حديد تسليح', 'أدوات ومهمات'
+  ]);
+
+  const [pendingTransactions, setPendingTransactions] = useState<any[]>([]);
+  const [archives, setArchives] = useState<any[]>([]);
+
+  // --- Financial State Sync Wrappers ---
+  const syncFinancialsWithBackend = async (
+    boxDaysData: any[],
+    subContractsData: any[],
+    laborTimesheetsData: any[],
+    costEntries?: any[],
+    costCats?: string[],
+    pendingTxs?: any[],
+    archivesData?: any[],
+    engineersData?: any[]
+  ) => {
+    try {
+      await fetch('/api/financial-data/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pettyCashBoxDays: boxDaysData,
+          subcontractorContracts: subContractsData,
+          laborTimesheets: laborTimesheetsData,
+          costAnalysisEntries: costEntries !== undefined ? costEntries : costAnalysisEntries,
+          costAnalysisCategories: costCats !== undefined ? costCats : costAnalysisCategories,
+          pendingTransactions: pendingTxs !== undefined ? pendingTxs : pendingTransactions,
+          archives: archivesData !== undefined ? archivesData : archives,
+          engineers: engineersData !== undefined ? engineersData : engineers
+        })
+      });
+    } catch (err) {
+      console.error("Failed to sync financial data with server:", err);
+    }
+  };
+
+  const updatePendingTransactions = (updated: any[]) => {
+    setPendingTransactions(updated);
+    syncFinancialsWithBackend(pettyCashBoxDays, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, updated, archives);
+  };
+
+  const updateBoxDays = (updated: any[]) => {
+    setPettyCashBoxDays(updated);
+    syncFinancialsWithBackend(updated, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives);
+  };
+
+  const updateSubcontractorContracts = (updated: any[]) => {
+    setSubcontractorContracts(updated);
+    syncFinancialsWithBackend(pettyCashBoxDays, updated, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives);
+  };
+
+  const updateLaborTimesheets = (updated: any[]) => {
+    setLaborTimesheets(updated);
+    syncFinancialsWithBackend(pettyCashBoxDays, subcontractorContracts, updated, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives);
+  };
+
+  const updateCostAnalysis = (updatedEntries: any[], updatedCategories: string[]) => {
+    setCostAnalysisEntries(updatedEntries);
+    setCostAnalysisCategories(updatedCategories);
+    syncFinancialsWithBackend(pettyCashBoxDays, subcontractorContracts, laborTimesheets, updatedEntries, updatedCategories, pendingTransactions, archives);
+  };
+
+  const updateArchives = (updated: any[]) => {
+    setArchives(updated);
+    syncFinancialsWithBackend(pettyCashBoxDays, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, updated);
+  };
+
+  // Petty Cash States (Keep legacy if needed to avoid syntax errors)
+  const [pettyCashRecords, setPettyCashRecords] = useState<any[]>([
+    { id: 'pc-1', project: 'مشروع طريق الملك سلمان', engineer: 'م. أحمد الحربي', amount: 4500, category: 'أجور عمالة', date: '2026-07-01', description: 'أجور عمالة يومية إضافية لأعمال الردم', status: 'Approved' },
+    { id: 'pc-2', project: 'مشروع ازدواج طريق الخرج', engineer: 'م. خالد الدوسري', amount: 1200, category: 'مواد بناء طارئة', date: '2026-07-03', description: 'شراء كابلات وخامات كهربائية عاجلة', status: 'Pending' },
+    { id: 'pc-3', project: 'مشروع صيانة طريق القصيم', engineer: 'م. فهد العتيبي', amount: 850, category: 'نقل ومحروقات', date: '2026-07-05', description: 'تعبئة ديزل للمعدات الثقيلة والمولدات', status: 'Approved' }
+  ]);
+  const [newPcProject, setNewPcProject] = useState('');
+  const [newPcEngineer, setNewPcEngineer] = useState('');
+  const [newPcAmount, setNewPcAmount] = useState('');
+  const [newPcCategory, setNewPcCategory] = useState('أجور عمالة');
+  const [newPcDate, setNewPcDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newPcDescription, setNewPcDescription] = useState('');
+
+  // Subcontractor Progress Certificates States
+  const [subcontractorCertificates, setSubcontractorCertificates] = useState<any[]>([
+    { id: 'sub-1', subcontractor: 'شركة أساسات نجد للمقاولات', contractNo: 'DRC-2026-042', project: 'مشروع طريق الملك سلمان', statementNo: '03', contractValue: 250000, previousWork: 45, currentWork: 20, deductions: 5000, retentionPercent: 10, status: 'Approved' },
+    { id: 'sub-2', subcontractor: 'مؤسسة الرياض لتمهيد الطرق', contractNo: 'DRC-2026-015', project: 'مشروع ازدواج طريق الخرج', statementNo: '01', contractValue: 180000, previousWork: 0, currentWork: 35, deductions: 0, retentionPercent: 10, status: 'Pending' },
+    { id: 'sub-3', subcontractor: 'الشركة العربية للخرسانة الجاهزة', contractNo: 'DRC-2026-088', project: 'مشروع صيانة طريق القصيم', statementNo: '05', contractValue: 420000, previousWork: 60, currentWork: 15, deductions: 12000, retentionPercent: 10, status: 'Approved' }
+  ]);
+  const [newCertSubcontractor, setNewCertSubcontractor] = useState('');
+  const [newCertContractNo, setNewCertContractNo] = useState('');
+  const [newCertProject, setNewCertProject] = useState('');
+  const [newCertStatementNo, setNewCertStatementNo] = useState('01');
+  const [newCertContractValue, setNewCertContractValue] = useState('');
+  const [newCertPreviousWork, setNewCertPreviousWork] = useState('0');
+  const [newCertCurrentWork, setNewCertCurrentWork] = useState('');
+  const [newCertDeductions, setNewCertDeductions] = useState('0');
+  const [newCertRetentionPercent, setNewCertRetentionPercent] = useState('10');
+
   const [selectedDoc, setSelectedDoc] = useState<ProcessedDocument | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [uploading, setUploading] = useState<boolean>(false);
@@ -697,6 +911,23 @@ export default function App() {
     }
   }, [currentUser]);
 
+  useEffect(() => {
+    if (currentUser) {
+      const allowed = currentUser.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis'];
+      if (!allowed.includes(selectedDepartment)) {
+        if (allowed.includes('procurement')) {
+          setSelectedDepartment('procurement');
+        } else if (allowed.includes('petty_cash')) {
+          setSelectedDepartment('petty_cash');
+        } else if (allowed.includes('subcontractors')) {
+          setSelectedDepartment('subcontractors');
+        } else if (allowed.includes('labor_timesheet')) {
+          setSelectedDepartment('labor_timesheet');
+        }
+      }
+    }
+  }, [currentUser, selectedDepartment]);
+
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState<boolean>(false);
   const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
   const [newPasswordInput, setNewPasswordInput] = useState<string>('');
@@ -803,6 +1034,43 @@ export default function App() {
       setNotifications(data.notifications || []);
       setProjectsList(data.projects || []);
       setSuppliersList(data.suppliers || []);
+
+      // Fetch financial and accounting data persistently
+      try {
+        const finRes = await fetch('/api/financial-data');
+        if (finRes.ok) {
+          const finData = await finRes.json();
+          if (finData.success) {
+            if (finData.pettyCashBoxDays && finData.pettyCashBoxDays.length > 0) {
+              setPettyCashBoxDays(finData.pettyCashBoxDays);
+            }
+            if (finData.subcontractorContracts && finData.subcontractorContracts.length > 0) {
+              setSubcontractorContracts(finData.subcontractorContracts);
+            }
+            if (finData.laborTimesheets && finData.laborTimesheets.length > 0) {
+              setLaborTimesheets(finData.laborTimesheets);
+            }
+            if (finData.costAnalysisEntries && finData.costAnalysisEntries.length > 0) {
+              setCostAnalysisEntries(finData.costAnalysisEntries);
+            }
+            if (finData.costAnalysisCategories && finData.costAnalysisCategories.length > 0) {
+              setCostAnalysisCategories(finData.costAnalysisCategories);
+            }
+            if (finData.pendingTransactions && finData.pendingTransactions.length > 0) {
+              setPendingTransactions(finData.pendingTransactions);
+            }
+            if (finData.archives && finData.archives.length > 0) {
+              setArchives(finData.archives);
+            }
+            if (finData.engineers && finData.engineers.length > 0) {
+              setEngineers(finData.engineers);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch financial data during initial load:", err);
+      }
+
       isInitialFetchCompleted.current = true;
  
       // Trigger instant audio notification if new documents are received in background (polling)
@@ -4366,6 +4634,185 @@ export default function App() {
             {/* Practical Top Action Panel */}
             <div className="flex flex-wrap justify-center md:justify-end items-center gap-3 w-full md:w-auto">
               
+              {/* Dropdown for Departments (As requested in image_7f90c8.png) */}
+              {currentUser && (
+                <div className="relative">
+                  <button
+                    onClick={() => setIsDeptDropdownOpen(!isDeptDropdownOpen)}
+                    className="bg-white hover:bg-slate-100 text-[#111827] border border-slate-300 rounded-full px-5 py-2 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm hover:scale-[1.02]"
+                    id="departments-dropdown-btn"
+                  >
+                    <span>الأقسام</span>
+                    <Menu className="w-4 h-4 text-[#111827]" />
+                  </button>
+
+                  {isDeptDropdownOpen && (
+                    <>
+                      {/* Backdrop to dismiss */}
+                      <div 
+                        className="fixed inset-0 z-40 cursor-default" 
+                        onClick={() => setIsDeptDropdownOpen(false)} 
+                      />
+                      
+                      {/* Dropdown Menu Portal */}
+                      <div className="absolute right-0 mt-2 w-64 bg-[#111827] border border-slate-800 rounded-2xl p-2.5 shadow-2xl z-50 text-right animate-in fade-in slide-in-from-top-2 duration-150">
+                        <div className="px-3 py-2 text-[10px] font-extrabold text-slate-500 border-b border-slate-800/60 mb-2 select-none uppercase">
+                          الأقسام المتاحة لك
+                        </div>
+                        <div className="space-y-1">
+                          {/* Department 1: Procurement */}
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('procurement') && (
+                            <button
+                              onClick={() => {
+                                setSelectedDepartment('procurement');
+                                setIsDeptDropdownOpen(false);
+                              }}
+                              className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                selectedDepartment === 'procurement'
+                                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/25 font-bold'
+                                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
+                              }`}
+                            >
+                              <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'procurement' ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-450'}`}>
+                                <Briefcase className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-xs font-bold block text-white">إدارة المشتريات والموردين</span>
+                                <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Procurement & Vendors</span>
+                              </div>
+                            </button>
+                          )}
+
+                          {/* Department 2: Petty Cash */}
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('petty_cash') && (
+                            <button
+                              onClick={() => {
+                                setSelectedDepartment('petty_cash');
+                                setIsDeptDropdownOpen(false);
+                              }}
+                              className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                selectedDepartment === 'petty_cash'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 font-bold'
+                                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
+                              }`}
+                            >
+                              <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'petty_cash' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-450'}`}>
+                                <DollarSign className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-xs font-bold block text-white">العهد ومصروفات المشاريع</span>
+                                <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Petty Cash & Expenses</span>
+                              </div>
+                            </button>
+                          )}
+
+                          {/* Department 3: Subcontractors */}
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('subcontractors') && (
+                            <button
+                              onClick={() => {
+                                setSelectedDepartment('subcontractors');
+                                setIsDeptDropdownOpen(false);
+                              }}
+                              className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                selectedDepartment === 'subcontractors'
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 font-bold'
+                                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
+                              }`}
+                            >
+                              <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'subcontractors' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-450'}`}>
+                                <Layers className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-xs font-bold block text-white">مستخلصات المقاولين</span>
+                                <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Subcontractors</span>
+                              </div>
+                            </button>
+                          )}
+
+                          {/* Department 4: Labor Timesheet */}
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('labor_timesheet') && (
+                            <button
+                              onClick={() => {
+                                setSelectedDepartment('labor_timesheet');
+                                setIsDeptDropdownOpen(false);
+                              }}
+                              className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                selectedDepartment === 'labor_timesheet'
+                                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/25 font-bold'
+                                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
+                              }`}
+                            >
+                              <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'labor_timesheet' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-450'}`}>
+                                <Users className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-xs font-bold block text-white">كشوف وحضور العمالة اليومية</span>
+                                <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Labor Timesheet</span>
+                              </div>
+                            </button>
+                          )}
+
+                          {/* Department 5: Cost Analysis */}
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('cost_analysis') && (
+                            <button
+                              onClick={() => {
+                                setSelectedDepartment('cost_analysis');
+                                setIsDeptDropdownOpen(false);
+                              }}
+                              className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                selectedDepartment === 'cost_analysis'
+                                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/25 font-bold'
+                                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
+                              }`}
+                            >
+                              <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'cost_analysis' ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-800 text-slate-450'}`}>
+                                <PieChartIcon className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-xs font-bold block text-white">تحليل بنود المصروفات</span>
+                                <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Cost Analysis</span>
+                              </div>
+                            </button>
+                          )}
+
+                          {/* Department 6: Engineer Management */}
+                          <button
+                            onClick={() => {
+                              setSelectedDepartment('engineers');
+                              setIsDeptDropdownOpen(false);
+                            }}
+                            className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
+                              selectedDepartment === 'engineers'
+                                ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/25 font-bold'
+                                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
+                            }`}
+                          >
+                            <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'engineers' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-450'}`}>
+                              <User className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex-1">
+                              <span className="text-xs font-bold block text-white">لوحة إدارة المهندسين</span>
+                              <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Engineers CRUD</span>
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* Current Logged User details displayed inside dropdown footer */}
+                        <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center gap-2 justify-end text-right select-none">
+                          <div className="text-right">
+                            <span className="text-[11px] font-extrabold text-white block">{currentUser?.name}</span>
+                            <span className="text-[8px] text-slate-500 font-mono block">{currentUser?.email}</span>
+                          </div>
+                          <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25 flex items-center justify-center font-bold text-[10px] shrink-0 uppercase">
+                            {currentUser?.name?.substring(0, 2) || 'US'}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Admin Panel Access button for recognized Admins */}
               {currentUser?.role === 'admin' && (
                 <button
@@ -4440,96 +4887,115 @@ export default function App() {
       </header>
 
       {/* 2. Bento Statistics Cards */}
-      <section className="bg-[#0b0f19]/60 border-b border-slate-800/80 py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            
-            {/* Box 1: Total Docs */}
-            <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
-              <div className="p-3 bg-sky-950/45 text-sky-400 rounded-xl">
-                <FileText className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-455 block font-medium">المستندات المستخرجة</span>
-                <span className="text-2xl font-extrabold text-white">{stats.totalProcessedCount}</span>
-                <span className="text-xs text-slate-400 block mt-0.5">ملف مستخرج ومصنف</span>
-              </div>
-            </div>
-
-            {/* Box 2: Total Clients */}
-            <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
-              <div className="p-3 bg-[#2e1065]/40 text-[#a78bfa] rounded-xl">
-                <FolderOpen className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-455 block font-medium">مجلدات الموردين النشطة</span>
-                <span className="text-2xl font-extrabold text-white">{stats.uniqueClientCount}</span>
-                <span className="text-xs text-slate-400 block mt-0.5">تصنيف أبجدي وتاريخي مالي</span>
-              </div>
-            </div>
-
-            {/* Box 3: Total Revenue/Values */}
-            <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
-              <div className="p-3 bg-emerald-950/40 text-emerald-400 rounded-xl">
-                <DollarSign className="w-6 h-6" />
-              </div>
-              <div className="flex-1">
-                <span className="text-xs text-slate-455 block font-medium">إجمالي المبالغ من الفواتير</span>
-                <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-baseline">
-                  {Object.keys(stats.totalValueByCurrency).length > 0 ? (
-                    Object.entries(stats.totalValueByCurrency).map(([curr, val]) => (
-                      <span key={curr} className="text-lg font-extrabold text-white">
-                        {val.toLocaleString()} <span className="text-xs text-emerald-400">{curr}</span>
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-lg font-bold text-slate-400">0 EGP</span>
-                  )}
+      {selectedDepartment === 'procurement' && (
+        <section className="bg-[#0b0f19]/60 border-b border-slate-800/80 py-6">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              
+              {/* Box 1: Total Docs */}
+              <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
+                <div className="p-3 bg-sky-950/45 text-sky-400 rounded-xl">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs text-slate-455 block font-medium">المستندات المستخرجة</span>
+                  <span className="text-2xl font-extrabold text-white">{stats.totalProcessedCount}</span>
+                  <span className="text-xs text-slate-400 block mt-0.5">ملف مستخرج ومصنف</span>
                 </div>
               </div>
-            </div>
 
-            {/* Box 4: Extracted types breakdown status list */}
-            <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
-              <div className="p-3 bg-indigo-95/40 text-indigo-400 rounded-xl">
-                <Activity className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-455 block font-medium">تصنيف المستندات المدخلة</span>
-                <div className="flex items-center gap-2 mt-1.5 text-xs font-bold leading-none">
-                  <span className="bg-sky-950/50 text-sky-400 px-2 py-1 rounded-md border border-sky-900/60">
-                    أوامر الشراء (PO): {documents.filter(d => d.docType === 'po').length}
-                  </span>
+              {/* Box 2: Total Clients */}
+              <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
+                <div className="p-3 bg-[#2e1065]/40 text-[#a78bfa] rounded-xl">
+                  <FolderOpen className="w-6 h-6" />
                 </div>
-                <span className="text-[10px] text-slate-400 block mt-1">تصنيف وترتيب دائم بالـ AI</span>
+                <div>
+                  <span className="text-xs text-slate-455 block font-medium">مجلدات الموردين النشطة</span>
+                  <span className="text-2xl font-extrabold text-white">{stats.uniqueClientCount}</span>
+                  <span className="text-xs text-slate-400 block mt-0.5">تصنيف أبجدي وتاريخي مالي</span>
+                </div>
               </div>
-            </div>
 
-          </div>
-        </div>
-      </section>
+              {/* Box 3: Total Revenue/Values */}
+              <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
+                <div className="p-3 bg-emerald-950/40 text-emerald-400 rounded-xl">
+                  <DollarSign className="w-6 h-6" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-xs text-slate-455 block font-medium">إجمالي المبالغ من الفواتير</span>
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-baseline">
+                    {Object.keys(stats.totalValueByCurrency).length > 0 ? (
+                      Object.entries(stats.totalValueByCurrency).map(([curr, val]) => (
+                        <span key={curr} className="text-lg font-extrabold text-white">
+                          {val.toLocaleString()} <span className="text-xs text-emerald-400">{curr}</span>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-lg font-bold text-slate-400">0 EGP</span>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-      {/* 3. Global Notification Logs Banner */}
-      {notifications.length > 0 && (
-        <div className="bg-blue-50/50 border-b border-blue-100 py-3">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center text-xs text-blue-800">
-            <div className="flex items-center gap-2">
-              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-md font-bold uppercase">تنبيهات فورية</span>
-              <span className="font-medium">{notifications[0].message}</span>
-              <span className="text-blue-400 font-mono">({new Date(notifications[0].timestamp).toLocaleTimeString('ar-EG')})</span>
+              {/* Box 4: Extracted types breakdown status list */}
+              <div className="bg-[#111827] p-5 rounded-2xl border border-slate-800 shadow-xl flex items-center gap-4">
+                <div className="p-3 bg-indigo-95/40 text-indigo-400 rounded-xl">
+                  <Activity className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs text-slate-455 block font-medium">تصنيف المستندات المدخلة</span>
+                  <div className="flex items-center gap-2 mt-1.5 text-xs font-bold leading-none">
+                    <span className="bg-sky-950/50 text-sky-400 px-2 py-1 rounded-md border border-sky-900/60">
+                      أوامر الشراء (PO): {documents.filter(d => d.docType === 'po').length}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-1">تصنيف وترتيب دائم بالـ AI</span>
+                </div>
+              </div>
+
             </div>
-            <button 
-              onClick={handleClearNotifications}
-              className="text-blue-500 hover:text-blue-700 underline font-semibold cursor-pointer"
-            >
-              مسح سجل الإشعارات
-            </button>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* 4. Core Tabbed Controls */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col">
+      {/* 4. Core Tabbed Controls Restructured for Multi-Department RBAC */}
+      <div className="flex-1 flex flex-col w-full" dir="rtl">
+        
+        {/* Left Column Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 w-full">
+          
+          {selectedDepartment === 'procurement' && (
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col w-full">
+
+              {/* Professional Dark-Themed Toast Notification for Procurement */}
+              {notifications.length > 0 && (
+                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-4 mb-6 shadow-xl flex flex-col sm:flex-row justify-between items-center gap-4 animate-in fade-in slide-in-from-top-3 duration-300 no-print" dir="rtl">
+                  <div className="flex items-center gap-3 w-full sm:w-auto text-right">
+                    <div className="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl">
+                      <span className="text-xl leading-none">🔔</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-md font-bold border border-indigo-500/20 uppercase">
+                          تنبيه فوري للمشتريات
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          ({new Date(notifications[0].timestamp).toLocaleTimeString('ar-EG')})
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-200 leading-relaxed">
+                        {notifications[0].message}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleClearNotifications}
+                    className="w-full sm:w-auto bg-rose-950/20 hover:bg-rose-900/30 text-rose-400 hover:text-rose-300 border border-rose-900/40 hover:border-rose-800/60 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
+                  >
+                    مسح السجل 🗑️
+                  </button>
+                </div>
+              )}
         
         {/* Unified Direct Image & PDF Upload Zone required by user */}
         <div className="bg-[#111827] rounded-3xl border border-slate-800 p-6 mb-6 shadow-xl flex flex-col gap-4">
@@ -6495,6 +6961,88 @@ export default function App() {
         </div>
 
       </main>
+    )}
+
+    {/* Department 2: Petty Cash & Site Expenses */}
+    {selectedDepartment === 'petty_cash' && (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col w-full text-right" dir="rtl">
+        <DailyBoxMovement
+          projectsList={projectsList}
+          boxDays={pettyCashBoxDays}
+          onSave={updateBoxDays}
+          pendingTransactions={pendingTransactions}
+          onSavePending={updatePendingTransactions}
+          onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
+          engineers={engineers}
+        />
+      </main>
+    )}
+
+    {/* Department 3: Subcontractor Certificates */}
+    {selectedDepartment === 'subcontractors' && (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col w-full text-right" dir="rtl">
+        <SubcontractorCertificates
+          projectsList={projectsList}
+          contracts={subcontractorContracts}
+          onSave={updateSubcontractorContracts}
+          archives={archives}
+          onUpdateArchives={updateArchives}
+          onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
+        />
+      </main>
+    )}
+
+    {/* Department 4: Labor Timesheet */}
+    {selectedDepartment === 'labor_timesheet' && (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col w-full text-right" dir="rtl">
+        <LaborTimesheet
+          projectsList={projectsList}
+          timesheets={laborTimesheets}
+          onSave={updateLaborTimesheets}
+          archives={archives}
+          onUpdateArchives={updateArchives}
+          onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
+        />
+      </main>
+    )}
+
+    {/* Department 5: Cost Analysis */}
+    {selectedDepartment === 'cost_analysis' && (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col w-full text-right" dir="rtl">
+        <CostAnalysis
+          projectsList={projectsList}
+          entries={costAnalysisEntries}
+          categories={costAnalysisCategories}
+          onSave={updateCostAnalysis}
+        />
+      </main>
+    )}
+
+    {/* Department 6: Engineer Management */}
+    {selectedDepartment === 'engineers' && (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col w-full text-right" dir="rtl">
+        <EngineerManagement
+          engineers={engineers}
+          projectsList={projectsList}
+          onSave={(updated) => {
+            setEngineers(updated);
+            syncFinancialsWithBackend(
+              pettyCashBoxDays,
+              subcontractorContracts,
+              laborTimesheets,
+              costAnalysisEntries,
+              costAnalysisCategories,
+              pendingTransactions,
+              archives,
+              updated
+            );
+          }}
+        />
+      </main>
+    )}
+
+  </div>
+</div>
 
       {/* 6. MODAL SIDE-IN SHEET FOR INVOICE / PO DOCUMENT INSPECTION */}
       <AnimatePresence>

@@ -23,6 +23,7 @@ interface User {
   email: string;
   role: 'admin' | 'user';
   status: 'active' | 'blocked';
+  allowed_departments?: string[];
   createdAt?: string;
 }
 
@@ -44,6 +45,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'user'>('user');
+  const [newUserDepartments, setNewUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']);
   const [creatingUser, setCreatingUser] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -54,6 +56,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
   const [editUserNewEmail, setEditUserNewEmail] = useState('');
   const [editUserName, setEditUserName] = useState('');
   const [editPassword, setEditPassword] = useState('');
+  const [editUserDepartments, setEditUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']);
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState('');
 
@@ -105,7 +108,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
           name: newUserName,
           email: newUserEmail,
           password: newUserPassword,
-          role: newUserRole
+          role: newUserRole,
+          allowed_departments: newUserDepartments
         })
       });
       const data = await safeJson(res);
@@ -115,6 +119,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
         setNewUserEmail('');
         setNewUserPassword('');
         setNewUserRole('user');
+        setNewUserDepartments(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']);
         setCreateModalOpen(false);
         fetchUsers();
         setTimeout(() => setSuccess(''), 4000);
@@ -188,7 +193,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
       const payload: any = {
         id: editUserId,
         email: editUserEmail,
-        name: editUserName.trim()
+        name: editUserName.trim(),
+        allowed_departments: editUserDepartments
       };
 
       if (editUserNewEmail.toLowerCase().trim() !== editUserEmail.toLowerCase().trim()) {
@@ -218,7 +224,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
           const updatedUser = {
             ...currentUser,
             name: editUserName.trim(),
-            email: editUserNewEmail.toLowerCase().trim()
+            email: editUserNewEmail.toLowerCase().trim(),
+            allowed_departments: editUserDepartments
           };
           onUpdateCurrentUser(updatedUser);
         }
@@ -389,6 +396,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                   <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 text-xs font-bold uppercase select-none">
                     <th className="py-4 px-6 text-center">حالة الحساب</th>
                     <th className="py-4 px-6 text-center">رتبة الصلاحيات (Role)</th>
+                    <th className="py-4 px-6 text-right">الأقسام المصرح بها</th>
                     <th className="py-4 px-6 text-right">البريد الإلكتروني</th>
                     <th className="py-4 px-6 text-right">اسم الموظف</th>
                     <th className="py-4 px-6 text-center">#</th>
@@ -443,6 +451,38 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                           </select>
                         </td>
 
+                        {/* Allowed Departments badges */}
+                        <td className="py-4 px-6 align-middle text-right">
+                          <div className="flex flex-wrap gap-1 justify-end max-w-xs">
+                            {(user.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).map((dep) => {
+                              let label = "";
+                              let colorClass = "";
+                              if (dep === "procurement") {
+                                label = "المشتريات";
+                                colorClass = "bg-sky-500/10 text-sky-400 border-sky-500/20";
+                              } else if (dep === "petty_cash") {
+                                label = "العهد ومصروفات المشاريع";
+                                colorClass = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+                              } else if (dep === "subcontractors") {
+                                label = "مستخلصات المقاولين";
+                                colorClass = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+                              } else if (dep === "labor_timesheet") {
+                                label = "العمالة اليومية";
+                                colorClass = "bg-indigo-500/10 text-indigo-400 border-indigo-500/20";
+                              } else if (dep === "cost_analysis") {
+                                label = "تحليل بنود المصروفات";
+                                colorClass = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+                              }
+                              if (!label) return null;
+                              return (
+                                <span key={dep} className={`text-[10px] px-2.5 py-1 rounded-lg border font-sans font-bold whitespace-nowrap ${colorClass}`}>
+                                  {label}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </td>
+
                         {/* Email */}
                         <td className="py-4 px-6 font-mono text-xs text-sky-400 align-middle text-right" dir="ltr">
                           {user.email}
@@ -470,6 +510,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                                 setEditUserName(user.name);
                                 setEditPassword('');
                                 setEditError('');
+                                setEditUserDepartments(user.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']);
                                 setEditModalOpen(true);
                               }}
                               className="bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-slate-950 px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-black flex items-center gap-1.5 border border-amber-500/20 shadow-md shadow-amber-500/5"
@@ -569,6 +610,91 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                 </select>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">الأقسام المصرح بالوصول إليها (Allowed Departments)</label>
+                <div className="space-y-2.5 bg-slate-950 border border-slate-850 p-4 rounded-xl text-right">
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={newUserDepartments.includes('procurement')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewUserDepartments([...newUserDepartments, 'procurement']);
+                        } else {
+                          setNewUserDepartments(newUserDepartments.filter(d => d !== 'procurement'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-sky-500 focus:ring-sky-500 h-4 w-4 bg-slate-900 accent-sky-500"
+                    />
+                    <span>المشتريات والموردين (Procurement & Vendors)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={newUserDepartments.includes('petty_cash')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewUserDepartments([...newUserDepartments, 'petty_cash']);
+                        } else {
+                          setNewUserDepartments(newUserDepartments.filter(d => d !== 'petty_cash'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-sky-500 focus:ring-sky-500 h-4 w-4 bg-slate-900 accent-sky-500"
+                    />
+                    <span>العهد النقدية ومصروفات المشاريع (Petty Cash & Site Expenses)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={newUserDepartments.includes('subcontractors')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewUserDepartments([...newUserDepartments, 'subcontractors']);
+                        } else {
+                          setNewUserDepartments(newUserDepartments.filter(d => d !== 'subcontractors'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-sky-500 focus:ring-sky-500 h-4 w-4 bg-slate-900 accent-sky-500"
+                    />
+                    <span>مستخلصات المقاولين (Subcontractor Certificates)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={newUserDepartments.includes('labor_timesheet')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewUserDepartments([...newUserDepartments, 'labor_timesheet']);
+                        } else {
+                          setNewUserDepartments(newUserDepartments.filter(d => d !== 'labor_timesheet'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-sky-500 focus:ring-sky-500 h-4 w-4 bg-slate-900 accent-sky-500"
+                    />
+                    <span>كشوف وحضور العمالة اليومية (Labor Timesheet)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={newUserDepartments.includes('cost_analysis')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewUserDepartments([...newUserDepartments, 'cost_analysis']);
+                        } else {
+                          setNewUserDepartments(newUserDepartments.filter(d => d !== 'cost_analysis'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-sky-500 focus:ring-sky-500 h-4 w-4 bg-slate-900 accent-sky-500"
+                    />
+                    <span>تحليل بنود المصروفات (Cost Analysis)</span>
+                  </label>
+                </div>
+              </div>
+
               {createError && (
                 <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs py-2 px-3 rounded-xl font-bold flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
@@ -647,6 +773,91 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                   onChange={(e) => setEditPassword(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500 rounded-xl px-4 py-2.5 text-slate-200 text-sm outline-none transition-all text-left font-mono"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">الأقسام المصرح بالوصول إليها (Allowed Departments)</label>
+                <div className="space-y-2.5 bg-slate-950 border border-slate-850 p-4 rounded-xl text-right">
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={editUserDepartments.includes('procurement')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditUserDepartments([...editUserDepartments, 'procurement']);
+                        } else {
+                          setEditUserDepartments(editUserDepartments.filter(d => d !== 'procurement'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
+                    />
+                    <span>المشتريات والموردين (Procurement & Vendors)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={editUserDepartments.includes('petty_cash')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditUserDepartments([...editUserDepartments, 'petty_cash']);
+                        } else {
+                          setEditUserDepartments(editUserDepartments.filter(d => d !== 'petty_cash'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
+                    />
+                    <span>العهد النقدية ومصروفات المشاريع (Petty Cash & Site Expenses)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={editUserDepartments.includes('subcontractors')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditUserDepartments([...editUserDepartments, 'subcontractors']);
+                        } else {
+                          setEditUserDepartments(editUserDepartments.filter(d => d !== 'subcontractors'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
+                    />
+                    <span>مستخلصات المقاولين (Subcontractor Certificates)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={editUserDepartments.includes('labor_timesheet')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditUserDepartments([...editUserDepartments, 'labor_timesheet']);
+                        } else {
+                          setEditUserDepartments(editUserDepartments.filter(d => d !== 'labor_timesheet'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
+                    />
+                    <span>كشوف وحضور العمالة اليومية (Labor Timesheet)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={editUserDepartments.includes('cost_analysis')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditUserDepartments([...editUserDepartments, 'cost_analysis']);
+                        } else {
+                          setEditUserDepartments(editUserDepartments.filter(d => d !== 'cost_analysis'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
+                    />
+                    <span>تحليل بنود المصروفات (Cost Analysis)</span>
+                  </label>
+                </div>
               </div>
 
               {editError && (

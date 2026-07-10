@@ -375,6 +375,7 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   role: { type: String, default: "user" }, // admin or user
   status: { type: String, default: "active" }, // active, blocked, etc.
+  allowed_departments: { type: [String], default: ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"] },
   createdAt: { type: Date, default: Date.now }
 });
 const User = mongoose.model("User", userSchema);
@@ -1847,6 +1848,279 @@ If any extracted term matches or strongly resembles a known term, use its EXACT 
 }
 
 /**
+ * SPECIALIZED FINANCIAL DOCUMENT EXTRACTION HELPER
+ */
+async function extractFinancialFile(fileBuffer: Buffer, mimeType: string, filename: string, type: 'labor' | 'petty_cash' | 'subcontractor', userInstructions?: string): Promise<any> {
+  if (!geminiApiKey) {
+    throw new Error("لم يتم تكوين مفتاح API لجيميني (GEMINI_API_KEY). الرجاء إضافته في الإعدادات.");
+  }
+
+  const base64Data = fileBuffer.toString("base64");
+  const todayStr = new Date().toISOString().split('T')[0];
+  const db = getDb();
+  const knownProjects = db.projects || ["June - Main Gate", "Al Burouj - Sitewide", "EDNC", "عام"];
+
+  const documentPart = {
+    inlineData: {
+      mimeType: mimeType || "application/pdf",
+      data: base64Data,
+    },
+  };
+
+  let systemInstruction = "";
+  let schemaProperties: any = {};
+  let requiredFields: string[] = [];
+
+  if (type === 'labor') {
+    systemInstruction = `You are an expert AI accountant and timesheet/attendance processor.
+Analyze the provided document (which is a timesheet, labor attendance sheet, or manual log in Arabic or English) and extract worker details.
+Extract:
+1. weekStartDate: The start date of the week in YYYY-MM-DD.
+2. workerName: The daily wage worker's name (اسم العامل).
+3. dailyRate: Daily wage rate (الفئة اليومية) as a number if mentioned.
+4. overtimeRate: Overtime day or hour rate (فئة الإضافي) as a number if mentioned.
+5. sohraRate: Sohra (evening) rate (فئة السهرة) as a number if mentioned.
+6. days: An array of 7 objects representing the days of the week starting from Wednesday (الأربعاء) to Tuesday (الثلاثاء) in sequence. Each day object must contain:
+   - dayName: Standard Arabic name (الأربعاء, الخميس, الجمعة, السبت, الأحد, الإثنين, الثلاثاء)
+   - date: Calculated date in YYYY-MM-DD (extrapolated from weekStartDate + offset of the day)
+   - attendance: Number of days worked (e.g., 0, 0.5, 1, 1.5, 2)
+   - overtime: Number of overtime hours worked (number)
+   - sohra: Number of sohra hours worked (number)
+   - project: Project name. Map to one of known projects: ${JSON.stringify(knownProjects)} or default to 'الساحل' or 'البروج' or 'هايد بارك' if appropriate.`;
+
+    schemaProperties = {
+      weekStartDate: { type: Type.STRING, description: "Start date of the week in YYYY-MM-DD format." },
+      workerName: { type: Type.STRING, description: "Full name of the worker." },
+      dailyRate: { type: Type.NUMBER, description: "Daily wage rate if mentioned, default to 300." },
+      overtimeRate: { type: Type.NUMBER, description: "Overtime day/hour rate if mentioned, default to 300." },
+      sohraRate: { type: Type.NUMBER, description: "Sohra rate if mentioned, default to 45." },
+      days: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            dayName: { type: Type.STRING, description: "Day name: الأربعاء, الخميس, الجمعة, السبت, الأحد, الإثنين, الثلاثاء" },
+            date: { type: Type.STRING, description: "Date in YYYY-MM-DD format." },
+            attendance: { type: Type.NUMBER, description: "Days attended: 0, 0.5, 1, 2 etc." },
+            overtime: { type: Type.NUMBER, description: "Overtime hours: e.g. 0, 1, 2, 4" },
+            sohra: { type: Type.NUMBER, description: "Sohra evening hours: e.g. 0, 1, 2" },
+            project: { type: Type.STRING, description: "Project name mapped to known projects." }
+          },
+          required: ["dayName", "attendance", "overtime", "sohra", "project"]
+        },
+        description: "Must contain exactly 7 objects for the 7 days (Wednesday to Tuesday)."
+      }
+    };
+    requiredFields = ["weekStartDate", "workerName", "days"];
+
+  } else if (type === 'petty_cash') {
+    systemInstruction = `You are an expert AI forensic accountant and petty cash OCR extractor.
+Analyze this invoice, cash receipt, or transfer screenshot (e.g. Instapay receipt) and extract:
+1. date: The payment or transaction date in YYYY-MM-DD format. Default to today if not found.
+2. inflow: Inflow / received amount (المستلم / المدين) if this is a funding or cash-in transaction (number, else 0).
+3. outflow: Outflow / spent amount (المصروفات / الدائن) if this is an expense or cash-out invoice/receipt (number, else 0).
+4. description: A clear, complete Arabic explanation of what this payment represents (e.g. 'شراء مواسير حديد لموقع الساحل', 'تحويل رصيد نقدي عهدة للمهندس').
+5. method: Payment method in Arabic, e.g., 'انستاباي', 'نقدي', 'شيك'.
+6. project: Current project associated with this transaction. Map to one of known projects: ${JSON.stringify(knownProjects)}. Default to 'عام' if not clear.
+7. engineer: Name of the engineer (اسم المهندس) if mentioned as recipient or payer or requester on the document. Choose from known engineers or extract the printed name.`;
+
+    schemaProperties = {
+      date: { type: Type.STRING, description: "Date in YYYY-MM-DD format." },
+      inflow: { type: Type.NUMBER, description: "Inflow cash-in amount (number)." },
+      outflow: { type: Type.NUMBER, description: "Outflow cash-out amount (number)." },
+      description: { type: Type.STRING, description: "Arabic transaction description." },
+      method: { type: Type.STRING, description: "Payment method: انستاباي, نقدي, شيك, إلخ." },
+      project: { type: Type.STRING, description: "Project name matching known projects." },
+      engineer: { type: Type.STRING, description: "Engineer name if found, default to empty string." }
+    };
+    requiredFields = ["date", "inflow", "outflow", "description", "method", "project"];
+
+  } else if (type === 'subcontractor') {
+    systemInstruction = `You are an expert AI civil engineering quantity surveyor and subcontractor certificate auditor.
+Analyze this subcontractor contract, work statement, or measurement sheet (مستخلص مقاولين) and extract:
+1. subcontractor: Name of the subcontractor (اسم المقاول الباطن).
+2. project: Name of the project. Map to known projects: ${JSON.stringify(knownProjects)}.
+3. statementNo: Number of this statement / invoice (رقم المستخلص, e.g. '01', '02').
+4. supervisor: Name of the supervisor / supervising engineer (المهندس المشرف).
+5. accountant: Name of the accountant (المحاسب).
+6. items: Array of work items. For each item:
+   - description: Item/work description (وصف البند بالكامل باللغة العربية)
+   - unit: Unit of measurement (الوحدة, e.g. يومية, متر, متر مكعب, طن, مقطوعية, عدد)
+   - rate: Unit price/rate (الفئة) as a number
+   - previousQty: Previous quantity completed (number, default 0)
+   - currentQty: Current quantity completed in this period (الكمية الحالية) as a number
+   - completionPercent: Progress percent, e.g. 100, 80, 50 (number)`;
+
+    schemaProperties = {
+      subcontractor: { type: Type.STRING, description: "Subcontractor name in Arabic." },
+      project: { type: Type.STRING, description: "Project name matching known projects." },
+      statementNo: { type: Type.STRING, description: "Certificate statement number (e.g. 01, 02)." },
+      supervisor: { type: Type.STRING, description: "Supervising engineer name." },
+      accountant: { type: Type.STRING, description: "Accountant name." },
+      items: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            description: { type: Type.STRING, description: "Work description." },
+            unit: { type: Type.STRING, description: "Unit of measurement." },
+            rate: { type: Type.NUMBER, description: "Unit rate in EGP." },
+            previousQty: { type: Type.NUMBER, description: "Previous quantity." },
+            currentQty: { type: Type.NUMBER, description: "Current quantity." },
+            completionPercent: { type: Type.NUMBER, description: "Completion percentage (e.g. 100)." }
+          },
+          required: ["description", "unit", "rate", "currentQty"]
+        }
+      }
+    };
+    requiredFields = ["subcontractor", "project", "statementNo", "items"];
+  }
+
+  const userInstructionText = userInstructions && userInstructions.trim() !== ''
+    ? `\n\nCRITICAL USER INSTRUCTIONS TO OBSERVE FOR THIS DOCUMENT EXTRACTION:\n"${userInstructions.trim()}"\nYou MUST strictly follow, apply, and prioritize these custom instructions over other heuristic extraction options.`
+    : '';
+
+  const textPart = {
+    text: `Analyze the document named "${filename}" received on date ${todayStr}.${userInstructionText}\nReturn values in JSON format matching the schema rules exactly.`,
+  };
+
+  let response: any;
+  const maxRetries = 3;
+  const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const currentModel = modelsToTry[(attempt - 1) % modelsToTry.length];
+    try {
+      console.log(`[AI Financial Extraction Attempt ${attempt}] Using model: ${currentModel} for type: ${type}`);
+      response = await ai.models.generateContent({
+        model: currentModel,
+        contents: { parts: [documentPart, textPart] },
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: schemaProperties,
+            required: requiredFields
+          }
+        }
+      });
+      break;
+    } catch (err: any) {
+      if (attempt === maxRetries) throw err;
+      console.warn(`Transient extraction error with ${currentModel}: ${err.message}. Retrying...`);
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+
+  const parsedText = response?.text || "{}";
+  return JSON.parse(parsedText.trim());
+}
+
+/**
+ * POST ROUTE FOR MULTI-SECTION AI OCR & EXTRACTION
+ */
+app.post("/api/ai/ocr", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "لم يتم تحديد أي ملف للرفع." });
+    }
+    const type = req.body.type || "petty_cash"; // 'labor' | 'petty_cash' | 'subcontractor'
+    const userInstructions = req.body.instructions || "";
+    const { buffer, mimetype, originalname } = req.file;
+
+    const extracted = await extractFinancialFile(buffer, mimetype, originalname, type, userInstructions);
+
+    // Save temporary upload
+    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+    const tempFilename = `temp_${Date.now()}_${sanitize(originalname)}`;
+    const tempDir = path.join(ORGANIZED_DIR, "temp_uploads");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const tempPath = path.join(tempDir, tempFilename);
+    fs.writeFileSync(tempPath, buffer);
+
+    const relativeTempPath = `/data/organized/temp_uploads/${tempFilename}`;
+
+    res.json({
+      success: true,
+      data: extracted,
+      tempPath: relativeTempPath,
+      originalFilename: originalname
+    });
+  } catch (err: any) {
+    console.error("AI OCR error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DYNAMIC FOLDER ARCHITECTURE MANAGER
+ */
+app.post("/api/ai/organize-file", async (req, res) => {
+  try {
+    const { tempPath, engineer, date, subcontractor, project, type } = req.body;
+    if (!tempPath) {
+      return res.json({ success: true, path: "" }); // Non-blocking if no attachment uploaded
+    }
+
+    const absTempPath = path.join(DATA_DIR, tempPath.replace(/^\/data\//, ""));
+    if (!fs.existsSync(absTempPath)) {
+      return res.status(404).json({ error: "الملف المؤقت غير موجود." });
+    }
+
+    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+    const filename = path.basename(absTempPath).replace(/^temp_\d+_/, "");
+    const dateStr = date || new Date().toISOString().split("T")[0];
+    const yearStr = dateStr.split("-")[0] || "2026";
+    const monthStr = dateStr.split("-")[1] || "06";
+
+    let finalRelativePath = "";
+    let finalAbsPath = "";
+
+    if (type === "petty_cash") {
+      const engName = sanitize(engineer || "عام");
+      const targetDir = path.join(ORGANIZED_DIR, "engineers_folders", engName, `${yearStr}-${monthStr}`);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      finalAbsPath = path.join(targetDir, filename);
+      fs.renameSync(absTempPath, finalAbsPath);
+      finalRelativePath = `/data/organized/engineers_folders/${engName}/${yearStr}-${monthStr}/${filename}`;
+    } else if (type === "subcontractor") {
+      const subName = sanitize(subcontractor || "عام");
+      const projName = sanitize(project || "عام");
+      const targetDir = path.join(ORGANIZED_DIR, "subcontractors_folders", subName, projName);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      finalAbsPath = path.join(targetDir, filename);
+      fs.renameSync(absTempPath, finalAbsPath);
+      finalRelativePath = `/data/organized/subcontractors_folders/${subName}/${projName}/${filename}`;
+    } else {
+      // labor
+      const workerName = sanitize(req.body.workerName || "عام");
+      const targetDir = path.join(ORGANIZED_DIR, "labor_folders", workerName);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      finalAbsPath = path.join(targetDir, filename);
+      fs.renameSync(absTempPath, finalAbsPath);
+      finalRelativePath = `/data/organized/labor_folders/${workerName}/${filename}`;
+    }
+
+    res.json({
+      success: true,
+      path: finalRelativePath
+    });
+  } catch (err: any) {
+    console.error("Organize file error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * SAVE AND CLASSIFY FILE ON DISK
  */
 function classifyAndStoreFile(fileBuffer: Buffer, parsedData: any, originalName: string): { relativePath: string; absolutePath: string } {
@@ -2785,7 +3059,8 @@ app.post("/api/auth/login", async (req, res) => {
         name: matchedUser.name,
         email: matchedUser.email,
         role: matchedUser.role,
-        status: matchedUser.status
+        status: matchedUser.status,
+        allowed_departments: matchedUser.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"]
       }
     });
   } catch (err: any) {
@@ -2840,7 +3115,8 @@ app.post("/api/auth/verify-session", async (req, res) => {
         name: matchedUser.name,
         email: matchedUser.email,
         role: matchedUser.role,
-        status: matchedUser.status
+        status: matchedUser.status,
+        allowed_departments: matchedUser.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"]
       }
     });
   } catch (err: any) {
@@ -2856,6 +3132,68 @@ app.get("/api/admin/users", async (req, res) => {
     db.users = db.users || [];
     let usersList = [...db.users];
 
+    // Try fetching from Supabase DB (profiles and users tables)
+    const adminClient = getSupabaseAdminClient();
+    if (adminClient) {
+      try {
+        console.log("[Users Fetch] Checking Supabase 'profiles' table...");
+        const { data: profs, error: profsErr } = await adminClient.from('profiles').select('*');
+        if (!profsErr && profs) {
+          profs.forEach((p: any) => {
+            const emailLower = p.email?.toLowerCase().trim();
+            if (emailLower && !usersList.some((u: any) => u.email.toLowerCase() === emailLower)) {
+              const mapped = {
+                id: p.id,
+                name: p.display_name || p.name || "موظف جديد",
+                email: emailLower,
+                role: p.role || "user",
+                status: p.status || "active",
+                allowed_departments: p.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"],
+                createdAt: p.created_at || p.createdAt || new Date().toISOString()
+              };
+              usersList.push(mapped);
+              db.users.push({ ...mapped, password: "" });
+            } else if (emailLower) {
+              const existing = usersList.find((u: any) => u.email.toLowerCase() === emailLower);
+              if (existing) {
+                existing.allowed_departments = p.allowed_departments || existing.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"];
+              }
+            }
+          });
+          saveDb(db);
+        }
+
+        console.log("[Users Fetch] Checking Supabase 'users' table...");
+        const { data: sUsers, error: sUsersErr } = await adminClient.from('users').select('*');
+        if (!sUsersErr && sUsers) {
+          sUsers.forEach((su: any) => {
+            const emailLower = su.email?.toLowerCase().trim();
+            if (emailLower && !usersList.some((u: any) => u.email.toLowerCase() === emailLower)) {
+              const mapped = {
+                id: su.id,
+                name: su.display_name || su.name || "موظف جديد",
+                email: emailLower,
+                role: su.role || "user",
+                status: su.status || "active",
+                allowed_departments: su.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"],
+                createdAt: su.created_at || su.createdAt || new Date().toISOString()
+              };
+              usersList.push(mapped);
+              db.users.push({ ...mapped, password: "" });
+            } else if (emailLower) {
+              const existing = usersList.find((u: any) => u.email.toLowerCase() === emailLower);
+              if (existing) {
+                existing.allowed_departments = su.allowed_departments || existing.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"];
+              }
+            }
+          });
+          saveDb(db);
+        }
+      } catch (sbErr: any) {
+        console.warn("[Users Fetch] Supabase DB fetch failed:", sbErr.message);
+      }
+    }
+
     if (mongoose.connection.readyState === 1) {
       try {
         const mongoUsers = await User.find({});
@@ -2867,9 +3205,15 @@ app.get("/api/admin/users", async (req, res) => {
               email: mUser.email,
               role: mUser.role || "user",
               status: mUser.status || "active",
+              allowed_departments: mUser.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"],
               createdAt: mUser.createdAt ? mUser.createdAt.toISOString() : new Date().toISOString()
             };
             usersList.push(mapped);
+          } else {
+            const existing = usersList.find((u: any) => u.email.toLowerCase() === mUser.email.toLowerCase());
+            if (existing) {
+              existing.allowed_departments = mUser.allowed_departments || existing.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"];
+            }
           }
         });
       } catch (err) {
@@ -2877,13 +3221,14 @@ app.get("/api/admin/users", async (req, res) => {
       }
     }
 
-    // Clean sensitive password fields out of response
+    // Clean sensitive fields out of response
     const sanitizedUsers = usersList.map((u: any) => ({
       id: u.id,
       name: u.name,
       email: u.email,
       role: u.role,
       status: u.status,
+      allowed_departments: u.allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"],
       createdAt: u.createdAt
     }));
 
@@ -2896,12 +3241,13 @@ app.get("/api/admin/users", async (req, res) => {
 // Admin Route: Create User
 app.post("/api/admin/users/create", async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, allowed_departments } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, error: "الرجاء إدخال الاسم، البريد الإلكتروني وكلمة المرور" });
     }
 
     const lowerEmail = email.toLowerCase().trim();
+    const finalDeps = allowed_departments || ["procurement", "petty_cash", "subcontractors", "labor_timesheet", "cost_analysis"];
 
     // Check duplicate
     const db = getDb();
@@ -2945,7 +3291,7 @@ app.post("/api/admin/users/create", async (req, res) => {
         email: lowerEmail,
         password: password,
         email_confirm: true,
-        user_metadata: { name, role: role || "user" }
+        user_metadata: { name, role: role || "user", allowed_departments: finalDeps }
       });
       if (sbError) {
         console.warn("[Supabase Admin Auth] User creation failed:", sbError.message);
@@ -2976,7 +3322,7 @@ app.post("/api/admin/users/create", async (req, res) => {
     let sbDbSuccess = false;
     let sbDbErrorMsg = "";
     try {
-      console.log(`[Supabase DB] Attempting to insert into 'profiles' table for UID: ${finalUserId}`);
+      console.log(`[Supabase DB] Attempting to insert into 'profiles' table for UID: ${finalUserId} with departments:`, finalDeps);
       const { error: profErr } = await adminClient
         .from('profiles')
         .insert([
@@ -2984,16 +3330,42 @@ app.post("/api/admin/users/create", async (req, res) => {
             id: finalUserId, 
             email: lowerEmail, 
             display_name: name.trim(), 
-            role: role || "user"
+            role: role || "user",
+            allowed_departments: finalDeps
           }
         ]);
-      if (!profErr) {
-        sbDbSuccess = true;
-        console.log("[Supabase DB] Successfully inserted profile into 'profiles' table.");
-      } else {
-        console.warn("[Supabase DB] Failed to insert into 'profiles' table:", profErr.message);
+      
+      if (profErr) {
+        console.error("[Supabase DB] profiles table insert error details (console.log dbError):", profErr);
         sbDbErrorMsg = profErr.message;
         
+        // If failed due to a missing column, try without allowed_departments as fallback
+        if (profErr.message?.includes("allowed_departments") || profErr.code === "PGRST204" || profErr.code === "42703") {
+          console.warn("[Supabase DB] allowed_departments column might be missing, retrying profiles insert without it...");
+          const { error: retryProfErr } = await adminClient
+            .from('profiles')
+            .insert([
+              { 
+                id: finalUserId, 
+                email: lowerEmail, 
+                display_name: name.trim(), 
+                role: role || "user"
+              }
+            ]);
+          if (!retryProfErr) {
+            sbDbSuccess = true;
+            console.log("[Supabase DB] Successfully inserted profile into 'profiles' table (without allowed_departments).");
+          } else {
+            console.error("[Supabase DB] Fallback profiles insert failed:", retryProfErr.message);
+            sbDbErrorMsg = retryProfErr.message;
+          }
+        }
+      } else {
+        sbDbSuccess = true;
+        console.log("[Supabase DB] Successfully inserted profile into 'profiles' table.");
+      }
+
+      if (!sbDbSuccess) {
         // Try inserting into 'users' table
         console.log(`[Supabase DB] Attempting to insert into 'users' table for UID: ${finalUserId}`);
         const { error: userErr } = await adminClient
@@ -3003,27 +3375,55 @@ app.post("/api/admin/users/create", async (req, res) => {
               id: finalUserId, 
               email: lowerEmail, 
               display_name: name.trim(), 
-              role: role || "user"
+              role: role || "user",
+              allowed_departments: finalDeps
             }
           ]);
-        if (!userErr) {
+        
+        if (userErr) {
+          console.error("[Supabase DB] users table insert error details (console.log dbError):", userErr);
+          sbDbErrorMsg = userErr.message;
+
+          // If failed due to missing column, retry without allowed_departments
+          if (userErr.message?.includes("allowed_departments") || userErr.code === "PGRST204" || userErr.code === "42703") {
+            console.warn("[Supabase DB] allowed_departments column might be missing on 'users' table, retrying insert without it...");
+            const { error: retryUserErr } = await adminClient
+              .from('users')
+              .insert([
+                { 
+                  id: finalUserId, 
+                  email: lowerEmail, 
+                  display_name: name.trim(), 
+                  role: role || "user"
+                }
+              ]);
+            if (!retryUserErr) {
+              sbDbSuccess = true;
+              console.log("[Supabase DB] Successfully inserted into 'users' table (without allowed_departments).");
+            } else {
+              console.error("[Supabase DB] Fallback users insert failed:", retryUserErr.message);
+              sbDbErrorMsg = retryUserErr.message;
+            }
+          }
+        } else {
           sbDbSuccess = true;
           console.log("[Supabase DB] Successfully inserted profile into 'users' table.");
-        } else {
-          console.warn("[Supabase DB] Failed to insert into 'users' table:", userErr.message);
-          sbDbErrorMsg = userErr.message;
         }
       }
     } catch (dbErr: any) {
-      console.warn("[Supabase DB] Exception during Supabase insert:", dbErr.message);
+      console.error("[Supabase DB] Exception during Supabase insert (console.log dbError):", dbErr);
       sbDbErrorMsg = dbErr.message;
     }
 
     if (!sbDbSuccess) {
-      console.warn(`[Supabase DB] Database insert warning: ${sbDbErrorMsg}. But proceeding to update local/MongoDB database to maintain system synchronization.`);
+      console.error(`[Supabase DB] Database insert failed: ${sbDbErrorMsg}. Returning error to prevent un-synchronized state.`);
+      return res.status(400).json({
+        success: false,
+        error: `فشل إدخال الموظف في قاعدة البيانات: ${sbDbErrorMsg || "يرجى التحقق من لوحة تحكم Supabase والـ Schema الخاص بجداول المستخدمين"}`
+      });
     }
 
-    // 3. Save locally only after 100% success in Supabase Auth
+    // 3. Save locally only after 100% success in Supabase Auth & Database
     const newUser = {
       id: finalUserId,
       name: name.trim(),
@@ -3031,6 +3431,7 @@ app.post("/api/admin/users/create", async (req, res) => {
       password: hashedPassword,
       role: role || "user",
       status: "active",
+      allowed_departments: finalDeps,
       createdAt: new Date().toISOString()
     };
 
@@ -3046,14 +3447,15 @@ app.post("/api/admin/users/create", async (req, res) => {
           email: lowerEmail,
           password: hashedPassword,
           role: role || "user",
-          status: "active"
+          status: "active",
+          allowed_departments: finalDeps
         });
       } catch (mongoErr: any) {
         console.error("[Auth] Failed to write user to MongoDB:", mongoErr.message);
       }
     }
 
-    console.log(`[Auth] User ${name} successfully created by Admin as [${role || "user"}] with UID [${finalUserId}]`);
+    console.log(`[Auth] User ${name} successfully created by Admin as [${role || "user"}] with departments:`, finalDeps);
     return res.json({ success: true, message: "تم إنشاء حساب الموظف الجديد بنجاح!" });
   } catch (err: any) {
     console.error("[Auth] Create user error:", err);
@@ -3061,10 +3463,10 @@ app.post("/api/admin/users/create", async (req, res) => {
   }
 });
 
-// Admin Route: Update User (Edit Role or status or name or email or password)
+// Admin Route: Update User (Edit Role or status or name or email or password or departments)
 app.post("/api/admin/users/update", async (req, res) => {
   try {
-    const { id, email, name, role, status, password, newEmail } = req.body;
+    const { id, email, name, role, status, password, newEmail, allowed_departments } = req.body;
     if (!email) {
       return res.status(400).json({ success: false, error: "البريد الإلكتروني للموظف مطلوب" });
     }
@@ -3100,44 +3502,136 @@ app.post("/api/admin/users/update", async (req, res) => {
       hashedPassword = await bcrypt.hash(password, 10);
     }
 
-    // 1. Update in Supabase Auth if service role client is present
+    const targetUserId = id || (userIndex !== -1 ? db.users[userIndex].id : null);
+
+    // 1. Update in Supabase Auth and Database
     const adminClient = getSupabaseAdminClient();
-    if (adminClient) {
-      const targetUserId = id || (userIndex !== -1 ? db.users[userIndex].id : null);
-      if (targetUserId) {
-        try {
-          const authUpdateObj: any = {};
-          if (lowerNewEmail) {
-            authUpdateObj.email = lowerNewEmail;
-            authUpdateObj.email_confirm = true;
-          }
-          if (password && password.trim().length > 0) {
-            authUpdateObj.password = password;
-          }
-          if (name) {
-            authUpdateObj.user_metadata = authUpdateObj.user_metadata || {};
-            authUpdateObj.user_metadata.name = name.trim();
-          }
-          if (role) {
-            authUpdateObj.user_metadata = authUpdateObj.user_metadata || {};
-            authUpdateObj.user_metadata.role = role;
+    if (adminClient && targetUserId) {
+      try {
+        const authUpdateObj: any = {};
+        if (lowerNewEmail) {
+          authUpdateObj.email = lowerNewEmail;
+          authUpdateObj.email_confirm = true;
+        }
+        if (password && password.trim().length > 0) {
+          authUpdateObj.password = password;
+        }
+        
+        authUpdateObj.user_metadata = authUpdateObj.user_metadata || {};
+        if (name) {
+          authUpdateObj.user_metadata.name = name.trim();
+        }
+        if (role) {
+          authUpdateObj.user_metadata.role = role;
+        }
+        if (allowed_departments) {
+          authUpdateObj.user_metadata.allowed_departments = allowed_departments;
+        }
+
+        console.log(`[Supabase Admin Auth] Updating user ${targetUserId} in Auth...`, authUpdateObj);
+        const { error: sbUpdateErr } = await adminClient.auth.admin.updateUserById(
+          targetUserId,
+          authUpdateObj
+        );
+        if (sbUpdateErr) {
+          console.error("[Supabase Admin Auth] Failed to update user Auth:", sbUpdateErr.message);
+        }
+
+        // Update in DB Tables
+        console.log(`[Supabase DB] Updating details for UID: ${targetUserId}`);
+        const dbUpdateObj: any = {};
+        if (name) dbUpdateObj.display_name = name.trim();
+        if (role) dbUpdateObj.role = role;
+        if (allowed_departments) dbUpdateObj.allowed_departments = allowed_departments;
+
+        if (Object.keys(dbUpdateObj).length > 0) {
+          let { error: profDbErr } = await adminClient
+            .from('profiles')
+            .update(dbUpdateObj)
+            .eq('id', targetUserId);
+
+          if (profDbErr) {
+            console.warn("[Supabase DB] profiles update raw error (console.log dbError):", profDbErr);
+            
+            // Smart column-by-column fallback for 'profiles' table
+            console.log("[Supabase DB] Attempting granular update for 'profiles' table...");
+            let profilesSucceededAny = false;
+            for (const [key, val] of Object.entries(dbUpdateObj)) {
+              let { error: singleErr } = await adminClient
+                .from('profiles')
+                .update({ [key]: val })
+                .eq('id', targetUserId);
+              
+              if (singleErr && key === 'display_name') {
+                console.log("[Supabase DB] profiles display_name update failed, trying fallback to 'name' column...");
+                const { error: nameErr } = await adminClient
+                  .from('profiles')
+                  .update({ name: val })
+                  .eq('id', targetUserId);
+                if (nameErr) {
+                  console.warn("[Supabase DB] profiles 'name' column update also failed:", nameErr.message);
+                } else {
+                  console.log("[Supabase DB] Successfully updated 'name' column in 'profiles' table.");
+                  profilesSucceededAny = true;
+                }
+              } else if (!singleErr) {
+                console.log(`[Supabase DB] Successfully updated column '${key}' in 'profiles' table.`);
+                profilesSucceededAny = true;
+              } else {
+                console.warn(`[Supabase DB] profiles update failed for column '${key}':`, singleErr.message);
+              }
+            }
+            
+            if (profilesSucceededAny) {
+              profDbErr = null; // Cleared error flag because we succeeded granularly
+            }
+          } else {
+            console.log("[Supabase DB] Successfully updated profile details in 'profiles' table.");
           }
 
-          if (Object.keys(authUpdateObj).length > 0) {
-            console.log(`[Supabase Admin Auth] Updating user ${targetUserId} in Auth...`, authUpdateObj);
-            const { error: sbUpdateErr } = await adminClient.auth.admin.updateUserById(
-              targetUserId,
-              authUpdateObj
-            );
-            if (sbUpdateErr) {
-              console.error("[Supabase Admin Auth] Failed to update user:", sbUpdateErr.message);
-              return res.status(400).json({ success: false, error: `فشل التحديث في Supabase Auth: ${sbUpdateErr.message}` });
+          if (profDbErr) {
+            // Fallback users table
+            console.log(`[Supabase DB] Attempting update on 'users' table for UID: ${targetUserId}...`);
+            let { error: usersDbErr } = await adminClient
+              .from('users')
+              .update(dbUpdateObj)
+              .eq('id', targetUserId);
+
+            if (usersDbErr) {
+              console.warn("[Supabase DB] users update raw error (console.log dbError):", usersDbErr);
+              
+              // Smart column-by-column fallback for 'users' table
+              console.log("[Supabase DB] Attempting granular update for 'users' table...");
+              for (const [key, val] of Object.entries(dbUpdateObj)) {
+                let { error: singleErr } = await adminClient
+                  .from('users')
+                  .update({ [key]: val })
+                  .eq('id', targetUserId);
+                
+                if (singleErr && key === 'display_name') {
+                  console.log("[Supabase DB] users display_name update failed, trying fallback to 'name' column...");
+                  const { error: nameErr } = await adminClient
+                    .from('users')
+                    .update({ name: val })
+                    .eq('id', targetUserId);
+                  if (nameErr) {
+                    console.warn("[Supabase DB] users 'name' column update also failed:", nameErr.message);
+                  } else {
+                    console.log("[Supabase DB] Successfully updated 'name' column in 'users' table.");
+                  }
+                } else if (!singleErr) {
+                  console.log(`[Supabase DB] Successfully updated column '${key}' in 'users' table.`);
+                } else {
+                  console.warn(`[Supabase DB] users update failed for column '${key}':`, singleErr.message);
+                }
+              }
+            } else {
+              console.log("[Supabase DB] Successfully updated profile details in 'users' table.");
             }
           }
-        } catch (ex: any) {
-          console.error("[Supabase Admin Auth] Exception updating user:", ex.message);
-          return res.status(400).json({ success: false, error: `فشل التحديث في Supabase Auth: ${ex.message}` });
         }
+      } catch (ex: any) {
+        console.error("[Supabase Admin Auth/DB] Exception updating user:", ex.message);
       }
     }
 
@@ -3148,6 +3642,7 @@ app.post("/api/admin/users/update", async (req, res) => {
       if (role) db.users[userIndex].role = role;
       if (status) db.users[userIndex].status = status;
       if (hashedPassword) db.users[userIndex].password = hashedPassword;
+      if (allowed_departments) db.users[userIndex].allowed_departments = allowed_departments;
       saveDb(db);
     }
 
@@ -3159,6 +3654,7 @@ app.post("/api/admin/users/update", async (req, res) => {
       if (role) updateData.role = role;
       if (status) updateData.status = status;
       if (hashedPassword) updateData.password = hashedPassword;
+      if (allowed_departments) updateData.allowed_departments = allowed_departments;
 
       await User.findOneAndUpdate({ email: lowerEmail }, { $set: updateData });
     }
@@ -4411,6 +4907,217 @@ app.delete("/api/comparisons/:id", async (req, res) => {
     res.json({ success: true, message: "تم حذف المقارنة بنجاح" });
   } catch (error: any) {
     console.error("Delete comparison error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Financial & Accounting Endpoints (Petty Cash, Subcontractors, Labor Timesheets, Cost Analysis) ---
+app.get("/api/financial-data", async (req, res) => {
+  try {
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    res.json({
+      success: true,
+      pettyCashBoxDays: db.pettyCashBoxDays || [],
+      subcontractorContracts: db.subcontractorContracts || [],
+      laborTimesheets: db.laborTimesheets || [],
+      costAnalysisEntries: db.costAnalysisEntries || [],
+      costAnalysisCategories: db.costAnalysisCategories || [],
+      pendingTransactions: db.pendingTransactions || [],
+      archives: db.archives || [],
+      engineers: db.engineers || []
+    });
+  } catch (err: any) {
+    console.error("Fetch financial data error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/financial-data/update", async (req, res) => {
+  try {
+    const { pettyCashBoxDays, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives, engineers } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (pettyCashBoxDays !== undefined) db.pettyCashBoxDays = pettyCashBoxDays;
+    if (subcontractorContracts !== undefined) db.subcontractorContracts = subcontractorContracts;
+    if (laborTimesheets !== undefined) db.laborTimesheets = laborTimesheets;
+    if (costAnalysisEntries !== undefined) db.costAnalysisEntries = costAnalysisEntries;
+    if (costAnalysisCategories !== undefined) db.costAnalysisCategories = costAnalysisCategories;
+    if (pendingTransactions !== undefined) db.pendingTransactions = pendingTransactions;
+    if (archives !== undefined) db.archives = archives;
+    if (engineers !== undefined) db.engineers = engineers;
+    
+    saveDb(db);
+    res.json({ success: true, message: "تم حفظ البيانات المالية المحاسبية بنجاح" });
+  } catch (err: any) {
+    console.error("Save financial data error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// --- Smart Webhook Endpoint for WhatsApp Petty Cash Screenshots (Gemini OCR) ---
+app.post("/api/webhook/make-whatsapp", upload.single("file"), async (req, res) => {
+  try {
+    let fileBuffer: Buffer | null = null;
+    let mimeType = "image/png";
+
+    if (req.file) {
+      fileBuffer = req.file.buffer;
+      mimeType = req.file.mimetype;
+    } else if (req.body.imageBase64) {
+      fileBuffer = Buffer.from(req.body.imageBase64, "base64");
+      if (req.body.mimeType) {
+        mimeType = req.body.mimeType;
+      }
+    } else if (req.body.imageUrl) {
+      const fetchResponse = await fetch(req.body.imageUrl);
+      if (fetchResponse.ok) {
+        const arrayBuffer = await fetchResponse.arrayBuffer();
+        fileBuffer = Buffer.from(arrayBuffer);
+        const contentType = fetchResponse.headers.get("content-type");
+        if (contentType) mimeType = contentType;
+      }
+    }
+
+    if (!fileBuffer) {
+      return res.status(400).json({ success: false, error: "لم يتم العثور على أي صورة لمعالجتها. يرجى توفير ملف أو رابط صورة أو ترميز base64." });
+    }
+
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    const projectsList = db.projects || [];
+
+    const imagePart = {
+      inlineData: {
+        data: fileBuffer.toString("base64"),
+        mimeType: mimeType,
+      }
+    };
+
+    const promptText = `
+أنت محاسب تكاليف ومراجع مالي محترف لشركة "دلتا لإنشاء الطرق والمقاولات" (Delta Road Construction).
+أمامك لقطة شاشة (Screenshot) من محادثة واتساب تحتوي على كشف تصفية عهدة أسبوعية أرسلها المهندس من الموقع.
+قم بقراءة وتحليل الصورة بدقة عالية واستخراج جميع المصروفات والحركات المالية اليومية المذكورة سطراً بسطر.
+
+قائمة المشاريع المعتمدة في النظام هي:
+${JSON.stringify(projectsList, null, 2)}
+
+يرجى استخراج البيانات لكل حركة مالية وفق القواعد التالية:
+1. "description": البيان بالتفصيل كما هو مكتوب باللغة العربية (مثال: "دفعه عمال شاهر").
+2. "outflow": المبلغ المصروف (كرقم).
+3. "inflow": المبلغ الوارد إن وجد (كرقم)، وإلا 0.
+4. "date": ابحث عن تاريخ الحركة بجانبها أو في نفس السطر.
+   - إذا وجدت تاريخاً واضحاً (مثال: 24-06-26، 26/6/2026، 2026-06-26)، قم بصياغته وتحويله إلى صيغة ISO القياسية YYYY-MM-DD.
+   - إذا لم تجد أي تاريخ واضح بجانب الحركة، ضع القيمة فارغة (null أو "").
+5. "project": حدد المشروع المرتبط بالحركة من قائمة المشاريع المعتمدة أعلاه. إذا لم تجد مطابقة، يرجى استنتاج أقرب مشروع أو تركه فارغاً.
+6. "method": طريقة الدفع المستنتجة (انستاباي، نقدي، فودافون كاش، إلخ). الافتراضي هو "انستاباي".
+
+يجب أن تكون الاستجابة بصيغة JSON مطابقة تماماً للهيكل التالي:
+{
+  "transactions": [
+    {
+      "description": "بيان الحركة",
+      "outflow": 1200,
+      "inflow": 0,
+      "date": "2026-06-26", // أو null إذا لم يوجد تاريخ
+      "project": "اسم المشروع",
+      "method": "انستاباي"
+    }
+  ]
+}
+`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: { parts: [imagePart, { text: promptText }] },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          required: ["transactions"],
+          properties: {
+            transactions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                required: ["description", "outflow", "inflow", "method"],
+                properties: {
+                  description: { type: Type.STRING },
+                  outflow: { type: Type.NUMBER },
+                  inflow: { type: Type.NUMBER },
+                  date: { type: Type.STRING, description: "YYYY-MM-DD format if date exists, otherwise null" },
+                  project: { type: Type.STRING, description: "Matching project name, or null" },
+                  method: { type: Type.STRING }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const resultText = response.text || "";
+    const resultJson = JSON.parse(resultText.trim());
+    const extractedTxs = resultJson.transactions || [];
+
+    if (!db.pendingTransactions) db.pendingTransactions = [];
+    if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
+
+    const autoProcessed: any[] = [];
+    const pendingProcessed: any[] = [];
+
+    for (const tx of extractedTxs) {
+      const txId = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const cleanTx = {
+        id: txId,
+        inflow: tx.inflow || 0,
+        outflow: tx.outflow || 0,
+        description: tx.description || "حركة مستخرجة بالذكاء الاصطناعي",
+        method: tx.method || "انستاباي",
+        project: tx.project || projectsList[0] || "مشروع عام"
+      };
+
+      if (tx.date && tx.date.trim() !== "") {
+        const targetDate = tx.date.trim();
+        let existingDay = db.pettyCashBoxDays.find((d: any) => d.date === targetDate);
+        if (existingDay) {
+          existingDay.transactions.push(cleanTx);
+        } else {
+          db.pettyCashBoxDays.push({
+            date: targetDate,
+            transactions: [cleanTx]
+          });
+        }
+        autoProcessed.push({ ...cleanTx, date: targetDate });
+      } else {
+        const pendingTx = {
+          ...cleanTx,
+          status: "Pending",
+          date: ""
+        };
+        db.pendingTransactions.push(pendingTx);
+        pendingProcessed.push(pendingTx);
+      }
+    }
+
+    saveDb(db);
+
+    triggerNotification(
+      "success",
+      "تصفية عهدة بالذكاء الاصطناعي 📱",
+      `تمت معالجة لقطة الشاشة: تم إدراج ${autoProcessed.length} حركات تلقائياً بتواريخها، و ${pendingProcessed.length} حركات معلقة بانتظار تحديد التاريخ.`
+    );
+
+    res.json({
+      success: true,
+      message: "تمت معالجة لقطة الشاشة بنجاح.",
+      autoProcessed,
+      pendingProcessed
+    });
+
+  } catch (error: any) {
+    console.error("Webhook processing error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

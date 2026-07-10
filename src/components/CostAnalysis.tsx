@@ -1,0 +1,842 @@
+import React, { useState, useMemo } from 'react';
+import { 
+  Plus, 
+  Trash2, 
+  Download, 
+  TrendingUp, 
+  Folder, 
+  Tag, 
+  Calendar, 
+  DollarSign, 
+  FileText, 
+  Filter, 
+  PieChart as PieIcon, 
+  Grid,
+  Sparkles
+} from 'lucide-react';
+import { 
+  PieChart, 
+  Pie, 
+  Cell, 
+  ResponsiveContainer, 
+  Legend, 
+  Tooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid
+} from 'recharts';
+import * as XLSX from 'xlsx-js-style';
+
+interface CostEntry {
+  id: string;
+  project: string;
+  category: string;
+  amount: number;
+  date: string;
+  description: string;
+}
+
+interface CostAnalysisProps {
+  projectsList: string[];
+  entries: CostEntry[];
+  categories: string[];
+  onSave: (updatedEntries: CostEntry[], updatedCategories: string[]) => void;
+}
+
+export const CostAnalysis: React.FC<CostAnalysisProps> = ({
+  projectsList,
+  entries,
+  categories,
+  onSave
+}) => {
+  // Input Form States
+  const [selectedProject, setSelectedProject] = useState<string>(projectsList[0] || 'الساحل');
+  const [selectedCategory, setSelectedCategory] = useState<string>(categories[0] || 'مواد تشغيل');
+  const [amountInput, setAmountInput] = useState<string>('');
+  const [dateInput, setDateInput] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [descriptionInput, setDescriptionInput] = useState<string>('');
+
+  // Add Custom Category State
+  const [newCategoryName, setNewCategoryName] = useState<string>('');
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState<boolean>(false);
+
+  // Filter States
+  const [filterProject, setFilterProject] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Handle addition of a new category
+  const handleAddCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = newCategoryName.trim();
+    if (!cleanName) return;
+
+    if (categories.includes(cleanName)) {
+      alert('هذا البند موجود بالفعل!');
+      return;
+    }
+
+    const updatedCategories = [...categories, cleanName];
+    onSave(entries, updatedCategories);
+    setSelectedCategory(cleanName);
+    setNewCategoryName('');
+    setShowAddCategoryModal(false);
+  };
+
+  // Handle deletion of a custom category
+  const handleDeleteCategory = (catToDelete: string) => {
+    if (window.confirm(`هل أنت متأكد من حذف بند التصنيف "${catToDelete}"؟ لن يتم حذف المصروفات السابقة المقيدة به.`)) {
+      const updatedCategories = categories.filter(c => c !== catToDelete);
+      onSave(entries, updatedCategories);
+      if (selectedCategory === catToDelete) {
+        setSelectedCategory(updatedCategories[0] || '');
+      }
+    }
+  };
+
+  // Handle addition or modification of cost entry
+  const handleSubmitEntry = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsedAmount = parseFloat(amountInput);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert('الرجاء إدخال قيمة صحيحة للمبلغ');
+      return;
+    }
+    if (!selectedProject) {
+      alert('الرجاء اختيار أو إضافة مشروع أولاً في النظام');
+      return;
+    }
+
+    if (editingId) {
+      // Edit mode
+      const updated = entries.map(item => {
+        if (item.id === editingId) {
+          return {
+            ...item,
+            project: selectedProject,
+            category: selectedCategory,
+            amount: parsedAmount,
+            date: dateInput,
+            description: descriptionInput.trim()
+          };
+        }
+        return item;
+      });
+      onSave(updated, categories);
+      setEditingId(null);
+    } else {
+      // Add mode
+      const newEntry: CostEntry = {
+        id: 'cost_' + Date.now(),
+        project: selectedProject,
+        category: selectedCategory,
+        amount: parsedAmount,
+        date: dateInput,
+        description: descriptionInput.trim()
+      };
+      onSave([newEntry, ...entries], categories);
+    }
+
+    // Reset inputs
+    setAmountInput('');
+    setDescriptionInput('');
+  };
+
+  // Start editing an entry
+  const handleStartEdit = (entry: CostEntry) => {
+    setEditingId(entry.id);
+    setSelectedProject(entry.project);
+    setSelectedCategory(entry.category);
+    setAmountInput(entry.amount.toString());
+    setDateInput(entry.date);
+    setDescriptionInput(entry.description);
+    // Scroll smoothly to form
+    const formElement = document.getElementById('cost-entry-form');
+    if (formElement) {
+      formElement.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // Cancel edit mode
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setAmountInput('');
+    setDescriptionInput('');
+  };
+
+  // Delete cost entry
+  const handleDeleteEntry = (id: string) => {
+    if (window.confirm('هل أنت متأكد من حذف هذا القيد التحليلي؟')) {
+      const updated = entries.filter(item => item.id !== id);
+      onSave(updated, categories);
+    }
+  };
+
+  // Filtered cost entries for display
+  const filteredEntries = useMemo(() => {
+    return entries.filter(item => {
+      const matchProject = filterProject === 'all' || item.project === filterProject;
+      const matchCategory = filterCategory === 'all' || item.category === filterCategory;
+      const matchSearch = !searchTerm.trim() || 
+        item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.project.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.category.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchProject && matchCategory && matchSearch;
+    });
+  }, [entries, filterProject, filterCategory, searchTerm]);
+
+  // Total cost computed from active filtered list
+  const totalFilteredAmount = useMemo(() => {
+    return filteredEntries.reduce((sum, item) => sum + item.amount, 0);
+  }, [filteredEntries]);
+
+  // Grouped by Category for chart
+  const categoryChartData = useMemo(() => {
+    const map: Record<string, number> = {};
+    // Initialize with 0 for active categories to represent empty ones if desired, or just dynamically fill
+    categories.forEach(cat => {
+      map[cat] = 0;
+    });
+
+    entries.forEach(entry => {
+      if (filterProject === 'all' || entry.project === filterProject) {
+        map[entry.category] = (map[entry.category] || 0) + entry.amount;
+      }
+    });
+
+    const totalAll = Object.values(map).reduce((a, b) => a + b, 0);
+
+    return Object.entries(map)
+      .map(([name, value]) => ({
+        name,
+        value,
+        percentage: totalAll > 0 ? ((value / totalAll) * 100).toFixed(1) : '0'
+      }))
+      .filter(item => item.value > 0); // Only show categories with spending
+  }, [entries, categories, filterProject]);
+
+  // Grouped by Project for bar chart
+  const projectChartData = useMemo(() => {
+    const map: Record<string, number> = {};
+    entries.forEach(entry => {
+      if (filterCategory === 'all' || entry.category === filterCategory) {
+        map[entry.project] = (map[entry.project] || 0) + entry.amount;
+      }
+    });
+
+    return Object.entries(map).map(([name, value]) => ({
+      name,
+      value
+    }));
+  }, [entries, filterCategory]);
+
+  // Color Palette for Pie Chart
+  const COLORS = [
+    '#6366f1', // Indigo
+    '#10b981', // Emerald
+    '#f59e0b', // Amber
+    '#ef4444', // Red
+    '#ec4899', // Pink
+    '#8b5cf6', // Violet
+    '#14b8a6', // Teal
+    '#06b6d4', // Cyan
+    '#3b82f6'  // Blue
+  ];
+
+  // Excel Export
+  const handleExportExcel = () => {
+    if (filteredEntries.length === 0) {
+      alert('لا توجد بيانات لتصديرها!');
+      return;
+    }
+
+    const wsData = [
+      ["تقرير تحليل وتصنيف بنود مصروفات المشاريع", "", "", "", ""],
+      ["تاريخ التصدير:", new Date().toLocaleDateString('ar-EG'), "", "", ""],
+      ["إجمالي المصروفات المصنفة:", `${totalFilteredAmount.toLocaleString()} EGP`, "", "", ""],
+      [], // Spacer
+      ["المشروع", "بند التصنيف / التكلفة", "المبلغ (EGP)", "التاريخ", "البيان والوصف التفصيلي"]
+    ];
+
+    filteredEntries.forEach(item => {
+      wsData.push([
+        item.project,
+        item.category,
+        item.amount,
+        item.date,
+        item.description
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Styling the sheet
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }, // Merge title row
+    ];
+
+    // Styles
+    const titleStyle = {
+      font: { name: 'Segoe UI', size: 14, bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "312E81" } }, // Deep Indigo
+      alignment: { horizontal: "center", vertical: "center" }
+    };
+
+    const headerStyle = {
+      font: { name: 'Segoe UI', size: 11, bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "4F46E5" } }, // Indigo
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "818CF8" } },
+        bottom: { style: "medium", color: { rgb: "111827" } },
+        left: { style: "thin", color: { rgb: "818CF8" } },
+        right: { style: "thin", color: { rgb: "818CF8" } }
+      }
+    };
+
+    const cellStyle = {
+      font: { name: 'Segoe UI', size: 10 },
+      alignment: { horizontal: "right", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "E5E7EB" } },
+        bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+        left: { style: "thin", color: { rgb: "E5E7EB" } },
+        right: { style: "thin", color: { rgb: "E5E7EB" } }
+      }
+    };
+
+    const amountCellStyle = {
+      ...cellStyle,
+      numFmt: '#,##0" EGP"',
+      font: { name: 'Segoe UI', size: 10, bold: true, color: { rgb: "10B981" } }
+    };
+
+    // Apply Styles to cell range
+    ws['A1'].s = titleStyle;
+    
+    // Header Row is index 4 (0-based)
+    const cols = ['A', 'B', 'C', 'D', 'E'];
+    cols.forEach(col => {
+      ws[`${col}5`].s = headerStyle;
+    });
+
+    // Body Cells
+    for (let r = 5; r < wsData.length; r++) {
+      cols.forEach((col, cIdx) => {
+        const cellRef = `${col}${r + 1}`;
+        if (!ws[cellRef]) return;
+        
+        if (cIdx === 2) {
+          ws[cellRef].s = amountCellStyle;
+        } else {
+          ws[cellRef].s = cellStyle;
+        }
+      });
+    }
+
+    // Columns widths
+    ws['!cols'] = [
+      { wch: 20 }, // Project
+      { wch: 22 }, // Category
+      { wch: 18 }, // Amount
+      { wch: 15 }, // Date
+      { wch: 45 }  // Description
+    ];
+
+    // Create workbook & write
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "تحليل بنود التكلفة");
+    XLSX.writeFile(wb, `تحليل_وتصنيف_المصروفات_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Overview stats panel */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-lg relative overflow-hidden">
+          <div className="absolute right-0 top-0 h-full w-1.5 bg-indigo-500" />
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">إجمالي المصروفات المحللة</span>
+              <span className="text-2xl font-black text-white block font-mono">
+                {totalFilteredAmount.toLocaleString('en-US')} <span className="text-xs text-indigo-400">EGP</span>
+              </span>
+            </div>
+            <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400 border border-indigo-500/15">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-500 font-bold mt-3.5 flex items-center gap-1.5">
+            <span>نشط لعدد {filteredEntries.length} قيد مستهدف بالتصفية</span>
+          </div>
+        </div>
+
+        <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-lg relative overflow-hidden">
+          <div className="absolute right-0 top-0 h-full w-1.5 bg-emerald-500" />
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">بنود التصنيف المعتمدة</span>
+              <span className="text-2xl font-black text-white block font-mono">
+                {categories.length} <span className="text-xs text-emerald-400">بند</span>
+              </span>
+            </div>
+            <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400 border border-emerald-500/15">
+              <Tag className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-500 font-bold mt-3.5 flex justify-between items-center">
+            <span>توزيع تصنيف مرن حسب البند المخصص</span>
+            <button 
+              onClick={() => setShowAddCategoryModal(true)}
+              className="text-xs text-indigo-400 hover:text-indigo-300 font-extrabold cursor-pointer flex items-center gap-0.5"
+            >
+              <Plus className="w-3 h-3" /> بند جديد
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-lg relative overflow-hidden">
+          <div className="absolute right-0 top-0 h-full w-1.5 bg-amber-500" />
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">أعلى بند صرف حالياً</span>
+              <span className="text-xl font-bold text-white block truncate max-w-[200px]">
+                {categoryChartData[0]?.name || 'لا يوجد'}
+              </span>
+            </div>
+            <div className="p-2 bg-amber-500/10 rounded-xl text-amber-400 border border-amber-500/15">
+              <PieIcon className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-500 font-bold mt-3.5 flex items-center gap-1">
+            <span>يمثل قيمة صرف تبلغ {(categoryChartData[0]?.value || 0).toLocaleString()} EGP ({categoryChartData[0]?.percentage || 0}%)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Form & Custom Category Modal Container */}
+      {showAddCategoryModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form 
+            onSubmit={handleAddCategory}
+            className="bg-[#111827] border border-slate-800 p-6 rounded-2xl max-w-md w-full space-y-4 text-right"
+            dir="rtl"
+          >
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Tag className="text-indigo-400 w-4 h-4" />
+              <span>إضافة بند تحليل ومصروف مخصص</span>
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              تتيح لك هذه الميزة إدخال بنود تحليلية جديدة تماماً غير البنود الافتراضية (مثل مواد تشغيل، بوفيه، إلخ) لمواءمة طبيعة الصرف مستقبلاً.
+            </p>
+
+            <div>
+              <label className="text-xs text-slate-400 font-bold block mb-1">اسم بند المصروف والتحليل الجديد:</label>
+              <input
+                type="text"
+                required
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="مثال: انتقالات ومواصلات، أجور حفر..."
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="flex gap-2.5 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAddCategoryModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>إضافة بند التصنيف</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Input Entry Form */}
+      <div id="cost-entry-form" className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md space-y-4">
+        <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+          <div className="w-6 h-6 rounded-lg bg-indigo-500/15 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+            <Sparkles className="w-3.5 h-3.5" />
+          </div>
+          <span>{editingId ? 'تعديل قيد تصنيف وتحليل المصروفات' : 'قيد وتصنيف مصروف جديد من عهدة المهندس'}</span>
+        </h3>
+
+        <form onSubmit={handleSubmitEntry} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="text-xs text-slate-400 font-bold block mb-1">المشروع المستهدف</label>
+            <select
+              value={selectedProject}
+              onChange={(e) => setSelectedProject(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+            >
+              {projectsList.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs text-slate-400 font-bold block">بند تصنيف التكلفة</label>
+              <button 
+                type="button" 
+                onClick={() => setShowAddCategoryModal(true)} 
+                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
+              >
+                + بند جديد
+              </button>
+            </div>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+            >
+              {categories.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-400 font-bold block mb-1">المبلغ المصروف (EGP)</label>
+            <input
+              type="number"
+              required
+              step="any"
+              placeholder="مثال: 4500"
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-400 font-bold block mb-1">تاريخ الصرف</label>
+            <input
+              type="date"
+              required
+              value={dateInput}
+              onChange={(e) => setDateInput(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+            />
+          </div>
+
+          <div className="md:col-span-4">
+            <label className="text-xs text-slate-400 font-bold block mb-1">الوصف التفصيلي والبيان (شرح الصرف والعهد)</label>
+            <textarea
+              required
+              placeholder="اكتب شرحاً وافياً لبند المصروف والجهة التي صرف لها..."
+              value={descriptionInput}
+              onChange={(e) => setDescriptionInput(e.target.value)}
+              rows={2}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="md:col-span-4 flex justify-end gap-2 pt-2 border-t border-slate-800/60">
+            {editingId && (
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                إلغاء التعديل
+              </button>
+            )}
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{editingId ? 'حفظ تعديلات البند' : 'إضافة بند التحليل إلى السجل'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Charts & Interactive Dashboards */}
+      {entries.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Category spending distribution chart */}
+          <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md flex flex-col space-y-4">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800/60 pb-3">
+              <PieIcon className="text-indigo-400 w-4 h-4" />
+              <span>توزيع نسب بنود التكلفة (مخطط دائري)</span>
+            </h3>
+
+            {categoryChartData.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-10">
+                <span className="text-xs">لا توجد بيانات كافية للرسم البياني</span>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-[280px] grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div className="h-[240px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categoryChartData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        outerRadius={75}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {categoryChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value: any) => [`${parseFloat(value).toLocaleString()} EGP`, 'القيمة']}
+                        contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', color: '#fff', textAlign: 'right' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="space-y-2 text-right">
+                  <h4 className="text-[11px] font-extrabold text-slate-400 border-b border-slate-850 pb-1">النسب المئوية لكل بند:</h4>
+                  <div className="max-h-[180px] overflow-y-auto space-y-2.5 pr-1">
+                    {categoryChartData.map((item, index) => (
+                      <div key={item.name} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-2.5 h-2.5 rounded-full shrink-0" 
+                            style={{ backgroundColor: COLORS[index % COLORS.length] }} 
+                          />
+                          <span className="text-slate-300 font-bold truncate max-w-[110px]">{item.name}</span>
+                        </div>
+                        <span className="font-mono font-bold text-white">
+                          {item.percentage}% <span className="text-[9px] text-slate-500">({item.value.toLocaleString()} EGP)</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Project spending bar chart */}
+          <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md flex flex-col space-y-4">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800/60 pb-3">
+              <Folder className="text-indigo-400 w-4 h-4" />
+              <span>تحليل مصروفات بنود التكلفة حسب المشاريع</span>
+            </h3>
+
+            {projectChartData.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-10">
+                <span className="text-xs">لا توجد بيانات مصروفات حسب المشاريع</span>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-[280px] flex flex-col justify-center">
+                <div className="h-[240px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={projectChartData}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
+                      <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
+                      <Tooltip 
+                        formatter={(value: any) => [`${parseFloat(value).toLocaleString()} EGP`, 'إجمالي الصرف']}
+                        contentStyle={{ backgroundColor: '#111827', borderColor: '#334155', borderRadius: '12px', color: '#fff', textAlign: 'right' }}
+                      />
+                      <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]}>
+                        {projectChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Filtering & Table Panel */}
+      <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md space-y-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800/60 pb-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Grid className="text-indigo-400 w-4 h-4" />
+            <span>سجل بنود المصروفات المحللة والمصنفة</span>
+          </h3>
+
+          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+            <button
+              onClick={handleExportExcel}
+              className="px-3.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-xl text-xs font-bold border border-emerald-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>تصدير التحليل المنسق لشيت Excel 📊</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filter controls */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/40 p-4 rounded-xl border border-slate-800/60">
+          <div>
+            <label className="text-[10px] text-slate-400 font-bold block mb-1">تصفية حسب المشروع:</label>
+            <select
+              value={filterProject}
+              onChange={(e) => setFilterProject(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              <option value="all">كل المشاريع</option>
+              {projectsList.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] text-slate-400 font-bold block mb-1">تصفية حسب بند التكلفة:</label>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              <option value="all">كل بنود التكلفة</option>
+              {categories.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] text-slate-400 font-bold block mb-1">بحث نصي في البيان:</label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="ابحث هنا عن شرح المصروف..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg pl-3 pr-8 py-1.5 text-xs outline-none focus:border-indigo-500"
+              />
+              <Filter className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-2.5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Categories management quick rails */}
+        <div className="flex flex-wrap gap-2 items-center text-xs">
+          <span className="text-slate-400 font-bold">إدارة بنود التحليل المستهدفة:</span>
+          {categories.map(cat => (
+            <div 
+              key={cat} 
+              className="px-2 py-1 bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-lg flex items-center gap-1.5 group transition-all"
+            >
+              <span>{cat}</span>
+              {/* Do not allow deleting system default categories easily or allow it with a click */}
+              {categories.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteCategory(cat)}
+                  className="text-slate-500 hover:text-red-400 rounded-md p-0.5 group-hover:opacity-100 cursor-pointer"
+                  title="حذف هذا البند"
+                >
+                  <Trash2 className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
+          ))}
+          <button 
+            onClick={() => setShowAddCategoryModal(true)}
+            className="px-2 py-1 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/20 text-indigo-400 rounded-lg flex items-center gap-1 cursor-pointer font-bold"
+          >
+            <Plus className="w-3 h-3" /> إضافة بند جديد
+          </button>
+        </div>
+
+        {/* Data table */}
+        <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-900/10">
+          <table className="w-full text-right text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-900/40 select-none">
+                <th className="py-3 px-4">المشروع</th>
+                <th className="py-3 px-4">بند تصنيف المصروف</th>
+                <th className="py-3 px-4 text-left">المبلغ المصروف</th>
+                <th className="py-3 px-4">التاريخ</th>
+                <th className="py-3 px-4">شرح والبيان التفصيلي للعهدة والمشروع</th>
+                <th className="py-3 px-4 text-center">خيارات التحكم</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-850">
+              {filteredEntries.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-slate-500 font-bold">
+                    لا توجد بنود مصروفات مقيدة مطابقة لخيارات التصفية الحالية.
+                  </td>
+                </tr>
+              ) : (
+                filteredEntries.map(item => (
+                  <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-3 px-4 font-bold text-white">{item.project}</td>
+                    <td className="py-3 px-4">
+                      <span className="px-2.5 py-1 bg-slate-800 border border-slate-700 text-slate-300 rounded-lg text-[10px] font-extrabold">
+                        {item.category}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-mono font-extrabold text-emerald-400 text-left">
+                      {item.amount.toLocaleString()} <span className="text-[9px] text-slate-500">EGP</span>
+                    </td>
+                    <td className="py-3 px-4 font-mono text-slate-400">{item.date}</td>
+                    <td className="py-3 px-4 text-slate-300 leading-relaxed max-w-xs truncate" title={item.description}>
+                      {item.description}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex justify-center gap-1.5">
+                        <button
+                          onClick={() => handleStartEdit(item)}
+                          className="px-2.5 py-1 text-slate-400 hover:text-white hover:bg-slate-800 border border-transparent hover:border-slate-750 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                        >
+                          تعديل
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEntry(item.id)}
+                          className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
+                          title="حذف بند التحليل"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {filteredEntries.length > 0 && (
+              <tfoot>
+                <tr className="bg-slate-900/50 border-t border-slate-800 text-white font-extrabold">
+                  <td className="py-3.5 px-4" colSpan={2}>إجمالي المصروفات المحللة المعروضة:</td>
+                  <td className="py-3.5 px-4 text-left font-mono text-emerald-400 text-sm">
+                    {totalFilteredAmount.toLocaleString()} <span className="text-xs">EGP</span>
+                  </td>
+                  <td className="py-3.5 px-4" colSpan={3}></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
