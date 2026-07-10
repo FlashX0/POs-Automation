@@ -454,7 +454,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                         {/* Allowed Departments badges */}
                         <td className="py-4 px-6 align-middle text-right">
                           <div className="flex flex-wrap gap-1 justify-end max-w-xs">
-                            {(user.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).map((dep) => {
+                            {(user.allowed_departments || []).map((dep) => {
                               let label = "";
                               let colorClass = "";
                               if (dep === "procurement") {
@@ -513,7 +513,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                                 setEditUserName(user.name);
                                 setEditPassword('');
                                 setEditError('');
-                                setEditUserDepartments(user.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']);
+                                setEditUserDepartments(user.allowed_departments || []);
                                 setEditModalOpen(true);
                               }}
                               className="bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-slate-950 px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-black flex items-center gap-1.5 border border-amber-500/20 shadow-md shadow-amber-500/5"

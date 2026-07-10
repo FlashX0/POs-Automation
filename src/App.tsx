@@ -913,7 +913,7 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser) {
-      const allowed = currentUser.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'];
+      const allowed = currentUser.allowed_departments || [];
       if (!allowed.includes(selectedDepartment)) {
         if (allowed.includes('procurement')) {
           setSelectedDepartment('procurement');
@@ -4665,7 +4665,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1">
                           {/* Department 1: Procurement */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('procurement') && (
+                          {(currentUser?.allowed_departments || []).includes('procurement') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('procurement');
@@ -4688,7 +4688,7 @@ export default function App() {
                           )}
 
                           {/* Department 2: Petty Cash */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('petty_cash') && (
+                          {(currentUser?.allowed_departments || []).includes('petty_cash') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('petty_cash');
@@ -4711,7 +4711,7 @@ export default function App() {
                           )}
 
                           {/* Department 3: Subcontractors */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('subcontractors') && (
+                          {(currentUser?.allowed_departments || []).includes('subcontractors') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('subcontractors');
@@ -4734,7 +4734,7 @@ export default function App() {
                           )}
 
                           {/* Department 4: Labor Timesheet */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('labor_timesheet') && (
+                          {(currentUser?.allowed_departments || []).includes('labor_timesheet') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('labor_timesheet');
@@ -4757,7 +4757,7 @@ export default function App() {
                           )}
 
                           {/* Department 5: Cost Analysis */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('cost_analysis') && (
+                          {(currentUser?.allowed_departments || []).includes('cost_analysis') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('cost_analysis');
@@ -4780,7 +4780,7 @@ export default function App() {
                           )}
 
                           {/* Department 6: Engineer Management */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('engineers') && (
+                          {(currentUser?.allowed_departments || []).includes('engineers') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('engineers');
