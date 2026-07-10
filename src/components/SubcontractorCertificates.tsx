@@ -43,6 +43,7 @@ interface SubcontractorCertificatesProps {
   archives?: any[];
   onUpdateArchives?: (updatedArchives: any[]) => void;
   onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
+  engineers?: any[];
 }
 
 export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps> = ({
@@ -52,6 +53,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   archives = [],
   onUpdateArchives,
   onNotify,
+  engineers = [],
 }) => {
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
@@ -134,7 +136,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   const [newSub, setNewSub] = useState<string>('');
   const [newProj, setNewProj] = useState<string>('');
   const [newStatementNo, setNewStatementNo] = useState<string>('01');
-  const [newSupervisor, setNewSupervisor] = useState<string>('م. محمد حمدي');
+  const [newSupervisor, setNewSupervisor] = useState<string>('');
   const [newAccountant, setNewAccountant] = useState<string>('أ. محمد إبراهيم');
   const [newPrevBalance, setNewPrevBalance] = useState<string>('0');
 
@@ -377,7 +379,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
     const rows: any[][] = [];
 
     // Title Row
-    rows.push(["مستخلص مقاولي الباطن (Subcontractor Progress Certificate)", "", "", "", "", "", "", "", "", "", "", "", ""]);
+    rows.push(["كشف مستخلص مقاول الباطن (Subcontractor Progress Certificate)", "", "", "", "", "", "", "", "", "", "", "", ""]);
     rows.push(["", "", "", "", "", "", "", "", "", "", "", "", ""]); // divider
 
     // Contract Meta Row 1
@@ -761,7 +763,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   }, [archives, contracts]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print:hidden">
       <div className="no-print space-y-6">
         {/* Department Top Tab Switches */}
       <div className="flex border-b border-slate-800 gap-2">
@@ -927,12 +929,18 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 
               <div>
                 <label className="text-xs text-slate-400 font-bold block mb-1">المهندس المشرف</label>
-                <input
-                  type="text"
+                <select
                   value={newSupervisor}
                   onChange={(e) => setNewSupervisor(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-amber-500"
-                />
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-amber-500 cursor-pointer font-bold"
+                >
+                  <option value="">-- اختر المهندس المشرف --</option>
+                  {engineers.map(eng => (
+                    <option key={eng.id} value={eng.name}>{eng.name}</option>
+                  ))}
+                  <option value="م. محمد حمدي">م. محمد حمدي (افتراضي)</option>
+                </select>
               </div>
 
               <div>
@@ -1449,7 +1457,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
             
             {/* Header / Title Banner */}
             <div className="text-center pb-4 border-b-2 border-dashed border-[#4F81BD]">
-              <h2 className="text-2xl font-black text-[#1F4E78]">مستخلص مقاولي الباطن (دفعة جاري الأعمال)</h2>
+              <h2 className="text-2xl font-black text-[#1F4E78]">كشف مستخلص مقاول الباطن (دفعة جاري الأعمال)</h2>
               <p className="text-sm font-bold text-slate-700 mt-1">المستخرج الرسمي المعتمد من النظام المالي</p>
             </div>
 

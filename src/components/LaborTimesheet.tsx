@@ -937,7 +937,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   }, [archives, timesheets]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print:hidden">
       {/* Navigation Department Tabs */}
       <div className="flex border-b border-slate-800 gap-2">
         <button
@@ -1295,39 +1295,50 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-800/60 pt-3 space-y-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-400">الرصيد المتبقي المرحل سابقاً:</span>
-                        <span className="font-extrabold text-white font-mono">{selectedSheet.previousRemaining.toLocaleString()} EGP</span>
+                    <div className="border-t border-slate-800/60 pt-3 space-y-3">
+                      <span className="text-xs font-extrabold text-indigo-400 block mb-1">مطابقة الحسابات المالية التراكمية</span>
+                      <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
+                        <table className="w-full text-right text-xs">
+                          <thead>
+                            <tr className="bg-slate-900 border-b border-slate-800 text-slate-400 text-[10px] font-bold">
+                              <th className="p-2.5 text-right">البيان المالي</th>
+                              <th className="p-2.5 text-left">القيمة (EGP)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="border-b border-slate-850 hover:bg-slate-900/10">
+                              <td className="p-2.5 text-slate-300 font-medium text-right">الرصيد المتبقي التراكمي السابق (المنقول)</td>
+                              <td className="p-2.5 text-left font-mono font-bold text-rose-400">{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
+                            </tr>
+                            <tr className="border-b border-slate-850 hover:bg-slate-900/10">
+                              <td className="p-2.5 text-slate-300 font-medium text-right">إجمالي مستحقات الأسبوع الحالي</td>
+                              <td className="p-2.5 text-left font-mono font-bold text-indigo-400">+{computedSums.weeklyTotal.toLocaleString()} EGP</td>
+                            </tr>
+                            <tr className="border-b border-slate-850 bg-slate-900/30">
+                              <td className="p-2.5 text-indigo-300 font-bold text-right">المجموع التراكمي المستحق (الإجمالي الكلي)</td>
+                              <td className="p-2.5 text-left font-mono font-extrabold text-amber-400">{computedSums.overallTotal.toLocaleString()} EGP</td>
+                            </tr>
+                            <tr className="border-b border-slate-850">
+                              <td className="p-2.5 text-slate-300 font-medium text-right">
+                                <label className="text-[10px] text-slate-400 font-bold block mb-1">المسدد الحالي (المبلغ المدفوع حالياً) *</label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={selectedSheet.currentPaid}
+                                    onChange={(e) => handleMetaFieldChange('currentPaid', e.target.value)}
+                                    className="w-28 bg-slate-900 border border-slate-700 text-white rounded-lg px-2 py-1 text-[10px] font-bold font-mono outline-none focus:border-indigo-500 text-left"
+                                  />
+                                </div>
+                              </td>
+                              <td className="p-2.5 text-left font-mono font-bold text-rose-500 align-middle">-{selectedSheet.currentPaid.toLocaleString()} EGP</td>
+                            </tr>
+                            <tr className="bg-[#10b981]/15 text-emerald-400">
+                              <td className="p-2.5 font-extrabold text-right">الرصيد المتبقي الكلي الجديد (الصافي)</td>
+                              <td className="p-2.5 text-left font-mono font-black text-sm">{computedSums.remainingBalance.toLocaleString()} EGP</td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-400">إجمالي هذا الكشف الأسبوعي:</span>
-                        <span className="font-extrabold text-indigo-400 font-mono">+{computedSums.weeklyTotal.toLocaleString()} EGP</span>
-                      </div>
-                      <div className="flex justify-between text-xs border-t border-slate-850 pt-2">
-                        <span className="text-slate-400">المجموع التراكمي المستحق:</span>
-                        <span className="font-extrabold text-amber-400 font-mono">{computedSums.overallTotal.toLocaleString()} EGP</span>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-slate-800/60 pt-3">
-                      <label className="text-[10px] text-slate-400 font-bold block mb-1">المسدد الحالي من هذا الكشف (دفعة):</label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          value={selectedSheet.currentPaid}
-                          onChange={(e) => handleMetaFieldChange('currentPaid', e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl pl-12 pr-3 py-2 text-xs font-bold font-mono outline-none focus:border-indigo-500 text-left"
-                        />
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500">EGP</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-[#1e1b4b]/40 border border-indigo-900/60 p-3 rounded-xl flex justify-between items-center text-xs">
-                      <span className="text-indigo-300 font-bold">الصافي المتبقي للعمل:</span>
-                      <span className="font-black text-emerald-400 text-sm font-mono">
-                        {computedSums.remainingBalance.toLocaleString()} EGP
-                      </span>
                     </div>
 
                   </div>
@@ -1829,6 +1840,47 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                         {(computedSums.projectSums[p]?.totalSohraVal || 0).toLocaleString()} EGP
                       </td>
                     ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Cumulative Financials Table Box */}
+            <div className="border-2 border-dashed border-[#4F81BD] rounded-xl p-4 bg-white space-y-2 break-inside-avoid">
+              <h3 className="text-xs font-black text-[#1F4E78] text-right mb-2">جدول مطابقة الحسابات المالية التراكمية (Cumulative Balance Sheet)</h3>
+              <table className="w-full text-center border border-[#4F81BD] border-collapse text-xs">
+                <thead>
+                  <tr className="bg-[#D9E1F2] text-[#1F4E78] font-bold border-b border-[#4F81BD]">
+                    <th className="py-2 border-r border-[#4F81BD] text-center">البند المالي</th>
+                    <th className="py-2 border-r border-[#4F81BD] text-center">المعادلة المحاسبية</th>
+                    <th className="py-2 text-center">القيمة (EGP)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-[#4F81BD] hover:bg-slate-50">
+                    <td className="py-2 border-r border-[#4F81BD] font-bold text-slate-700 text-center">الرصيد المتبقي التراكمي السابق (المنقول)</td>
+                    <td className="py-2 border-r border-[#4F81BD] text-slate-500 font-mono text-center">الرصيد المتبقي المرحل سابقاً</td>
+                    <td className="py-2 font-black text-rose-700 font-mono text-center">{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
+                  </tr>
+                  <tr className="border-b border-[#4F81BD] hover:bg-slate-50">
+                    <td className="py-2 border-r border-[#4F81BD] font-bold text-slate-700 text-center">إجمالي مستحقات الأسبوع الحالي</td>
+                    <td className="py-2 border-r border-[#4F81BD] text-slate-500 font-mono text-center">+ إجمالي الاستحقاق الأسبوعي</td>
+                    <td className="py-2 font-black text-indigo-700 font-mono text-center">+{computedSums.weeklyTotal.toLocaleString()} EGP</td>
+                  </tr>
+                  <tr className="border-b border-[#4F81BD] hover:bg-slate-50 bg-[#F9FBFD]">
+                    <td className="py-2 border-r border-[#4F81BD] font-bold text-[#1F4E78] text-center">المجموع التراكمي المستحق (الإجمالي الكلي)</td>
+                    <td className="py-2 border-r border-[#4F81BD] text-slate-500 font-mono text-center">الرصيد السابق + الاستحقاق الحالي</td>
+                    <td className="py-2 font-black text-[#1F4E78] font-mono text-center">{computedSums.overallTotal.toLocaleString()} EGP</td>
+                  </tr>
+                  <tr className="border-b border-[#4F81BD] hover:bg-slate-50">
+                    <td className="py-2 border-r border-[#4F81BD] font-bold text-slate-700 text-center">المسدد الجديد (المبلغ المدفوع حالياً)</td>
+                    <td className="py-2 border-r border-[#4F81BD] text-slate-500 font-mono text-center">- المسدد الحالي من هذا الكشف</td>
+                    <td className="py-2 font-black text-rose-600 font-mono text-center">-{selectedSheet.currentPaid.toLocaleString()} EGP</td>
+                  </tr>
+                  <tr className="bg-[#E2EFDA] text-[#375623]">
+                    <td className="py-2.5 border-r border-[#4F81BD] font-black text-center">الرصيد المتبقي الكلي الجديد (الصافي)</td>
+                    <td className="py-2.5 border-r border-[#4F81BD] font-bold text-center">المجموع الكلي - المسدد حالياً</td>
+                    <td className="py-2.5 font-black font-mono text-base text-center">{computedSums.remainingBalance.toLocaleString()} EGP</td>
                   </tr>
                 </tbody>
               </table>

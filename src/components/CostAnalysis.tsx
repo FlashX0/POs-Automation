@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -36,6 +36,7 @@ interface CostEntry {
   amount: number;
   date: string;
   description: string;
+  engineer?: string;
 }
 
 interface CostAnalysisProps {
@@ -43,13 +44,17 @@ interface CostAnalysisProps {
   entries: CostEntry[];
   categories: string[];
   onSave: (updatedEntries: CostEntry[], updatedCategories: string[]) => void;
+  engineers?: { id: string; name: string; project: string }[];
+  onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
 }
 
 export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   projectsList,
   entries,
   categories,
-  onSave
+  onSave,
+  engineers = [],
+  onNotify
 }) => {
   // Input Form States
   const [selectedProject, setSelectedProject] = useState<string>(projectsList[0] || 'الساحل');
@@ -57,6 +62,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   const [amountInput, setAmountInput] = useState<string>('');
   const [dateInput, setDateInput] = useState<string>(new Date().toISOString().split('T')[0]);
   const [descriptionInput, setDescriptionInput] = useState<string>('');
+  const [selectedEngineer, setSelectedEngineer] = useState<string>('');
 
   // Add Custom Category State
   const [newCategoryName, setNewCategoryName] = useState<string>('');
@@ -65,10 +71,163 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   // Filter States
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterEngineer, setFilterEngineer] = useState<string>('all');
+  const [filterMonthYear, setFilterMonthYear] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // AI aggregation state
+  const [isAggregating, setIsAggregating] = useState<boolean>(false);
+
+  // --- New AI Monthly Engineer Cost Aggregation states ---
+  const [targetEngineer, setTargetEngineer] = useState<string>('');
+  const [targetMonth, setTargetMonth] = useState<string>(new Date().toISOString().substring(0, 7));
+  const [isEngineerAggregating, setIsEngineerAggregating] = useState<boolean>(false);
+  const [archiveUrl, setArchiveUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (engineers.length > 0 && !targetEngineer) {
+      setTargetEngineer(engineers[0].name);
+    }
+  }, [engineers, targetEngineer]);
+
+  const handleEngineerAiAggregate = async () => {
+    if (!targetEngineer) {
+      alert('الرجاء اختيار المهندس المستهدف أولاً.');
+      return;
+    }
+    if (!targetMonth) {
+      alert('الرجاء اختيار الشهر المستهدف للتحليل.');
+      return;
+    }
+
+    const confirmAgg = window.confirm(
+      `هل ترغب في تشغيل التحليل المالي الذكي لعهد ومصروفات المهندس (${targetEngineer}) لشهر (${targetMonth})؟ سيقوم النظام بتجميع البنود وحفظ التقرير تلقائياً بالأرشيف في مجلده.`
+    );
+    if (!confirmAgg) return;
+
+    setIsEngineerAggregating(true);
+    setArchiveUrl('');
+    if (onNotify) {
+      onNotify('info', 'جاري تحليل عهدة المهندس بالذكاء الاصطناعي 🤖', `يتم فحص وتجميع كافة المصروفات اليومية للمهندس ${targetEngineer} لشهر ${targetMonth}...`);
+    }
+
+    try {
+      const res = await fetch('/api/ai/aggregate-engineer-costs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engineerName: targetEngineer, month: targetMonth })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.noData) {
+          if (onNotify) {
+            onNotify('warning', 'تنبيه', data.message);
+          } else {
+            alert(data.message);
+          }
+          return;
+        }
+
+        if (onNotify) {
+          onNotify('success', 'اكتمل التحليل الذكي وحفظ الأرشيف بنجاح 🎉', data.message);
+        } else {
+          alert(data.message);
+        }
+
+        if (data.archivePath) {
+          setArchiveUrl(data.archivePath);
+        }
+
+        if (data.addedEntries && data.addedEntries.length > 0) {
+          // Replace any previous entries of this engineer and month with the new ones, then save
+          const filtered = entries.filter(
+            (entry) => !(entry.engineer && entry.engineer.trim().toLowerCase() === targetEngineer.trim().toLowerCase() && entry.date && entry.date.startsWith(targetMonth))
+          );
+          onSave([...data.addedEntries, ...filtered], categories);
+        }
+      } else {
+        if (onNotify) {
+          onNotify('error', 'فشل تحليل عهدة المهندس', data.error || 'حدث خطأ غير متوقع أثناء المعالجة.');
+        } else {
+          alert(data.error || 'حدث خطأ في التحليل.');
+        }
+      }
+    } catch (err: any) {
+      console.error('Engineer AI cost aggregation error:', err);
+      if (onNotify) {
+        onNotify('error', 'فشل الاتصال بالخادم', err.message || 'خطأ في الشبكة.');
+      } else {
+        alert('فشل الاتصال بالخادم: ' + err.message);
+      }
+    } finally {
+      setIsEngineerAggregating(false);
+    }
+  };
+
+  // Extract unique months (YYYY-MM) from entries for filter
+  const uniqueMonths = useMemo(() => {
+    const set = new Set<string>();
+    entries.forEach(item => {
+      if (item.date) {
+        const ym = item.date.substring(0, 7); // YYYY-MM
+        if (ym && ym.length === 7) {
+          set.add(ym);
+        }
+      }
+    });
+    return Array.from(set).sort().reverse();
+  }, [entries]);
+
+  // Handle AI Aggregate from petty cash Box Days
+  const handleAiAggregate = async () => {
+    const confirmAgg = window.confirm(
+      'هل ترغب في تشغيل التجميع التراكمي الذكي بالذكاء الاصطناعي؟ سيقوم النظام بتحليل كافة عهد ومصروفات المهندسين غير المجمعة مسبقاً وتصنيفها وإضافتها لبنود التكاليف تراكمياً بشكل فوري.'
+    );
+    if (!confirmAgg) return;
+
+    setIsAggregating(true);
+    if (onNotify) {
+      onNotify('info', 'جاري تشغيل التجميع التراكمي الذكي بالـ AI 🤖', 'يتم تحليل وتصنيف كافة المصروفات اليومية للعهد ودمجها تراكمياً...');
+    }
+
+    try {
+      const res = await fetch('/api/ai/aggregate-costs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (onNotify) {
+          onNotify('success', 'نجح التجميع التراكمي بالذكاء الاصطناعي 🎉', data.message);
+        } else {
+          alert(data.message);
+        }
+        if (data.addedEntries && data.addedEntries.length > 0) {
+          onSave([...data.addedEntries, ...entries], categories);
+        } else {
+          onSave(entries, categories);
+        }
+      } else {
+        if (onNotify) {
+          onNotify('error', 'فشل تجميع المصروفات', data.error || 'حدث خطأ غير متوقع أثناء معالجة البيانات.');
+        } else {
+          alert(data.error || 'حدث خطأ في التجميع.');
+        }
+      }
+    } catch (err: any) {
+      console.error('AI Cost aggregation error:', err);
+      if (onNotify) {
+        onNotify('error', 'فشل الاتصال بالخادم', err.message || 'خطأ في الشبكة.');
+      } else {
+        alert('فشل الاتصال بالخادم: ' + err.message);
+      }
+    } finally {
+      setIsAggregating(false);
+    }
+  };
 
   // Handle addition of a new category
   const handleAddCategory = (e: React.FormEvent) => {
@@ -122,7 +281,8 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             category: selectedCategory,
             amount: parsedAmount,
             date: dateInput,
-            description: descriptionInput.trim()
+            description: descriptionInput.trim(),
+            engineer: selectedEngineer || undefined
           };
         }
         return item;
@@ -137,7 +297,8 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
         category: selectedCategory,
         amount: parsedAmount,
         date: dateInput,
-        description: descriptionInput.trim()
+        description: descriptionInput.trim(),
+        engineer: selectedEngineer || undefined
       };
       onSave([newEntry, ...entries], categories);
     }
@@ -145,6 +306,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
     // Reset inputs
     setAmountInput('');
     setDescriptionInput('');
+    setSelectedEngineer('');
   };
 
   // Start editing an entry
@@ -155,6 +317,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
     setAmountInput(entry.amount.toString());
     setDateInput(entry.date);
     setDescriptionInput(entry.description);
+    setSelectedEngineer(entry.engineer || '');
     // Scroll smoothly to form
     const formElement = document.getElementById('cost-entry-form');
     if (formElement) {
@@ -167,6 +330,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
     setEditingId(null);
     setAmountInput('');
     setDescriptionInput('');
+    setSelectedEngineer('');
   };
 
   // Delete cost entry
@@ -182,13 +346,22 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
     return entries.filter(item => {
       const matchProject = filterProject === 'all' || item.project === filterProject;
       const matchCategory = filterCategory === 'all' || item.category === filterCategory;
+      const matchEngineer = filterEngineer === 'all' || item.engineer === filterEngineer;
+      
+      let matchMonthYear = true;
+      if (filterMonthYear !== 'all') {
+        const itemYM = item.date ? item.date.substring(0, 7) : '';
+        matchMonthYear = itemYM === filterMonthYear;
+      }
+
       const matchSearch = !searchTerm.trim() || 
         item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.project.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.category.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchProject && matchCategory && matchSearch;
+        item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.engineer && item.engineer.toLowerCase().includes(searchTerm.toLowerCase()));
+      return matchProject && matchCategory && matchEngineer && matchMonthYear && matchSearch;
     });
-  }, [entries, filterProject, filterCategory, searchTerm]);
+  }, [entries, filterProject, filterCategory, filterEngineer, filterMonthYear, searchTerm]);
 
   // Total cost computed from active filtered list
   const totalFilteredAmount = useMemo(() => {
@@ -356,6 +529,77 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* AI Monthly Engineer Cost Aggregation Action Panel */}
+      <div className="bg-[#111827] border border-amber-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden">
+        <div className="absolute right-0 top-0 h-full w-1.5 bg-gradient-to-b from-indigo-500 to-amber-500" />
+        
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-2xl">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>تجميع وتحليل عهدة مهندس شهرية بالذكاء الاصطناعي 🤖</span>
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              اختر المهندس والشهر المستهدف، وسيقوم نظام الذكاء الاصطناعي بجلب كافة مصروفات العهدة المعتمدة وتصنيفها آلياً إلى بنود التكلفة (بوفيه، مواد بناء، عمالة...)، مع حفظ ملف Excel منظم ومطابق لمعايير الطباعة تلقائياً في الأرشيف التاريخي لمجلد المهندس على السيرفر.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800/80 w-full lg:w-auto shrink-0">
+            <div className="min-w-[150px]">
+              <label className="text-[10px] text-slate-400 font-bold block mb-1">المهندس المسؤول:</label>
+              <select
+                value={targetEngineer}
+                onChange={(e) => setTargetEngineer(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+              >
+                <option value="">-- اختر مهندس --</option>
+                {engineers.map((eng) => (
+                  <option key={eng.id} value={eng.name}>
+                    {eng.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-slate-400 font-bold block mb-1">الشهر المستهدف:</label>
+              <input
+                type="month"
+                value={targetMonth}
+                onChange={(e) => setTargetMonth(e.target.value)}
+                className="bg-slate-950 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+              />
+            </div>
+
+            <button
+              onClick={handleEngineerAiAggregate}
+              disabled={isEngineerAggregating}
+              className="px-4 py-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>{isEngineerAggregating ? "جاري تجميع وتحليل البيانات..." : "بدء التحليل والأرشفة الـ AI 🤖"}</span>
+            </button>
+          </div>
+        </div>
+
+        {archiveUrl && (
+          <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-pulse">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="text-xs font-bold text-emerald-400">تم حفظ شيت Excel بنجاح بمجلد المهندس! يمكنك تحميله للطباعة الفورية:</span>
+            </div>
+            <a
+              href={`/api/documents/download?path=${encodeURIComponent(archiveUrl)}`}
+              className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-950/40"
+              download
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>تحميل شيت الأرشيف المعتمد 📊</span>
+            </a>
+          </div>
+        )}
+      </div>
+
       {/* Overview stats panel */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-lg relative overflow-hidden">
@@ -476,7 +720,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           <span>{editingId ? 'تعديل قيد تصنيف وتحليل المصروفات' : 'قيد وتصنيف مصروف جديد من عهدة المهندس'}</span>
         </h3>
 
-        <form onSubmit={handleSubmitEntry} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <form onSubmit={handleSubmitEntry} className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className="text-xs text-slate-400 font-bold block mb-1">المشروع المستهدف</label>
             <select
@@ -536,7 +780,21 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             />
           </div>
 
-          <div className="md:col-span-4">
+          <div>
+            <label className="text-xs text-slate-400 font-bold block mb-1">المهندس المسؤول</label>
+            <select
+              value={selectedEngineer}
+              onChange={(e) => setSelectedEngineer(e.target.value)}
+              className="w-full bg-[#1e293b] border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+            >
+              <option value="">-- غير محدد / عام --</option>
+              {engineers.map(eng => (
+                <option key={eng.id} value={eng.name}>{eng.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-5">
             <label className="text-xs text-slate-400 font-bold block mb-1">الوصف التفصيلي والبيان (شرح الصرف والعهد)</label>
             <textarea
               required
@@ -548,7 +806,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             />
           </div>
 
-          <div className="md:col-span-4 flex justify-end gap-2 pt-2 border-t border-slate-800/60">
+          <div className="md:col-span-5 flex justify-end gap-2 pt-2 border-t border-slate-800/60">
             {editingId && (
               <button
                 type="button"
@@ -682,6 +940,14 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
           <div className="flex flex-wrap gap-2 w-full md:w-auto">
             <button
+              onClick={handleAiAggregate}
+              disabled={isAggregating}
+              className="px-3.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-xl text-xs font-bold border border-indigo-500/25 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>{isAggregating ? 'جاري تجميع المصروفات...' : 'تجميع المصروفات بالذكاء الاصطناعي 🤖'}</span>
+            </button>
+            <button
               onClick={handleExportExcel}
               className="px-3.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-xl text-xs font-bold border border-emerald-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
             >
@@ -692,13 +958,13 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
         </div>
 
         {/* Filter controls */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/40 p-4 rounded-xl border border-slate-800/60">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 bg-slate-900/40 p-4 rounded-xl border border-slate-800/60">
           <div>
             <label className="text-[10px] text-slate-400 font-bold block mb-1">تصفية حسب المشروع:</label>
             <select
               value={filterProject}
               onChange={(e) => setFilterProject(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer"
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
             >
               <option value="all">كل المشاريع</option>
               {projectsList.map(p => (
@@ -712,7 +978,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer"
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
             >
               <option value="all">كل بنود التكلفة</option>
               {categories.map(c => (
@@ -722,11 +988,42 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           </div>
 
           <div>
-            <label className="text-[10px] text-slate-400 font-bold block mb-1">بحث نصي في البيان:</label>
+            <label className="text-[10px] text-slate-400 font-bold block mb-1">المهندس المسؤول:</label>
+            <select
+              value={filterEngineer}
+              onChange={(e) => setFilterEngineer(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+            >
+              <option value="all">كل المهندسين</option>
+              {engineers.map(eng => (
+                <option key={eng.id} value={eng.name}>{eng.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] text-slate-400 font-bold block mb-1">الشهر / السنة:</label>
+            <select
+              value={filterMonthYear}
+              onChange={(e) => setFilterMonthYear(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+            >
+              <option value="all">كل التواريخ</option>
+              {uniqueMonths.map(ym => {
+                const [year, month] = ym.split('-');
+                return (
+                  <option key={ym} value={ym}>{month} / {year}</option>
+                );
+              })}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] text-slate-400 font-bold block mb-1">بحث في البيان / المهندس:</label>
             <div className="relative">
               <input
                 type="text"
-                placeholder="ابحث هنا عن شرح المصروف..."
+                placeholder="ابحث هنا..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg pl-3 pr-8 py-1.5 text-xs outline-none focus:border-indigo-500"
@@ -773,6 +1070,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
               <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-900/40 select-none">
                 <th className="py-3 px-4">المشروع</th>
                 <th className="py-3 px-4">بند تصنيف المصروف</th>
+                <th className="py-3 px-4">المهندس المسؤول</th>
                 <th className="py-3 px-4 text-left">المبلغ المصروف</th>
                 <th className="py-3 px-4">التاريخ</th>
                 <th className="py-3 px-4">شرح والبيان التفصيلي للعهدة والمشروع</th>
@@ -782,7 +1080,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             <tbody className="divide-y divide-slate-850">
               {filteredEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500 font-bold">
+                  <td colSpan={7} className="py-12 text-center text-slate-500 font-bold">
                     لا توجد بنود مصروفات مقيدة مطابقة لخيارات التصفية الحالية.
                   </td>
                 </tr>
@@ -795,6 +1093,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
                         {item.category}
                       </span>
                     </td>
+                    <td className="py-3 px-4 font-bold text-indigo-300">{item.engineer || 'عام / إدارة'}</td>
                     <td className="py-3 px-4 font-mono font-extrabold text-emerald-400 text-left">
                       {item.amount.toLocaleString()} <span className="text-[9px] text-slate-500">EGP</span>
                     </td>
@@ -826,7 +1125,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             {filteredEntries.length > 0 && (
               <tfoot>
                 <tr className="bg-slate-900/50 border-t border-slate-800 text-white font-extrabold">
-                  <td className="py-3.5 px-4" colSpan={2}>إجمالي المصروفات المحللة المعروضة:</td>
+                  <td className="py-3.5 px-4" colSpan={3}>إجمالي المصروفات المحللة المعروضة:</td>
                   <td className="py-3.5 px-4 text-left font-mono text-emerald-400 text-sm">
                     {totalFilteredAmount.toLocaleString()} <span className="text-xs">EGP</span>
                   </td>

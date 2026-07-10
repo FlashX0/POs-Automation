@@ -45,7 +45,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'user'>('user');
-  const [newUserDepartments, setNewUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']);
+  const [newUserDepartments, setNewUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']);
   const [creatingUser, setCreatingUser] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -56,7 +56,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
   const [editUserNewEmail, setEditUserNewEmail] = useState('');
   const [editUserName, setEditUserName] = useState('');
   const [editPassword, setEditPassword] = useState('');
-  const [editUserDepartments, setEditUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']);
+  const [editUserDepartments, setEditUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']);
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState('');
 
@@ -119,7 +119,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
         setNewUserEmail('');
         setNewUserPassword('');
         setNewUserRole('user');
-        setNewUserDepartments(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']);
+        setNewUserDepartments(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']);
         setCreateModalOpen(false);
         fetchUsers();
         setTimeout(() => setSuccess(''), 4000);
@@ -454,7 +454,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                         {/* Allowed Departments badges */}
                         <td className="py-4 px-6 align-middle text-right">
                           <div className="flex flex-wrap gap-1 justify-end max-w-xs">
-                            {(user.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).map((dep) => {
+                            {(user.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).map((dep) => {
                               let label = "";
                               let colorClass = "";
                               if (dep === "procurement") {
@@ -472,6 +472,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                               } else if (dep === "cost_analysis") {
                                 label = "تحليل بنود المصروفات";
                                 colorClass = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+                              } else if (dep === "engineers") {
+                                label = "إدارة المهندسين";
+                                colorClass = "bg-violet-500/10 text-violet-400 border-violet-500/20";
                               }
                               if (!label) return null;
                               return (
@@ -510,7 +513,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                                 setEditUserName(user.name);
                                 setEditPassword('');
                                 setEditError('');
-                                setEditUserDepartments(user.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']);
+                                setEditUserDepartments(user.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']);
                                 setEditModalOpen(true);
                               }}
                               className="bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-slate-950 px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-black flex items-center gap-1.5 border border-amber-500/20 shadow-md shadow-amber-500/5"
@@ -692,6 +695,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                     />
                     <span>تحليل بنود المصروفات (Cost Analysis)</span>
                   </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={newUserDepartments.includes('engineers')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewUserDepartments([...newUserDepartments, 'engineers']);
+                        } else {
+                          setNewUserDepartments(newUserDepartments.filter(d => d !== 'engineers'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-sky-500 focus:ring-sky-500 h-4 w-4 bg-slate-900 accent-sky-500"
+                    />
+                    <span>لوحة إدارة المهندسين (Engineers CRUD)</span>
+                  </label>
                 </div>
               </div>
 
@@ -856,6 +875,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                       className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
                     />
                     <span>تحليل بنود المصروفات (Cost Analysis)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
+                    <input 
+                      type="checkbox"
+                      checked={editUserDepartments.includes('engineers')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditUserDepartments([...editUserDepartments, 'engineers']);
+                        } else {
+                          setEditUserDepartments(editUserDepartments.filter(d => d !== 'engineers'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
+                    />
+                    <span>لوحة إدارة المهندسين (Engineers CRUD)</span>
                   </label>
                 </div>
               </div>

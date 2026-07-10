@@ -8,6 +8,7 @@ import mongoose from "mongoose";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import bcrypt from "bcryptjs";
+import * as XLSX from "xlsx";
 
 // Load environment variables
 dotenv.config();
@@ -2060,7 +2061,7 @@ app.post("/api/ai/ocr", upload.single("file"), async (req, res) => {
  */
 app.post("/api/ai/organize-file", async (req, res) => {
   try {
-    const { tempPath, engineer, date, subcontractor, project, type } = req.body;
+    const { tempPath, engineer, date, subcontractor, project, type, metadata } = req.body;
     if (!tempPath) {
       return res.json({ success: true, path: "" }); // Non-blocking if no attachment uploaded
     }
@@ -2072,47 +2073,30 @@ app.post("/api/ai/organize-file", async (req, res) => {
 
     const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
     const filename = path.basename(absTempPath).replace(/^temp_\d+_/, "");
-    const dateStr = date || new Date().toISOString().split("T")[0];
+    
+    // Resolve date, year, month
+    const resolvedDate = date || (metadata && metadata.date) || new Date().toISOString().split("T")[0];
+    const dateStr = resolvedDate;
     const yearStr = dateStr.split("-")[0] || "2026";
     const monthStr = dateStr.split("-")[1] || "06";
 
-    let finalRelativePath = "";
-    let finalAbsPath = "";
+    // Resolve engineer name
+    const resolvedEngineer = engineer || (metadata && metadata.engineer) || (metadata && metadata.supervisor) || subcontractor || "عام";
+    const engName = sanitize(resolvedEngineer);
 
-    if (type === "petty_cash") {
-      const engName = sanitize(engineer || "عام");
-      const targetDir = path.join(ORGANIZED_DIR, "engineers_folders", engName, `${yearStr}-${monthStr}`);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      finalAbsPath = path.join(targetDir, filename);
-      fs.renameSync(absTempPath, finalAbsPath);
-      finalRelativePath = `/data/organized/engineers_folders/${engName}/${yearStr}-${monthStr}/${filename}`;
-    } else if (type === "subcontractor") {
-      const subName = sanitize(subcontractor || "عام");
-      const projName = sanitize(project || "عام");
-      const targetDir = path.join(ORGANIZED_DIR, "subcontractors_folders", subName, projName);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      finalAbsPath = path.join(targetDir, filename);
-      fs.renameSync(absTempPath, finalAbsPath);
-      finalRelativePath = `/data/organized/subcontractors_folders/${subName}/${projName}/${filename}`;
-    } else {
-      // labor
-      const workerName = sanitize(req.body.workerName || "عام");
-      const targetDir = path.join(ORGANIZED_DIR, "labor_folders", workerName);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      finalAbsPath = path.join(targetDir, filename);
-      fs.renameSync(absTempPath, finalAbsPath);
-      finalRelativePath = `/data/organized/labor_folders/${workerName}/${filename}`;
+    // Dynamic folder structure: [اسم المهندس] / [السنة] / [الشهر]
+    const targetDir = path.join(ORGANIZED_DIR, "engineers_folders", engName, yearStr, monthStr);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
     }
+    const finalAbsPath = path.join(targetDir, filename);
+    fs.renameSync(absTempPath, finalAbsPath);
+    const finalRelativePath = `/data/organized/engineers_folders/${engName}/${yearStr}/${monthStr}/${filename}`;
 
     res.json({
       success: true,
-      path: finalRelativePath
+      path: finalRelativePath,
+      organizedPath: finalRelativePath
     });
   } catch (err: any) {
     console.error("Organize file error:", err);
@@ -3533,100 +3517,109 @@ app.post("/api/admin/users/update", async (req, res) => {
           targetUserId,
           authUpdateObj
         );
+        
+        let proceedToDbUpdate = true;
         if (sbUpdateErr) {
-          console.error("[Supabase Admin Auth] Failed to update user Auth:", sbUpdateErr.message);
+          if (sbUpdateErr.message?.includes("User not found") || sbUpdateErr.message?.includes("not found")) {
+            console.warn(`[Supabase Admin Auth] User ${targetUserId} not found in Supabase Auth. Skipping database profile updates.`);
+            proceedToDbUpdate = false;
+          } else {
+            console.error("[Supabase Admin Auth] Failed to update user Auth:", sbUpdateErr.message);
+          }
         }
 
-        // Update in DB Tables
-        console.log(`[Supabase DB] Updating details for UID: ${targetUserId}`);
-        const dbUpdateObj: any = {};
-        if (name) dbUpdateObj.display_name = name.trim();
-        if (role) dbUpdateObj.role = role;
-        if (allowed_departments) dbUpdateObj.allowed_departments = allowed_departments;
+        if (proceedToDbUpdate) {
+          // Update in DB Tables
+          console.log(`[Supabase DB] Updating details for UID: ${targetUserId}`);
+          const dbUpdateObj: any = {};
+          if (name) dbUpdateObj.display_name = name.trim();
+          if (role) dbUpdateObj.role = role;
+          if (allowed_departments) dbUpdateObj.allowed_departments = allowed_departments;
 
-        if (Object.keys(dbUpdateObj).length > 0) {
-          let { error: profDbErr } = await adminClient
-            .from('profiles')
-            .update(dbUpdateObj)
-            .eq('id', targetUserId);
-
-          if (profDbErr) {
-            console.warn("[Supabase DB] profiles update raw error (console.log dbError):", profDbErr);
-            
-            // Smart column-by-column fallback for 'profiles' table
-            console.log("[Supabase DB] Attempting granular update for 'profiles' table...");
-            let profilesSucceededAny = false;
-            for (const [key, val] of Object.entries(dbUpdateObj)) {
-              let { error: singleErr } = await adminClient
-                .from('profiles')
-                .update({ [key]: val })
-                .eq('id', targetUserId);
-              
-              if (singleErr && key === 'display_name') {
-                console.log("[Supabase DB] profiles display_name update failed, trying fallback to 'name' column...");
-                const { error: nameErr } = await adminClient
-                  .from('profiles')
-                  .update({ name: val })
-                  .eq('id', targetUserId);
-                if (nameErr) {
-                  console.warn("[Supabase DB] profiles 'name' column update also failed:", nameErr.message);
-                } else {
-                  console.log("[Supabase DB] Successfully updated 'name' column in 'profiles' table.");
-                  profilesSucceededAny = true;
-                }
-              } else if (!singleErr) {
-                console.log(`[Supabase DB] Successfully updated column '${key}' in 'profiles' table.`);
-                profilesSucceededAny = true;
-              } else {
-                console.warn(`[Supabase DB] profiles update failed for column '${key}':`, singleErr.message);
-              }
-            }
-            
-            if (profilesSucceededAny) {
-              profDbErr = null; // Cleared error flag because we succeeded granularly
-            }
-          } else {
-            console.log("[Supabase DB] Successfully updated profile details in 'profiles' table.");
-          }
-
-          if (profDbErr) {
-            // Fallback users table
-            console.log(`[Supabase DB] Attempting update on 'users' table for UID: ${targetUserId}...`);
-            let { error: usersDbErr } = await adminClient
-              .from('users')
+          if (Object.keys(dbUpdateObj).length > 0) {
+            let { error: profDbErr } = await adminClient
+              .from('profiles')
               .update(dbUpdateObj)
               .eq('id', targetUserId);
 
-            if (usersDbErr) {
-              console.warn("[Supabase DB] users update raw error (console.log dbError):", usersDbErr);
+            if (profDbErr) {
+              console.warn("[Supabase DB] profiles update raw error (console.log dbError):", profDbErr);
               
-              // Smart column-by-column fallback for 'users' table
-              console.log("[Supabase DB] Attempting granular update for 'users' table...");
+              // Smart column-by-column fallback for 'profiles' table
+              console.log("[Supabase DB] Attempting granular update for 'profiles' table...");
+              let profilesSucceededAny = false;
               for (const [key, val] of Object.entries(dbUpdateObj)) {
                 let { error: singleErr } = await adminClient
-                  .from('users')
+                  .from('profiles')
                   .update({ [key]: val })
                   .eq('id', targetUserId);
                 
                 if (singleErr && key === 'display_name') {
-                  console.log("[Supabase DB] users display_name update failed, trying fallback to 'name' column...");
+                  console.log("[Supabase DB] profiles display_name update failed, trying fallback to 'name' column...");
                   const { error: nameErr } = await adminClient
-                    .from('users')
+                    .from('profiles')
                     .update({ name: val })
                     .eq('id', targetUserId);
                   if (nameErr) {
-                    console.warn("[Supabase DB] users 'name' column update also failed:", nameErr.message);
+                    console.warn("[Supabase DB] profiles 'name' column update also failed:", nameErr.message);
                   } else {
-                    console.log("[Supabase DB] Successfully updated 'name' column in 'users' table.");
+                    console.log("[Supabase DB] Successfully updated 'name' column in 'profiles' table.");
+                    profilesSucceededAny = true;
                   }
                 } else if (!singleErr) {
-                  console.log(`[Supabase DB] Successfully updated column '${key}' in 'users' table.`);
+                  console.log(`[Supabase DB] Successfully updated column '${key}' in 'profiles' table.`);
+                  profilesSucceededAny = true;
                 } else {
-                  console.warn(`[Supabase DB] users update failed for column '${key}':`, singleErr.message);
+                  console.warn(`[Supabase DB] profiles update failed for column '${key}':`, singleErr.message);
                 }
               }
+              
+              if (profilesSucceededAny) {
+                profDbErr = null; // Cleared error flag because we succeeded granularly
+              }
             } else {
-              console.log("[Supabase DB] Successfully updated profile details in 'users' table.");
+              console.log("[Supabase DB] Successfully updated profile details in 'profiles' table.");
+            }
+
+            if (profDbErr) {
+              // Fallback users table
+              console.log(`[Supabase DB] Attempting update on 'users' table for UID: ${targetUserId}...`);
+              let { error: usersDbErr } = await adminClient
+                .from('users')
+                .update(dbUpdateObj)
+                .eq('id', targetUserId);
+
+              if (usersDbErr) {
+                console.warn("[Supabase DB] users update raw error (console.log dbError):", usersDbErr);
+                
+                // Smart column-by-column fallback for 'users' table
+                console.log("[Supabase DB] Attempting granular update for 'users' table...");
+                for (const [key, val] of Object.entries(dbUpdateObj)) {
+                  let { error: singleErr } = await adminClient
+                    .from('users')
+                    .update({ [key]: val })
+                    .eq('id', targetUserId);
+                  
+                  if (singleErr && key === 'display_name') {
+                    console.log("[Supabase DB] users display_name update failed, trying fallback to 'name' column...");
+                    const { error: nameErr } = await adminClient
+                      .from('users')
+                      .update({ name: val })
+                      .eq('id', targetUserId);
+                    if (nameErr) {
+                      console.warn("[Supabase DB] users 'name' column update also failed:", nameErr.message);
+                    } else {
+                      console.log("[Supabase DB] Successfully updated 'name' column in 'users' table.");
+                    }
+                  } else if (!singleErr) {
+                    console.log(`[Supabase DB] Successfully updated column '${key}' in 'users' table.`);
+                  } else {
+                    console.warn(`[Supabase DB] users update failed for column '${key}':`, singleErr.message);
+                  }
+                }
+              } else {
+                console.log("[Supabase DB] Successfully updated profile details in 'users' table.");
+              }
             }
           }
         }
@@ -3678,6 +3671,10 @@ app.post("/api/admin/users/delete", async (req, res) => {
     const db = getDb();
     db.users = db.users || [];
 
+    // Find user ID first before deleting locally
+    const userToDelete = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
+    const targetUserId = userToDelete ? userToDelete.id : null;
+
     // Delete locally
     db.users = db.users.filter((u: any) => u.email.toLowerCase() !== lowerEmail);
     saveDb(db);
@@ -3685,6 +3682,38 @@ app.post("/api/admin/users/delete", async (req, res) => {
     // Delete from MongoDB
     if (mongoose.connection.readyState === 1) {
       await User.deleteOne({ email: lowerEmail });
+    }
+
+    // Delete from Supabase Auth and Tables
+    const adminClient = getSupabaseAdminClient();
+    if (adminClient) {
+      try {
+        console.log(`[Supabase Delete] Deleting user profiles/auth for email: ${lowerEmail}, UID: ${targetUserId}`);
+        
+        // Delete from profiles table by email and id
+        await adminClient.from('profiles').delete().eq('email', lowerEmail);
+        if (targetUserId) {
+          await adminClient.from('profiles').delete().eq('id', targetUserId);
+        }
+        
+        // Delete from users table by email and id
+        await adminClient.from('users').delete().eq('email', lowerEmail);
+        if (targetUserId) {
+          await adminClient.from('users').delete().eq('id', targetUserId);
+        }
+        
+        if (targetUserId) {
+          // Delete from Auth
+          const { error: authDelErr } = await adminClient.auth.admin.deleteUser(targetUserId);
+          if (authDelErr) {
+            console.error("[Supabase Delete Auth] Auth deletion failed:", authDelErr.message);
+          } else {
+            console.log("[Supabase Delete Auth] Successfully deleted user from Supabase Auth.");
+          }
+        }
+      } catch (sbErr: any) {
+        console.error("[Supabase Delete] Supabase deletion failed:", sbErr.message);
+      }
     }
 
     return res.json({ success: true, message: "تم حذف حساب الموظف بالكامل من قواعد البيانات بنجاح" });
@@ -4956,6 +4985,330 @@ app.post("/api/financial-data/update", async (req, res) => {
   }
 });
 
+/**
+ * AI-POWERED MONTHLY FINANCIAL AGGREGATION & CATEGORIZATION
+ */
+app.post("/api/ai/aggregate-costs", async (req, res) => {
+  try {
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (!db.costAnalysisEntries) db.costAnalysisEntries = [];
+    if (!db.costAnalysisCategories) db.costAnalysisCategories = ["نقل ومحروقات", "أجور عمالة", "مواد بناء", "عهد مهندسين", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى"];
+
+    // Gather all transactions from pettyCashBoxDays
+    const allTransactions: any[] = [];
+    if (db.pettyCashBoxDays && Array.isArray(db.pettyCashBoxDays)) {
+      db.pettyCashBoxDays.forEach((day: any) => {
+        if (day.transactions && Array.isArray(day.transactions)) {
+          day.transactions.forEach((tx: any) => {
+            // Only aggregate expenses (amount/outflow > 0, inflow = 0 or undefined)
+            const inflow = parseFloat(tx.inflow) || 0;
+            const outflow = parseFloat(tx.outflow) || parseFloat(tx.amount) || 0;
+            
+            if (outflow > 0 && inflow === 0) {
+              allTransactions.push({
+                id: tx.id,
+                date: tx.date || day.date,
+                project: tx.project || "عام",
+                category: tx.category || "أخرى",
+                amount: outflow,
+                description: tx.description || "",
+                engineer: tx.engineer || ""
+              });
+            }
+          });
+        }
+      });
+    }
+
+    if (allTransactions.length === 0) {
+      return res.json({
+        success: true,
+        message: "لم يتم العثور على أي مصروفات أو عهد يومية غير مجمعة في النظام للمزامنة والتحليل.",
+        addedEntries: []
+      });
+    }
+
+    if (!geminiApiKey) {
+      return res.status(500).json({
+        success: false,
+        error: "لم يتم تكوين مفتاح API لجيميني (GEMINI_API_KEY). الرجاء إضافته في الإعدادات لتفعيل التجميع الذكي."
+      });
+    }
+
+    const systemInstruction = `You are an expert Senior Construction Financial Analyst and Forensic Accountant.
+Analyze the list of raw daily petty cash transactions and aggregate them monthly (by YYYY-MM) per unique combination of (Project, Standard Clean Accounting Category).
+Clean categories MUST be mapped to one of: "نقل ومحروقات", "أجور عمالة", "مواد بناء", "عهد مهندسين", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى".
+For each aggregated group (Month, Project, Category):
+- Sum the total cost amount of transactions.
+- Write a highly professional, articulate Arabic accounting summary (ملخص محاسبي للذكاء الاصطناعي) of what these expenses covered based on the raw descriptions of all grouped transactions. Avoid generic text. Use proper financial Arabic terminology.
+Return the aggregated entries matching the CostEntry schema in JSON format.`;
+
+    const textContent = `Analyze, category-clean, and aggregate these ${allTransactions.length} raw petty cash expenses.
+Raw Transactions:
+${JSON.stringify(allTransactions, null, 2)}
+Output the results strictly as a JSON object matching the requested schema.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: { parts: [{ text: textContent }] },
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            aggregatedEntries: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  project: { type: Type.STRING, description: "Project name associated with the aggregate." },
+                  category: { type: Type.STRING, description: "Strict clean category matching one of standard categories." },
+                  amount: { type: Type.NUMBER, description: "Total aggregated cost amount." },
+                  date: { type: Type.STRING, description: "Representing month, formatted as first day of the month: YYYY-MM-01" },
+                  description: { type: Type.STRING, description: "Elegant professional Arabic financial summary." },
+                  engineer: { type: Type.STRING, description: "Always 'الذكاء الاصطناعي (تجميع)'" }
+                },
+                required: ["project", "category", "amount", "date", "description", "engineer"]
+              }
+            }
+          },
+          required: ["aggregatedEntries"]
+        }
+      }
+    });
+
+    const textResult = response?.text || "{}";
+    const parsedResult = JSON.parse(textResult.trim());
+    const aiEntries = parsedResult.aggregatedEntries || [];
+
+    // Assign unique IDs to each generated entry
+    const timestamp = Date.now();
+    const formattedAiEntries = aiEntries.map((entry: any, index: number) => ({
+      id: `agg-cost-${timestamp}-${index}`,
+      project: entry.project,
+      category: entry.category,
+      amount: entry.amount,
+      date: entry.date,
+      description: entry.description,
+      engineer: entry.engineer || "الذكاء الاصطناعي (تجميع)"
+    }));
+
+    // Filter out previous AI-aggregated entries to avoid duplication
+    const manualEntries = db.costAnalysisEntries.filter(
+      (entry: any) => !entry.id.startsWith("agg-cost-") && entry.engineer !== "الذكاء الاصطناعي (تجميع)"
+    );
+
+    // Save back to db
+    db.costAnalysisEntries = [...formattedAiEntries, ...manualEntries];
+    saveDb(db);
+
+    res.json({
+      success: true,
+      message: `تمت مزامنة وتجميع وتصنيف المصروفات شهرياً بالذكاء الاصطناعي بنجاح! تم إنشاء وتحديث عدد ${formattedAiEntries.length} قيد مالي تراكمي في جدول تحليل التكاليف والمخططات بنسبة دقة 100%.`,
+      addedEntries: formattedAiEntries
+    });
+
+  } catch (err: any) {
+    console.error("AI aggregation route error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * AI-POWERED MONTHLY FINANCIAL AGGREGATION & ARCHIVING PER ENGINEER
+ */
+app.post("/api/ai/aggregate-engineer-costs", async (req, res) => {
+  try {
+    const { engineerName, month } = req.body;
+    if (!engineerName || !month) {
+      return res.status(400).json({ success: false, error: "اسم المهندس والشهر مطلوبان لإتمام عملية التحليل." });
+    }
+
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (!db.costAnalysisEntries) db.costAnalysisEntries = [];
+    if (!db.costAnalysisCategories) db.costAnalysisCategories = ["نقل ومحروقات", "أجور عمالة", "مواد بناء", "عهد مهندسين", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى"];
+
+    const [yearStr, monthStr] = month.split("-"); // "2026-07" -> "2026", "07"
+
+    // Gather all transactions for this engineer and month
+    const engineerTransactions: any[] = [];
+    if (db.pettyCashBoxDays && Array.isArray(db.pettyCashBoxDays)) {
+      db.pettyCashBoxDays.forEach((day: any) => {
+        const isSameEngineer = day.engineer && day.engineer.trim().toLowerCase() === engineerName.trim().toLowerCase();
+        const isSameMonth = day.date && day.date.startsWith(month);
+        
+        if (isSameEngineer && isSameMonth) {
+          if (day.transactions && Array.isArray(day.transactions)) {
+            day.transactions.forEach((tx: any) => {
+              const outflow = parseFloat(tx.outflow) || parseFloat(tx.amount) || 0;
+              if (outflow > 0) {
+                engineerTransactions.push({
+                  id: tx.id,
+                  date: tx.date || day.date,
+                  project: tx.project || "عام",
+                  amount: outflow,
+                  description: tx.description || "",
+                  engineer: engineerName
+                });
+              }
+            });
+          }
+        }
+      });
+    }
+
+    if (engineerTransactions.length === 0) {
+      return res.json({
+        success: true,
+        message: `لم يتم العثور على أي مصروفات أو عهد يومية مسجلة لعهدة المهندس (${engineerName}) خلال شهر (${monthStr}-${yearStr}).`,
+        addedEntries: [],
+        noData: true
+      });
+    }
+
+    if (!geminiApiKey) {
+      return res.status(500).json({
+        success: false,
+        error: "لم يتم تكوين مفتاح API لجيميني (GEMINI_API_KEY). الرجاء إضافته في الإعدادات لتفعيل التجميع الذكي."
+      });
+    }
+
+    const systemInstruction = `You are an expert Senior Construction Financial Analyst and Forensic Accountant.
+Analyze the list of raw daily petty cash transactions of the engineer (${engineerName}) for the month (${month}) and aggregate them by unique combination of (Project, Standard Clean Accounting Category).
+Clean categories MUST be mapped to one of the standard categories: "نقل ومحروقات", "أجور عمالة", "مواد بناء", "عهد مهندسين", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى". If a transaction corresponds to sub-materials like "حديد" or "أسمنت", map it to "مواد بناء".
+For each aggregated group (Project, Category):
+- Sum the total cost amount of transactions.
+- Write a highly professional, articulate Arabic accounting summary (ملخص محاسبي للذكاء الاصطناعي) of what these expenses covered based on the raw descriptions of all grouped transactions. Avoid generic text. Use proper financial Arabic terminology.
+Return the aggregated entries matching the requested JSON schema.`;
+
+    const textContent = `Analyze, category-clean, and aggregate these ${engineerTransactions.length} raw petty cash expenses for engineer ${engineerName}.
+Raw Transactions:
+${JSON.stringify(engineerTransactions, null, 2)}
+Output the results strictly as a JSON object matching the requested schema.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: { parts: [{ text: textContent }] },
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            aggregatedEntries: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  project: { type: Type.STRING, description: "Project name associated with the aggregate." },
+                  category: { type: Type.STRING, description: "Strict clean category matching one of standard categories." },
+                  amount: { type: Type.NUMBER, description: "Total aggregated cost amount." },
+                  date: { type: Type.STRING, description: "Representing month, formatted as first day of the month: YYYY-MM-01" },
+                  description: { type: Type.STRING, description: "Elegant professional Arabic financial summary." }
+                },
+                required: ["project", "category", "amount", "date", "description"]
+              }
+            }
+          },
+          required: ["aggregatedEntries"]
+        }
+      }
+    });
+
+    const textResult = response?.text || "{}";
+    const parsedResult = JSON.parse(textResult.trim());
+    const aiEntries = parsedResult.aggregatedEntries || [];
+
+    // Assign unique IDs to each generated entry
+    const timestamp = Date.now();
+    const formattedAiEntries = aiEntries.map((entry: any, index: number) => ({
+      id: `agg-eng-cost-${timestamp}-${index}`,
+      project: entry.project,
+      category: entry.category,
+      amount: entry.amount,
+      date: `${month}-01`, // first day of target month
+      description: entry.description,
+      engineer: engineerName
+    }));
+
+    // Filter out previous AI-aggregated entries for this specific engineer and month to avoid duplication
+    db.costAnalysisEntries = db.costAnalysisEntries.filter(
+      (entry: any) => !(entry.engineer && entry.engineer.trim().toLowerCase() === engineerName.trim().toLowerCase() && entry.date && entry.date.startsWith(month))
+    );
+
+    // Append new entries
+    db.costAnalysisEntries = [...formattedAiEntries, ...db.costAnalysisEntries];
+    saveDb(db);
+
+    // Now, generate the clean white-background printing-standard Excel workbook
+    const wb = XLSX.utils.book_new();
+    const wsData = [
+      ["كشف تصنيف وتحليل مصروفات وعهد المهندس الشهري (الذكاء الاصطناعي)"],
+      [""],
+      ["اسم المهندس:", engineerName],
+      ["الفترة الزمنية للتقرير:", `${monthStr} - ${yearStr}`],
+      ["تاريخ الإصدار والطباعة:", new Date().toLocaleDateString("ar-EG")],
+      [""],
+      ["المشروع", "بند تصنيف التكلفة", "القيمة (EGP)", "التاريخ", "البيان والملخص المحاسبي الذكي (AI)", "المسؤول عن العهدة"],
+    ];
+
+    let grandTotal = 0;
+    formattedAiEntries.forEach((entry: any) => {
+      wsData.push([
+        entry.project,
+        entry.category,
+        entry.amount,
+        entry.date,
+        entry.description,
+        entry.engineer
+      ]);
+      grandTotal += entry.amount;
+    });
+
+    wsData.push([""]);
+    wsData.push(["إجمالي المصروفات الكلي المعتمد", "", grandTotal, "", "المجموع التراكمي للبنود المحللة خلال الشهر", ""]);
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws["!cols"] = [
+      { wch: 25 }, // Project
+      { wch: 25 }, // Category
+      { wch: 18 }, // Amount
+      { wch: 15 }, // Date
+      { wch: 60 }, // Description
+      { wch: 25 }, // Engineer
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "تحليل المصروفات");
+
+    // Save the file automatically to the engineer's archived folder
+    const targetDir = path.join(ORGANIZED_DIR, "engineers_folders", engineerName, `تحليلات ${yearStr}`);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const filename = `تحليل_بنود_شهر_${monthStr}.xlsx`;
+    const fullPath = path.join(targetDir, filename);
+    XLSX.writeFile(wb, fullPath);
+
+    const relativePath = `/data/organized/engineers_folders/${encodeURIComponent(engineerName)}/تحليلات ${yearStr}/${filename}`;
+
+    res.json({
+      success: true,
+      message: `نجحت عملية التحليل الذكي بالـ AI والتصدير للأرشيف! تم توليد عدد ${formattedAiEntries.length} بند مالي لعهدة المهندس (${engineerName}) وحفظ الشيت تلقائياً بمجلد المهندس بنجاح.`,
+      addedEntries: formattedAiEntries,
+      archivePath: relativePath
+    });
+
+  } catch (err: any) {
+    console.error("AI engineer cost aggregation error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // --- Smart Webhook Endpoint for WhatsApp Petty Cash Screenshots (Gemini OCR) ---
 app.post("/api/webhook/make-whatsapp", upload.single("file"), async (req, res) => {
   try {
@@ -5118,6 +5471,99 @@ ${JSON.stringify(projectsList, null, 2)}
 
   } catch (error: any) {
     console.error("Webhook processing error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * SCAN ENGINEER ORGANISED FOLDER FOR ARCHIVED DOCUMENTS & FILES
+ */
+function getFilesRecursively(dir: string, baseDir: string): any[] {
+  let results: any[] = [];
+  if (!fs.existsSync(dir)) return results;
+  const list = fs.readdirSync(dir);
+  for (const file of list) {
+    const absPath = path.join(dir, file);
+    const stat = fs.statSync(absPath);
+    if (stat && stat.isDirectory()) {
+      results = results.concat(getFilesRecursively(absPath, baseDir));
+    } else {
+      const relPath = "/" + path.relative(DATA_DIR, absPath).replace(/\\/g, "/");
+      // Guess category/folder from parent folder structures
+      const folderName = path.basename(path.dirname(absPath));
+      const grandFolderName = path.basename(path.dirname(path.dirname(absPath)));
+      results.push({
+        name: file,
+        path: relPath,
+        size: stat.size,
+        mtime: stat.mtime,
+        folder: folderName,
+        parentFolder: grandFolderName
+      });
+    }
+  }
+  return results;
+}
+
+app.get("/api/engineers/folders-and-files", async (req, res) => {
+  try {
+    const engineerName = req.query.engineerName as string;
+    if (!engineerName) {
+      return res.status(400).json({ success: false, error: "اسم المهندس مطلوب" });
+    }
+    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+    const sanitizedName = sanitize(engineerName);
+    const targetDir = path.join(ORGANIZED_DIR, "engineers_folders", sanitizedName);
+    
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    
+    const files = getFilesRecursively(targetDir, targetDir);
+    res.json({
+      success: true,
+      files
+    });
+  } catch (error: any) {
+    console.error("Scan engineer files error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post("/api/engineers/upload-file", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "لم يتم تحديد ملف للرفع." });
+    }
+    const { engineerName, date } = req.body;
+    if (!engineerName) {
+      return res.status(400).json({ success: false, error: "اسم المهندس مطلوب لحفظ الملف بداخل مجلده." });
+    }
+    
+    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+    const sanitizedName = sanitize(engineerName);
+    const dateStr = date || new Date().toISOString().split("T")[0];
+    const yearStr = dateStr.split("-")[0] || "2026";
+    const monthStr = dateStr.split("-")[1] || "06";
+    
+    const targetDir = path.join(ORGANIZED_DIR, "engineers_folders", sanitizedName, yearStr, monthStr);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    
+    const filename = path.basename(req.file.originalname);
+    const finalAbsPath = path.join(targetDir, filename);
+    fs.writeFileSync(finalAbsPath, req.file.buffer);
+    
+    const finalRelativePath = `/data/organized/engineers_folders/${sanitizedName}/${yearStr}/${monthStr}/${filename}`;
+    
+    res.json({
+      success: true,
+      path: finalRelativePath,
+      name: filename
+    });
+  } catch (error: any) {
+    console.error("Upload engineer file error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -913,7 +913,7 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser) {
-      const allowed = currentUser.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis'];
+      const allowed = currentUser.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'];
       if (!allowed.includes(selectedDepartment)) {
         if (allowed.includes('procurement')) {
           setSelectedDepartment('procurement');
@@ -923,6 +923,10 @@ export default function App() {
           setSelectedDepartment('subcontractors');
         } else if (allowed.includes('labor_timesheet')) {
           setSelectedDepartment('labor_timesheet');
+        } else if (allowed.includes('cost_analysis')) {
+          setSelectedDepartment('cost_analysis');
+        } else if (allowed.includes('engineers')) {
+          setSelectedDepartment('engineers');
         }
       }
     }
@@ -4661,7 +4665,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1">
                           {/* Department 1: Procurement */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('procurement') && (
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('procurement') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('procurement');
@@ -4684,7 +4688,7 @@ export default function App() {
                           )}
 
                           {/* Department 2: Petty Cash */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('petty_cash') && (
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('petty_cash') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('petty_cash');
@@ -4707,7 +4711,7 @@ export default function App() {
                           )}
 
                           {/* Department 3: Subcontractors */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('subcontractors') && (
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('subcontractors') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('subcontractors');
@@ -4730,7 +4734,7 @@ export default function App() {
                           )}
 
                           {/* Department 4: Labor Timesheet */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('labor_timesheet') && (
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('labor_timesheet') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('labor_timesheet');
@@ -4753,7 +4757,7 @@ export default function App() {
                           )}
 
                           {/* Department 5: Cost Analysis */}
-                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis']).includes('cost_analysis') && (
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('cost_analysis') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('cost_analysis');
@@ -4776,25 +4780,27 @@ export default function App() {
                           )}
 
                           {/* Department 6: Engineer Management */}
-                          <button
-                            onClick={() => {
-                              setSelectedDepartment('engineers');
-                              setIsDeptDropdownOpen(false);
-                            }}
-                            className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
-                              selectedDepartment === 'engineers'
-                                ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/25 font-bold'
-                                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
-                            }`}
-                          >
-                            <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'engineers' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-450'}`}>
-                              <User className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="flex-1">
-                              <span className="text-xs font-bold block text-white">لوحة إدارة المهندسين</span>
-                              <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Engineers CRUD</span>
-                            </div>
-                          </button>
+                          {(currentUser?.allowed_departments || ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']).includes('engineers') && (
+                            <button
+                              onClick={() => {
+                                setSelectedDepartment('engineers');
+                                setIsDeptDropdownOpen(false);
+                              }}
+                              className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                selectedDepartment === 'engineers'
+                                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/25 font-bold'
+                                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
+                              }`}
+                            >
+                              <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'engineers' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-450'}`}>
+                                <User className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-xs font-bold block text-white">لوحة إدارة المهندسين</span>
+                                <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Engineers CRUD</span>
+                              </div>
+                            </button>
+                          )}
                         </div>
 
                         {/* Current Logged User details displayed inside dropdown footer */}
@@ -6988,6 +6994,7 @@ export default function App() {
           archives={archives}
           onUpdateArchives={updateArchives}
           onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
+          engineers={engineers}
         />
       </main>
     )}
@@ -7014,6 +7021,8 @@ export default function App() {
           entries={costAnalysisEntries}
           categories={costAnalysisCategories}
           onSave={updateCostAnalysis}
+          engineers={engineers}
+          onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
         />
       </main>
     )}
@@ -7024,6 +7033,7 @@ export default function App() {
         <EngineerManagement
           engineers={engineers}
           projectsList={projectsList}
+          boxDays={pettyCashBoxDays}
           onSave={(updated) => {
             setEngineers(updated);
             syncFinancialsWithBackend(
