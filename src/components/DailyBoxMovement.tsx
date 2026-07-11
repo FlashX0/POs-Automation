@@ -666,6 +666,47 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
             size: portrait !important;
             margin: 8mm 10mm 8mm 10mm !important;
           }
+          /* Custom print rules for clean ledger table with solid borders */
+          .print-ledger-box {
+            border: 2px solid #000000 !important;
+            border-collapse: collapse !important;
+            margin-bottom: 20px !important;
+            border-radius: 0px !important;
+          }
+          .print-ledger-row {
+            display: grid !important;
+            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+            border-bottom: 1px solid #000000 !important;
+          }
+          .print-ledger-row:last-child {
+            border-bottom: none !important;
+          }
+          .print-ledger-cell {
+            border-inline-end: 1px solid #000000 !important;
+            padding: 8px 4px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+            font-size: 11px !important;
+            font-weight: bold !important;
+            color: #000000 !important;
+          }
+          .print-ledger-cell:last-child {
+            border-inline-end: none !important;
+          }
+          /* Ensure header row is visible in print with clear borders */
+          .print-ledger-header-row {
+            display: grid !important;
+            background-color: #D9E1F2 !important;
+            border-bottom: 1px solid #000000 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .print-ledger-header-cell {
+            font-weight: 900 !important;
+            color: #000000 !important;
+          }
         }
       `}} />
 
@@ -807,56 +848,56 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
 
               return (
-                <div key={day.date} className="space-y-0.5 break-inside-avoid text-black bg-white p-0 border border-solid border-[#4F81BD] rounded-lg overflow-hidden">
+                <div key={day.date} className="break-inside-avoid text-black bg-white p-0 border border-solid border-[#4F81BD] rounded-lg overflow-hidden print-ledger-box">
                   {/* Day Title Row */}
                   <div className="text-center font-bold text-[#1F4E78] text-base py-3 bg-[#D9E1F2] border-b border-[#4F81BD]">
                     حركة صندوق {selectedEngineer ? selectedEngineer : "العام"} ليوم {formattedDate}
                   </div>
 
                   {/* Opening Balance Block (Right-aligned numbers, Centered Labels) */}
-                  <div className="grid grid-cols-5 border-b border-[#4F81BD] py-3 px-3 font-bold text-sm bg-slate-50 text-[#1F4E78]">
-                    <div className="font-mono font-black text-sm flex items-center justify-center text-center self-center pr-2">
+                  <div className="grid grid-cols-5 border-b border-[#4F81BD] py-3 px-3 font-bold text-sm bg-slate-50 text-[#1F4E78] print-ledger-row">
+                    <div className="font-mono font-black text-sm flex items-center justify-center text-center self-center pr-2 print-ledger-cell">
                       {formatPrintCurrency(startingBal)}
                     </div>
-                    <div></div>
-                    <div className="text-center flex items-center justify-center self-center font-extrabold text-slate-700">
+                    <div className="print-ledger-cell"></div>
+                    <div className="text-center flex items-center justify-center self-center font-extrabold text-slate-700 print-ledger-cell">
                       رصيد أول اليوم
                     </div>
-                    <div></div>
-                    <div></div>
+                    <div className="print-ledger-cell"></div>
+                    <div className="print-ledger-cell"></div>
                   </div>
 
-                  {/* Header Row (Hidden on print to avoid overlaps) */}
-                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-slate-100 text-center font-extrabold text-xs py-2.5 text-slate-700 print:hidden">
-                    <div className="flex items-center justify-center text-center self-center font-black">مدين</div>
-                    <div className="flex items-center justify-center text-center self-center font-black">طريقة الإيداع</div>
-                    <div className="flex items-center justify-center text-center self-center font-black">الوصف / البيان</div>
-                    <div className="flex items-center justify-center text-center self-center font-black">دائن</div>
-                    <div className="flex items-center justify-center text-center self-center font-black">المشروع</div>
+                  {/* Header Row */}
+                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-slate-100 text-center font-extrabold text-xs py-2.5 text-slate-700 print-ledger-row print-ledger-header-row">
+                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">مدين</div>
+                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">طريقة الإيداع</div>
+                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">الوصف / البيان</div>
+                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">دائن</div>
+                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">المشروع</div>
                   </div>
 
                   {/* Transactions */}
                   {dayTransactions.length === 0 ? (
-                    <div className="grid grid-cols-5 border-b border-[#4F81BD] text-center text-sm py-4 text-slate-500 font-bold bg-white">
-                      <div className="col-span-5 text-center">لا توجد حركات مسجلة لهذا اليوم</div>
+                    <div className="grid grid-cols-5 border-b border-[#4F81BD] text-center text-sm py-4 text-slate-500 font-bold bg-white print-ledger-row">
+                      <div className="col-span-5 text-center py-4 print-ledger-cell">لا توجد حركات مسجلة لهذا اليوم</div>
                     </div>
                   ) : (
                     dayTransactions.map((tx) => {
                       return (
-                        <div key={tx.id} className="grid grid-cols-5 border-b border-[#4F81BD] text-center text-xs sm:text-sm py-3 bg-white text-black min-h-[44px]">
-                          <div className="font-mono font-black text-emerald-700 flex items-center justify-center text-center self-center">
+                        <div key={tx.id} className="grid grid-cols-5 border-b border-[#4F81BD] text-center text-xs sm:text-sm py-3 bg-white text-black min-h-[44px] print-ledger-row">
+                          <div className="font-mono font-black text-emerald-700 flex items-center justify-center text-center self-center print-ledger-cell">
                             {tx.inflow > 0 ? formatPrintCurrency(tx.inflow) : '-'}
                           </div>
-                          <div className="text-slate-800 flex items-center justify-center text-center self-center font-semibold">
+                          <div className="text-slate-800 flex items-center justify-center text-center self-center font-semibold print-ledger-cell">
                             {tx.inflow > 0 ? tx.method : '-'}
                           </div>
-                          <div className="text-slate-900 flex items-center justify-center text-center self-center font-bold px-1.5 leading-relaxed">
+                          <div className="text-slate-900 flex items-center justify-center text-center self-center font-bold px-1.5 leading-relaxed print-ledger-cell">
                             {tx.description}
                           </div>
-                          <div className="font-mono font-black text-rose-700 flex items-center justify-center text-center self-center">
+                          <div className="font-mono font-black text-rose-700 flex items-center justify-center text-center self-center print-ledger-cell">
                             {tx.outflow > 0 ? formatPrintCurrency(tx.outflow) : '-'}
                           </div>
-                          <div className="text-slate-700 flex items-center justify-center text-center self-center font-semibold">
+                          <div className="text-slate-700 flex items-center justify-center text-center self-center font-semibold print-ledger-cell">
                             {tx.project || '-'}
                           </div>
                         </div>
@@ -865,31 +906,31 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                   )}
 
                   {/* Totals Row */}
-                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-[#F2F2F2] font-black text-sm py-3">
-                    <div className="text-emerald-700 font-mono flex items-center justify-center text-center self-center">
+                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-[#F2F2F2] font-black text-sm py-3 print-ledger-row">
+                    <div className="text-emerald-700 font-mono flex items-center justify-center text-center self-center print-ledger-cell">
                       {formatPrintCurrency(totalInflow)}
                     </div>
-                    <div className="text-slate-500 flex items-center justify-center text-center self-center">-</div>
-                    <div className="text-[#1f4e78] font-black flex items-center justify-center text-center self-center text-sm">
+                    <div className="text-slate-500 flex items-center justify-center text-center self-center print-ledger-cell">-</div>
+                    <div className="text-[#1f4e78] font-black flex items-center justify-center text-center self-center text-sm print-ledger-cell">
                       الاجـــــــمـــــــالــــــــــــــــــــــــى
                     </div>
-                    <div className="text-rose-700 font-mono flex items-center justify-center text-center self-center">
+                    <div className="text-rose-700 font-mono flex items-center justify-center text-center self-center print-ledger-cell">
                       {formatPrintCurrency(totalOutflow)}
                     </div>
-                    <div className="text-slate-500 flex items-center justify-center text-center self-center">-</div>
+                    <div className="text-slate-500 flex items-center justify-center text-center self-center print-ledger-cell">-</div>
                   </div>
 
                   {/* Ending Balance Row (Right-aligned numbers, Centered Labels) */}
-                  <div className="grid grid-cols-5 bg-[#E2EFDA] font-black text-sm py-3 text-[#375623]">
-                    <div className="font-mono font-black text-sm flex items-center justify-center text-center self-center pr-2">
+                  <div className="grid grid-cols-5 bg-[#E2EFDA] font-black text-sm py-3 text-[#375623] print-ledger-row">
+                    <div className="font-mono font-black text-sm flex items-center justify-center text-center self-center pr-2 print-ledger-cell">
                       {formatPrintCurrency(dayEndingBal)}
                     </div>
-                    <div></div>
-                    <div className="text-center flex items-center justify-center self-center font-extrabold text-[#375623]">
+                    <div className="print-ledger-cell"></div>
+                    <div className="text-center flex items-center justify-center self-center font-extrabold text-[#375623] print-ledger-cell">
                       رصيد آخر اليوم
                     </div>
-                    <div></div>
-                    <div></div>
+                    <div className="print-ledger-cell"></div>
+                    <div className="print-ledger-cell"></div>
                   </div>
                 </div>
               );

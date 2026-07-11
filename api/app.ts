@@ -3060,11 +3060,16 @@ app.post("/api/auth/login", async (req, res) => {
         
         if (sbUserRecord) {
           const updatedRole = sbUserRecord.role || matchedUser.role;
-          const updatedDeps = (sbUserRecord.allowed_departments && sbUserRecord.allowed_departments.length > 0)
+          let updatedDeps = (sbUserRecord.allowed_departments && sbUserRecord.allowed_departments.length > 0)
             ? sbUserRecord.allowed_departments
             : (sbUserRecord.allowed_sections && sbUserRecord.allowed_sections.length > 0)
               ? sbUserRecord.allowed_sections
               : matchedUser.allowed_departments || [];
+          
+          if (updatedRole === 'admin') {
+            updatedDeps = ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'];
+          }
+          
           const updatedName = sbUserRecord.display_name || sbUserRecord.name || matchedUser.name;
           
           matchedUser.role = updatedRole;
@@ -3084,6 +3089,10 @@ app.post("/api/auth/login", async (req, res) => {
       }
     }
 
+    if (matchedUser.role === 'admin') {
+      matchedUser.allowed_departments = ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'];
+    }
+
     // Login success
     console.log(`[Auth] User ${matchedUser.name} (${matchedUser.email}) logged in successfully as [${matchedUser.role}]`);
     return res.json({
@@ -3094,7 +3103,9 @@ app.post("/api/auth/login", async (req, res) => {
         email: matchedUser.email,
         role: matchedUser.role,
         status: matchedUser.status,
-        allowed_departments: matchedUser.allowed_departments || []
+        allowed_departments: matchedUser.role === 'admin'
+          ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+          : matchedUser.allowed_departments || []
       }
     });
   } catch (err: any) {
@@ -3155,11 +3166,16 @@ app.post("/api/auth/verify-session", async (req, res) => {
         
         if (sbUserRecord) {
           const updatedRole = sbUserRecord.role || matchedUser.role;
-          const updatedDeps = (sbUserRecord.allowed_departments && sbUserRecord.allowed_departments.length > 0)
+          let updatedDeps = (sbUserRecord.allowed_departments && sbUserRecord.allowed_departments.length > 0)
             ? sbUserRecord.allowed_departments
             : (sbUserRecord.allowed_sections && sbUserRecord.allowed_sections.length > 0)
               ? sbUserRecord.allowed_sections
               : matchedUser.allowed_departments || [];
+          
+          if (updatedRole === 'admin') {
+            updatedDeps = ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'];
+          }
+          
           const updatedName = sbUserRecord.display_name || sbUserRecord.name || matchedUser.name;
           
           matchedUser.role = updatedRole;
@@ -3179,6 +3195,10 @@ app.post("/api/auth/verify-session", async (req, res) => {
       }
     }
 
+    if (matchedUser.role === 'admin') {
+      matchedUser.allowed_departments = ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'];
+    }
+
     return res.json({
       success: true,
       user: {
@@ -3187,7 +3207,9 @@ app.post("/api/auth/verify-session", async (req, res) => {
         email: matchedUser.email,
         role: matchedUser.role,
         status: matchedUser.status,
-        allowed_departments: matchedUser.allowed_departments || []
+        allowed_departments: matchedUser.role === 'admin'
+          ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+          : matchedUser.allowed_departments || []
       }
     });
   } catch (err: any) {

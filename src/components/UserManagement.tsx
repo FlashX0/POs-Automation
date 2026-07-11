@@ -98,6 +98,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
       return;
     }
 
+    if (newUserRole === 'user' && (!newUserDepartments || newUserDepartments.length === 0)) {
+      setCreateError('حقل (القسم المسموح له) إجباري لموظفي النظام. يرجى اختيار قسم واحد على الأقل.');
+      return;
+    }
+
     setCreatingUser(true);
     setCreateError('');
     try {
@@ -184,6 +189,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
     }
     if (!editUserNewEmail || editUserNewEmail.trim().length === 0) {
       setEditError('الرجاء إدخال البريد الإلكتروني للموظف');
+      return;
+    }
+
+    if (!editUserDepartments || editUserDepartments.length === 0) {
+      setEditError('حقل (القسم المسموح له) إجباري. يرجى اختيار قسم واحد على الأقل للموظف.');
       return;
     }
 
@@ -629,7 +639,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">الأقسام المصرح بالوصول إليها (Allowed Departments)</label>
+                <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">القسم المسموح له (Allowed Department) * إجباري</label>
                 <div className="space-y-2.5 bg-slate-950 border border-slate-850 p-4 rounded-xl text-right">
                   <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
                     <input 
@@ -810,7 +820,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">الأقسام المصرح بالوصول إليها (Allowed Departments)</label>
+                <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">القسم المسموح له (Allowed Department) * إجباري</label>
                 <div className="space-y-2.5 bg-slate-950 border border-slate-850 p-4 rounded-xl text-right">
                   <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
                     <input 

@@ -82,6 +82,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   const [filterMonthYear, setFilterMonthYear] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [showSignaturesInPrint, setShowSignaturesInPrint] = useState<boolean>(true);
+  const [isPrintLandscape, setIsPrintLandscape] = useState<boolean>(true);
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -705,11 +706,11 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Scoped style block to force landscape print specifically for this financial report */}
+      {/* Scoped style block to force landscape/portrait print specifically for this financial report */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page {
-            size: landscape !important;
+            size: ${isPrintLandscape ? 'landscape' : 'portrait'} !important;
             margin: 8mm 10mm 8mm 10mm !important;
           }
         }
@@ -1329,6 +1330,15 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
               />
               <span>إظهار جدول التوقيعات في الطباعة</span>
             </label>
+            <label className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-300 cursor-pointer hover:bg-slate-850 hover:border-slate-700 transition-all no-print select-none">
+              <input
+                type="checkbox"
+                checked={isPrintLandscape}
+                onChange={(e) => setIsPrintLandscape(e.target.checked)}
+                className="rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>طباعة بوضعية عرضية (Landscape)</span>
+            </label>
             <button
               onClick={() => window.print()}
               className="px-3.5 py-1.5 bg-[#4F81BD]/20 hover:bg-[#4F81BD]/30 text-[#4F81BD] rounded-xl text-xs font-bold border border-[#4F81BD]/25 transition-all flex items-center gap-1.5 cursor-pointer no-print"
@@ -1558,9 +1568,8 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           <thead>
             <tr className="bg-[#D9E1F2] text-[#1F4E78] font-black text-sm border-b-2 border-[#4F81BD]">
               <th className="py-3 px-4 border border-[#4F81BD] w-[10%] text-center">م</th>
-              <th className="py-3 px-4 border border-[#4F81BD] text-right pr-6 w-[50%]">بند التكلفة والمصروف (Category)</th>
-              <th className="py-3 px-4 border border-[#4F81BD] w-[20%] text-center">النسبة المئوية (%)</th>
-              <th className="py-3 px-4 border border-[#4F81BD] text-left pl-6 w-[20%]">إجمالي قيمة المنصرف (EGP)</th>
+              <th className="py-3 px-4 border border-[#4F81BD] text-right pr-6 w-[60%]">بند التكلفة والمصروف (Category)</th>
+              <th className="py-3 px-4 border border-[#4F81BD] text-left pl-6 w-[30%]">إجمالي قيمة المنصرف (EGP)</th>
             </tr>
           </thead>
           <tbody>
@@ -1568,14 +1577,12 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
               <tr key={item.name} className="border-b border-dashed border-slate-300 hover:bg-slate-50 text-xs font-bold text-slate-800">
                 <td className="py-3 px-4 border border-[#4F81BD] font-mono text-center">{index + 1}</td>
                 <td className="py-3 px-4 border border-[#4F81BD] text-right pr-6 font-black text-[#1F4E78]">{item.name}</td>
-                <td className="py-3 px-4 border border-[#4F81BD] font-mono text-[#375623] text-center">{item.percentage}%</td>
                 <td className="py-3 px-4 border border-[#4F81BD] text-left pl-6 font-mono text-slate-900">{item.value.toLocaleString()} EGP</td>
               </tr>
             ))}
             {/* Total Row */}
             <tr className="bg-[#E2EFDA] text-[#375623] font-black text-sm">
               <td className="py-3 px-4 border border-[#4F81BD] text-center" colSpan={2}>إجمالي المصروفات المصنفة والمحللة كلياً</td>
-              <td className="py-3 px-4 border border-[#4F81BD] font-mono text-center">100%</td>
               <td className="py-3 px-4 border border-[#4F81BD] text-left pl-6 font-mono">
                 {totalFilteredAmount.toLocaleString()} EGP
               </td>

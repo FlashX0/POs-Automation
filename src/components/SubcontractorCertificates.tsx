@@ -912,6 +912,35 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
             size: portrait !important;
             margin: 8mm 10mm 8mm 10mm !important;
           }
+          /* Custom styles to force solid dark gridlines for all tables */
+          .portrait-print table {
+            border: 2px solid #000000 !important;
+            border-collapse: collapse !important;
+            width: 100% !important;
+          }
+          .portrait-print th, .portrait-print td {
+            border: 1px solid #000000 !important;
+            border-style: solid !important;
+            border-width: 1px !important;
+            border-color: #000000 !important;
+            padding: 6px 4px !important;
+          }
+          /* Override background colors for headers to look elegant on gray scales */
+          .portrait-print thead tr {
+            background-color: #F2F2F2 !important;
+            color: #000000 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .portrait-print thead th {
+            color: #000000 !important;
+            font-weight: 900 !important;
+          }
+          /* Remove outer blue dashed border and padding completely in print */
+          .portrait-print .outer-print-container {
+            border: none !important;
+            padding: 0 !important;
+          }
         }
       `}} />
 
@@ -1681,7 +1710,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
       {/* Subcontractor Certificate Portrait Print Layout */}
       {selectedContract && (
         <div className="hidden print:block w-full text-black font-sans portrait-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>
-          <div className="border-4 border-dashed border-[#4F81BD] p-6 bg-white space-y-6">
+          <div className="border-4 border-dashed border-[#4F81BD] p-6 bg-white space-y-6 outer-print-container">
             
             {/* Header / Title Banner */}
             <div className="text-center pb-4 border-b-2 border-dashed border-[#4F81BD]">
