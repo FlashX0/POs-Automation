@@ -121,6 +121,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   // Navigation tabs state
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
+  const [printBorderThickness, setPrintBorderThickness] = useState<'light' | 'sharp'>('sharp');
+  const [printFixPageBreak, setPrintFixPageBreak] = useState<boolean>(true);
 
   const handleLaborOCR = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -969,27 +971,93 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
         @media print {
           @page {
             size: landscape !important;
-            margin: 8mm 10mm 8mm 10mm !important;
+            margin: ${printFixPageBreak ? '4mm 6mm 4mm 6mm' : '8mm 10mm 8mm 10mm'} !important;
           }
+
+          ${printFixPageBreak ? `
+            /* Clean page break fix styles to start printing from the very top */
+            html, body, #root, .main-container, main, .space-y-6 {
+              margin: 0 !important;
+              padding: 0 !important;
+              margin-top: 0 !important;
+              padding-top: 0 !important;
+              height: auto !important;
+              min-height: 0 !important;
+              overflow: visible !important;
+              display: block !important;
+              float: none !important;
+              position: static !important;
+            }
+            .landscape-print {
+              display: block !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              page-break-before: avoid !important;
+              break-before: avoid !important;
+              position: relative !important;
+              top: 0 !important;
+            }
+            .space-y-6 > * + * {
+              margin-top: 0 !important;
+            }
+            main {
+              padding: 0 !important;
+              margin: 0 !important;
+              max-width: 100% !important;
+              width: 100% !important;
+            }
+          ` : ''}
+
           /* Eliminate all dashed borders in printing and replace with crisp solid borders */
           table, th, td, div {
             border-style: solid !important;
-            border-color: #4F81BD !important;
-            border-width: 1px !important;
+            ${printBorderThickness === 'sharp' ? `
+              border-color: #000000 !important;
+              border-width: 1.5px !important;
+            ` : `
+              border-color: #4F81BD !important;
+              border-width: 1px !important;
+            `}
           }
-          /* Extra custom overrides for the print table borders */
-          .border-dashed {
-            border-style: solid !important;
-          }
-          .border-e-2 {
-            border-inline-end-width: 1.5px !important;
-          }
-          .border-b-2 {
-            border-bottom-width: 1.5px !important;
-          }
-          .border-t-2 {
-            border-top-width: 1.5px !important;
-          }
+
+          /* Explicitly enforce sharp financial style or standard crisp blue overrides */
+          ${printBorderThickness === 'sharp' ? `
+            .landscape-print,
+            .landscape-print table,
+            .landscape-print th, 
+            .landscape-print td, 
+            .landscape-print tr, 
+            .landscape-print div,
+            .landscape-print [class*="bg-[#"], 
+            .landscape-print [class*="bg-slate-"], 
+            .landscape-print [class*="bg-indigo-"], 
+            .landscape-print [class*="bg-amber-"], 
+            .landscape-print [class*="bg-blue-"], 
+            .landscape-print [class*="bg-rose-"],
+            .landscape-print [class*="bg-emerald-"] {
+              border: 1.5px solid #000000 !important;
+              border-color: #000000 !important;
+              border-style: solid !important;
+            }
+            .landscape-print table {
+              border: 2px solid #000000 !important;
+              border-collapse: collapse !important;
+            }
+          ` : `
+            /* Extra custom overrides for the print table borders */
+            .border-dashed {
+              border-style: solid !important;
+            }
+            .border-e-2 {
+              border-inline-end-width: 1.5px !important;
+            }
+            .border-b-2 {
+              border-bottom-width: 1.5px !important;
+            }
+            .border-t-2 {
+              border-top-width: 1.5px !important;
+            }
+          `}
         }
       `}} />
 
@@ -1426,6 +1494,70 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                       </div>
                     </div>
 
+                  </div>
+                </div>
+
+                {/* Print Customizer Options Panel */}
+                <div className="bg-[#111827] border border-blue-500/30 p-6 rounded-2xl shadow-md space-y-4 no-print">
+                  <h4 className="text-xs font-extrabold text-blue-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800/60 pb-2">
+                    <Printer className="w-4 h-4 text-blue-400" />
+                    <span>أداة التحكم الذكية في الطباعة 🖨️</span>
+                  </h4>
+                  
+                  <div className="space-y-4 text-right">
+                    {/* Border Style Selector */}
+                    <div>
+                      <label className="text-xs text-slate-300 font-bold block mb-2">شكل وسمك حدود الجدول (Border Style):</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPrintBorderThickness('light')}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                            printBorderThickness === 'light'
+                              ? 'bg-blue-600/20 border-blue-500 text-blue-400'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          خطوط خفيفة 🔹
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPrintBorderThickness('sharp')}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                            printBorderThickness === 'sharp'
+                              ? 'bg-blue-600/20 border-blue-500 text-blue-400'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          حدود مالية حادة وصريحة ⬛
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Fix Page Break Switch */}
+                    <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
+                      <div className="text-right">
+                        <label className="text-xs text-slate-300 font-bold block">إصلاح ترحيل الصفحات ديناميكياً</label>
+                        <p className="text-[10px] text-slate-400 leading-normal mt-0.5">يلغي الهوامش والفراغات التي تدفع الكشف لصفحة جديدة فارغة.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPrintFixPageBreak(!printFixPageBreak)}
+                        className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none cursor-pointer ${
+                          printFixPageBreak ? 'bg-blue-500' : 'bg-slate-800'
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ${
+                            printFixPageBreak ? 'translate-x-6' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="bg-blue-950/20 border border-blue-900/40 rounded-xl p-3 text-[10px] text-blue-300 leading-relaxed">
+                      💡 <strong>نصيحة الطباعة:</strong> يُفضّل تفعيل "إصلاح ترحيل الصفحات" واستخدام خيار "حدود مالية حادة وصريحة" لضمان خروج الكشف كصفحة واحدة منسقة بخطوط داكنة تظهر بوضوح فائق عند طباعتها على الورق أو تصديرها كـ PDF.
+                    </div>
                   </div>
                 </div>
 
