@@ -1279,6 +1279,8 @@ function sanitizeAndExtractBrands(docs: any[]): any[] {
   });
 }
 
+let lastMongoSyncTime = 0;
+
 function saveDb(data: any) {
   if (data && data.documents) {
     data.documents = sanitizeAndExtractBrands(data.documents);
@@ -1289,6 +1291,9 @@ function saveDb(data: any) {
   } catch (err) {
     console.warn("Could not save to database file (expected in read-only Vercel serverless environments):", err);
   }
+
+  // Prevent subsequent reads from Atlas for the next 10 seconds to let this write fully propagate and avoid race conditions
+  lastMongoSyncTime = Date.now() + 10000;
 
   // Push to MongoDB Atlas asynchronously to keep all instances entirely in sync
   if (mongoose.connection.readyState === 1) {
@@ -1303,6 +1308,11 @@ function saveDb(data: any) {
 }
 
 async function fetchAndSyncDbFromMongo() {
+  // If we synced successfully from Mongo recently (or wrote to it recently), use local memory cache to avoid unnecessary slow queries and race conditions
+  if (Date.now() - lastMongoSyncTime < 15000) {
+    return getDb();
+  }
+
   if (mongoose.connection.readyState === 1) {
     try {
       const dbDoc = await AppState.findOne({ key: "global_state" });
@@ -1312,6 +1322,7 @@ async function fetchAndSyncDbFromMongo() {
           fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
         } catch {}
         console.log("Successfully loaded database state from MongoDB Atlas!");
+        lastMongoSyncTime = Date.now();
         return memoryDb;
       } else {
         // First run: save current local db.json/getDb state to Atlas
@@ -1323,6 +1334,7 @@ async function fetchAndSyncDbFromMongo() {
             { upsert: true }
           );
           console.log("Seeded empty MongoDB Atlas with active local db.json data!");
+          lastMongoSyncTime = Date.now();
         }
       }
     } catch (err: any) {
@@ -3053,7 +3065,11 @@ app.post("/api/auth/login", async (req, res) => {
         
         if (sbUserRecord) {
           const updatedRole = sbUserRecord.role || matchedUser.role;
-          const updatedDeps = sbUserRecord.allowed_departments || sbUserRecord.allowed_sections || matchedUser.allowed_departments || [];
+          const updatedDeps = (sbUserRecord.allowed_departments && sbUserRecord.allowed_departments.length > 0)
+            ? sbUserRecord.allowed_departments
+            : (sbUserRecord.allowed_sections && sbUserRecord.allowed_sections.length > 0)
+              ? sbUserRecord.allowed_sections
+              : matchedUser.allowed_departments || [];
           const updatedName = sbUserRecord.display_name || sbUserRecord.name || matchedUser.name;
           
           matchedUser.role = updatedRole;
@@ -3149,7 +3165,11 @@ app.post("/api/auth/verify-session", async (req, res) => {
         
         if (sbUserRecord) {
           const updatedRole = sbUserRecord.role || matchedUser.role;
-          const updatedDeps = sbUserRecord.allowed_departments || sbUserRecord.allowed_sections || matchedUser.allowed_departments || [];
+          const updatedDeps = (sbUserRecord.allowed_departments && sbUserRecord.allowed_departments.length > 0)
+            ? sbUserRecord.allowed_departments
+            : (sbUserRecord.allowed_sections && sbUserRecord.allowed_sections.length > 0)
+              ? sbUserRecord.allowed_sections
+              : matchedUser.allowed_departments || [];
           const updatedName = sbUserRecord.display_name || sbUserRecord.name || matchedUser.name;
           
           matchedUser.role = updatedRole;
@@ -3224,7 +3244,15 @@ app.get("/api/admin/users", async (req, res) => {
                 email: emailLower,
                 role: p.role || "user",
                 status: p.status || "active",
-                allowed_departments: p.allowed_departments || p.allowed_sections || p.user_metadata?.allowed_departments || p.user_metadata?.allowed_sections || [],
+                allowed_departments: (p.allowed_departments && p.allowed_departments.length > 0)
+                  ? p.allowed_departments
+                  : (p.allowed_sections && p.allowed_sections.length > 0)
+                    ? p.allowed_sections
+                    : (p.user_metadata?.allowed_departments && p.user_metadata?.allowed_departments.length > 0)
+                      ? p.user_metadata.allowed_departments
+                      : (p.user_metadata?.allowed_sections && p.user_metadata?.allowed_sections.length > 0)
+                        ? p.user_metadata.allowed_sections
+                        : [],
                 createdAt: p.created_at || p.createdAt || new Date().toISOString()
               };
               usersList.push(mapped);
@@ -3232,7 +3260,15 @@ app.get("/api/admin/users", async (req, res) => {
             } else if (emailLower) {
               const existing = usersList.find((u: any) => u.email.toLowerCase() === emailLower);
               if (existing) {
-                existing.allowed_departments = p.allowed_departments || p.allowed_sections || p.user_metadata?.allowed_departments || p.user_metadata?.allowed_sections || existing.allowed_departments || [];
+                existing.allowed_departments = (p.allowed_departments && p.allowed_departments.length > 0)
+                  ? p.allowed_departments
+                  : (p.allowed_sections && p.allowed_sections.length > 0)
+                    ? p.allowed_sections
+                    : (p.user_metadata?.allowed_departments && p.user_metadata?.allowed_departments.length > 0)
+                      ? p.user_metadata.allowed_departments
+                      : (p.user_metadata?.allowed_sections && p.user_metadata?.allowed_sections.length > 0)
+                        ? p.user_metadata.allowed_sections
+                        : existing.allowed_departments || [];
               }
             }
           });
@@ -3254,14 +3290,22 @@ app.get("/api/admin/users", async (req, res) => {
               email: mUser.email,
               role: mUser.role || "user",
               status: mUser.status || "active",
-              allowed_departments: mUser.allowed_departments || mUser.allowed_sections || [],
+              allowed_departments: (mUser.allowed_departments && mUser.allowed_departments.length > 0)
+                ? mUser.allowed_departments
+                : (mUser.allowed_sections && mUser.allowed_sections.length > 0)
+                  ? mUser.allowed_sections
+                  : [],
               createdAt: mUser.createdAt ? mUser.createdAt.toISOString() : new Date().toISOString()
             };
             usersList.push(mapped);
           } else {
             const existing = usersList.find((u: any) => u.email.toLowerCase() === mUser.email.toLowerCase());
             if (existing) {
-              existing.allowed_departments = mUser.allowed_departments || mUser.allowed_sections || existing.allowed_departments || [];
+              existing.allowed_departments = (mUser.allowed_departments && mUser.allowed_departments.length > 0)
+                ? mUser.allowed_departments
+                : (mUser.allowed_sections && mUser.allowed_sections.length > 0)
+                  ? mUser.allowed_sections
+                  : existing.allowed_departments || [];
             }
           }
         });
@@ -3698,18 +3742,25 @@ app.post("/api/admin/users/delete", async (req, res) => {
     const db = getDb();
     db.users = db.users || [];
 
-    // Find user ID first before deleting locally
+    // Find user ID and email FIRST before deleting from db.users
     let targetUserId = id;
-    if (!targetUserId && lowerEmail) {
-      const userToDelete = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
-      targetUserId = userToDelete ? userToDelete.id : null;
+    let userEmailForDeletion = lowerEmail;
+
+    const userToDelete = db.users.find((u: any) => 
+      (id && u.id === id) || 
+      (lowerEmail && u.email?.toLowerCase().trim() === lowerEmail)
+    );
+
+    if (userToDelete) {
+      targetUserId = userToDelete.id;
+      userEmailForDeletion = userToDelete.email?.toLowerCase().trim() || lowerEmail;
     }
 
-    // Delete locally
+    // Delete locally from low db
     if (targetUserId) {
       db.users = db.users.filter((u: any) => u.id !== targetUserId);
-    } else if (lowerEmail) {
-      db.users = db.users.filter((u: any) => u.email.toLowerCase() !== lowerEmail);
+    } else if (userEmailForDeletion) {
+      db.users = db.users.filter((u: any) => u.email.toLowerCase() !== userEmailForDeletion.toLowerCase());
     }
     saveDb(db);
 
@@ -3717,21 +3768,21 @@ app.post("/api/admin/users/delete", async (req, res) => {
     if (mongoose.connection.readyState === 1) {
       if (targetUserId) {
         await User.deleteOne({ _id: targetUserId });
-      } else if (lowerEmail) {
-        await User.deleteOne({ email: lowerEmail });
+      } else if (userEmailForDeletion) {
+        await User.deleteOne({ email: userEmailForDeletion });
       }
     }
 
-    // Delete from Supabase Auth and Tables
+    // Delete from Supabase Auth and Tables using Admin Client
     const adminClient = getSupabaseAdminClient();
     if (adminClient) {
       try {
         let authUserId = targetUserId;
-        if (!authUserId && lowerEmail) {
-          console.log(`[Supabase Delete] UID not found in local db. Trying Direct Supabase Auth lookup for: ${lowerEmail}`);
+        if (!authUserId && userEmailForDeletion) {
+          console.log(`[Supabase Delete] UID not found in local db. Trying Direct Supabase Auth lookup for: ${userEmailForDeletion}`);
           const { data: { users: authUsers }, error: listErr } = await adminClient.auth.admin.listUsers();
           if (!listErr && authUsers) {
-            const matchedAuthUser = authUsers.find((u: any) => u.email?.toLowerCase().trim() === lowerEmail);
+            const matchedAuthUser = authUsers.find((u: any) => u.email?.toLowerCase().trim() === userEmailForDeletion);
             if (matchedAuthUser) {
               authUserId = matchedAuthUser.id;
               console.log(`[Supabase Delete] Found Auth UID from email: ${authUserId}`);
@@ -3740,16 +3791,10 @@ app.post("/api/admin/users/delete", async (req, res) => {
         }
 
         // Determine email if we only have id
-        let userEmailForDeletion = lowerEmail;
         if (!userEmailForDeletion && authUserId) {
-          const matchedLocal = db.users.find((u: any) => u.id === authUserId);
-          if (matchedLocal) {
-            userEmailForDeletion = matchedLocal.email;
-          } else {
-            const { data: { user: authUser }, error: getErr } = await adminClient.auth.admin.getUserById(authUserId);
-            if (!getErr && authUser) {
-              userEmailForDeletion = authUser.email?.toLowerCase().trim() || "";
-            }
+          const { data: { user: authUser }, error: getErr } = await adminClient.auth.admin.getUserById(authUserId);
+          if (!getErr && authUser) {
+            userEmailForDeletion = authUser.email?.toLowerCase().trim() || "";
           }
         }
 
@@ -4281,6 +4326,96 @@ app.post("/api/device/request-reconnect", async (req, res) => {
   } catch (err: any) {
     console.error("[Device Auth] Request Reconnect Error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// AI OCR Extraction Endpoint
+app.post("/api/ai/ocr", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "لم يتم رفع أي ملف." });
+    }
+    const { buffer, mimetype, originalname } = req.file;
+    const base64Data = buffer.toString("base64");
+
+    if (!geminiApiKey) {
+      return res.status(500).json({
+        success: false,
+        error: "لم يتم تكوين مفتاح API لجيميني (GEMINI_API_KEY). الرجاء إضافته في الإعدادات لتفعيل الذكاء الاصطناعي."
+      });
+    }
+
+    const systemInstruction = `You are an advanced visual AI OCR engine optimized for Egyptian and Arabic construction, engineering, and petty cash documents.
+Analyze the provided document (can be an invoice, receipt, InstaPay transaction screenshot/receipt, attendance sheet, or subcontractor statement).
+Extract the following information:
+1. Names (الأسماء): Any employee names, site engineer names, subcontractor names, client/vendor names, or labor names mentioned in the document. Return as an array of strings in Arabic.
+2. Dates (التواريخ): Any official dates, transaction dates, or period dates in YYYY-MM-DD format. Return as an array of strings.
+3. Amounts (المبالغ): Any monetary amounts, totals, petty cash values, or daily wages. Extract them as standard numbers. Return as an array of numbers.
+4. Description/Statement (البيان): A concise, rich description in Arabic summarizing what this receipt/document is for (e.g., 'شراء خامات سباكة وكهرباء للموقع' or 'إيصال تحويل بنكي إنستاباي للمهندس' or 'كشف حضور وغياب العمالة اليومية').
+5. Summary (ملخص): A brief, complete visual summary of the document in professional Arabic.
+
+Return values in JSON format matching the schema rules exactly.`;
+
+    const documentPart = {
+      inlineData: {
+        mimeType: mimetype || "image/jpeg",
+        data: base64Data
+      }
+    };
+
+    const textPart = {
+      text: `Process this document "${originalname}" and extract names, dates, amounts, description, and summary in JSON format.`
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: { parts: [documentPart, textPart] },
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            names: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "All person/company/labor names found in the document."
+            },
+            dates: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "All dates found in the document, formatted as YYYY-MM-DD."
+            },
+            amounts: {
+              type: Type.ARRAY,
+              items: { type: Type.NUMBER },
+              description: "All monetary values/amounts found."
+            },
+            description: {
+              type: Type.STRING,
+              description: "Comprehensive Arabic description/statement of the document."
+            },
+            summary: {
+              type: Type.STRING,
+              description: "Short visual summary/conclusion of the document."
+            }
+          },
+          required: ["names", "dates", "amounts", "description", "summary"]
+        }
+      }
+    });
+
+    const resultText = response.text || "{}";
+    const parsed = JSON.parse(resultText.trim());
+
+    return res.json({
+      success: true,
+      data: parsed
+    });
+
+  } catch (err: any) {
+    console.error("[AI OCR] Error during Gemini extraction:", err);
+    return res.status(500).json({ success: false, error: err.message || "حدث خطأ أثناء معالجة المستند بالذكاء الاصطناعي." });
   }
 });
 
@@ -5064,7 +5199,7 @@ app.post("/api/ai/aggregate-costs", async (req, res) => {
     const db = getDb();
     
     if (!db.costAnalysisEntries) db.costAnalysisEntries = [];
-    if (!db.costAnalysisCategories) db.costAnalysisCategories = ["نقل ومحروقات", "أجور عمالة", "مواد بناء", "عهد مهندسين", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى"];
+    if (!db.costAnalysisCategories) db.costAnalysisCategories = ["حديد", "بوفيه", "مواد تشغيل", "نقل ومحروقات", "أجور عمالة", "مواد بناء", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى"];
 
     // Gather all transactions from pettyCashBoxDays
     const allTransactions: any[] = [];
@@ -5109,7 +5244,7 @@ app.post("/api/ai/aggregate-costs", async (req, res) => {
 
     const systemInstruction = `You are an expert Senior Construction Financial Analyst and Forensic Accountant.
 Analyze the list of raw daily petty cash transactions and aggregate them monthly (by YYYY-MM) per unique combination of (Project, Standard Clean Accounting Category).
-Clean categories MUST be mapped to one of: "نقل ومحروقات", "أجور عمالة", "مواد بناء", "عهد مهندسين", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى".
+Clean categories MUST be mapped to one of: "حديد", "بوفيه", "مواد تشغيل", "نقل ومحروقات", "أجور عمالة", "مواد بناء", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى".
 For each aggregated group (Month, Project, Category):
 - Sum the total cost amount of transactions.
 - Write a highly professional, articulate Arabic accounting summary (ملخص محاسبي للذكاء الاصطناعي) of what these expenses covered based on the raw descriptions of all grouped transactions. Avoid generic text. Use proper financial Arabic terminology.
@@ -5201,7 +5336,7 @@ app.post("/api/ai/aggregate-engineer-costs", async (req, res) => {
     const db = getDb();
     
     if (!db.costAnalysisEntries) db.costAnalysisEntries = [];
-    if (!db.costAnalysisCategories) db.costAnalysisCategories = ["نقل ومحروقات", "أجور عمالة", "مواد بناء", "عهد مهندسين", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى"];
+    if (!db.costAnalysisCategories) db.costAnalysisCategories = ["حديد", "بوفيه", "مواد تشغيل", "نقل ومحروقات", "أجور عمالة", "مواد بناء", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى"];
 
     const [yearStr, monthStr] = month.split("-"); // "2026-07" -> "2026", "07"
 
@@ -5250,7 +5385,10 @@ app.post("/api/ai/aggregate-engineer-costs", async (req, res) => {
 
     const systemInstruction = `You are an expert Senior Construction Financial Analyst and Forensic Accountant.
 Analyze the list of raw daily petty cash transactions of the engineer (${engineerName}) for the month (${month}) and aggregate them by unique combination of (Project, Standard Clean Accounting Category).
-Clean categories MUST be mapped to one of the standard categories: "نقل ومحروقات", "أجور عمالة", "مواد بناء", "عهد مهندسين", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى". If a transaction corresponds to sub-materials like "حديد" or "أسمنت", map it to "مواد بناء".
+Clean categories MUST be mapped to one of the standard categories: "حديد", "بوفيه", "مواد تشغيل", "نقل ومحروقات", "أجور عمالة", "مواد بناء", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى".
+If a transaction corresponds to iron or steel reinforcement, map it strictly to "حديد".
+If a transaction is related to pantry, coffee, tea, meals, or buffets, map it strictly to "بوفيه".
+If a transaction is related to project operations, consumables, raw materials, or site operation, map it strictly to "مواد تشغيل".
 For each aggregated group (Project, Category):
 - Sum the total cost amount of transactions.
 - Write a highly professional, articulate Arabic accounting summary (ملخص محاسبي للذكاء الاصطناعي) of what these expenses covered based on the raw descriptions of all grouped transactions. Avoid generic text. Use proper financial Arabic terminology.
@@ -5376,6 +5514,103 @@ Output the results strictly as a JSON object matching the requested schema.`;
   } catch (err: any) {
     console.error("AI engineer cost aggregation error:", err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// AI-POWERED EXCEL ANALYSIS & CLASSIFICATION ENDPOINT
+app.post("/api/ai/excel-analysis", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "لم يتم تحديد ملف إكسيل للرفع." });
+    }
+
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json(sheet);
+
+    if (rawRows.length === 0) {
+      return res.status(400).json({ success: false, error: "ملف الإكسيل فارغ ولا يحتوي على أي بيانات." });
+    }
+
+    if (!geminiApiKey) {
+      return res.status(500).json({
+        success: false,
+        error: "لم يتم تكوين مفتاح API لجيميني (GEMINI_API_KEY). الرجاء إضافته في الإعدادات لتفعيل الذكاء الاصطناعي."
+      });
+    }
+
+    const systemInstruction = `You are an expert Construction Auditor and AI Accounting Assistant.
+Analyze the provided raw rows from an uploaded Excel sheet.
+Your task is to classify each row/transaction into one of the authorized standard cost categories: "حديد", "بوفيه", "مواد تشغيل", "نقل ومحروقات", "أجور عمالة", "مواد بناء", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى".
+For each transaction, extract or determine:
+- date: formatted as YYYY-MM-DD (estimate based on context if missing).
+- project: project name (default to 'عام' if not found).
+- category: one of the authorized categories listed above.
+- amount: the numeric cost value of the transaction.
+- description: clear concise Arabic statement summarizing what this expense was for.
+- engineer: the person/source of the transaction (default to 'إكسيل مستورد').
+
+Return the classified entries as a JSON object matching the requested schema.`;
+
+    const textContent = `Analyze and classify these raw rows extracted from an Excel sheet.
+Raw Rows:
+${JSON.stringify(rawRows.slice(0, 150), null, 2)}
+Output the results strictly as a JSON object matching the requested schema.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [{ text: textContent }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            classifiedEntries: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  project: { type: Type.STRING },
+                  category: { type: Type.STRING },
+                  amount: { type: Type.NUMBER },
+                  date: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  engineer: { type: Type.STRING }
+                },
+                required: ["project", "category", "amount", "date", "description", "engineer"]
+              }
+            }
+          },
+          required: ["classifiedEntries"]
+        }
+      }
+    });
+
+    const textResult = response?.text || "{}";
+    const parsedResult = JSON.parse(textResult.trim());
+    const entries = parsedResult.classifiedEntries || [];
+
+    const timestamp = Date.now();
+    const formattedEntries = entries.map((entry: any, index: number) => ({
+      id: `excel-cost-${timestamp}-${index}`,
+      project: entry.project || "عام",
+      category: entry.category || "أخرى",
+      amount: entry.amount || 0,
+      date: entry.date || new Date().toISOString().split('T')[0],
+      description: entry.description || "",
+      engineer: entry.engineer || "إكسيل مستورد"
+    }));
+
+    return res.json({
+      success: true,
+      entries: formattedEntries
+    });
+
+  } catch (err: any) {
+    console.error("[Excel Analysis] Error parsing or analyzing Excel:", err);
+    return res.status(500).json({ success: false, error: err.message || "حدث خطأ أثناء معالجة ملف الإكسيل بالذكاء الاصطناعي." });
   }
 });
 

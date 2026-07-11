@@ -552,14 +552,35 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           const ext = data.data;
           onNotify('success', 'تم استخراج البيانات بنجاح 🎉', 'تم ملء حقول الفاتورة تلقائياً. يرجى مراجعتها وتعديلها إذا لزم الأمر قبل الإضافة.');
           
-          if (ext.date) setSelectedDate(ext.date);
-          if (ext.inflow) setInflow(ext.inflow.toString());
-          if (ext.outflow) setOutflow(ext.outflow.toString());
-          if (ext.description) setDescription(ext.description);
+          if (ext.date) {
+            setSelectedDate(ext.date);
+          } else if (ext.dates && ext.dates.length > 0) {
+            setSelectedDate(ext.dates[0]);
+          }
+
+          if (ext.inflow) {
+            setInflow(ext.inflow.toString());
+          }
+
+          if (ext.outflow) {
+            setOutflow(ext.outflow.toString());
+          } else if (ext.amounts && ext.amounts.length > 0) {
+            setOutflow(ext.amounts[0].toString());
+          }
+
+          if (ext.description) {
+            setDescription(ext.description);
+          }
+
           if (ext.method) setMethod(ext.method);
           if (ext.project) setProject(ext.project);
+          
           if (ext.engineer) {
             const matched = engineers?.find(eng => eng.name.includes(ext.engineer) || ext.engineer.includes(eng.name));
+            if (matched) setSelectedEngineer(matched.name);
+          } else if (ext.names && ext.names.length > 0) {
+            const matchedName = ext.names[0];
+            const matched = engineers?.find(eng => eng.name.includes(matchedName) || matchedName.includes(eng.name));
             if (matched) setSelectedEngineer(matched.name);
           }
           
@@ -638,6 +659,16 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Scoped style block to force portrait print specifically for this box movement report */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: portrait !important;
+            margin: 8mm 10mm 8mm 10mm !important;
+          }
+        }
+      `}} />
+
       {/* Date & Starting Balance Panel */}
       <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-md flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">

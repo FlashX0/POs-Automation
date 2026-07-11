@@ -154,17 +154,35 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             alert('تم استخراج بيانات كشف العمالة بنجاح 🎉');
           }
 
-          if (ext.workerName) setNewWorker(ext.workerName);
-          const stDate = ext.weekStartDate || ext.startDate;
+          // Read workerName
+          if (ext.workerName) {
+            setNewWorker(ext.workerName);
+          } else if (ext.names && ext.names.length > 0) {
+            setNewWorker(ext.names[0]);
+          }
+
+          // Read startDate
+          const stDate = ext.weekStartDate || ext.startDate || (ext.dates && ext.dates.length > 0 ? ext.dates[0] : null);
           if (stDate) {
             setNewStart(stDate);
-            const d = new Date(stDate);
-            d.setDate(d.getDate() + 6);
-            setNewEnd(d.toISOString().split('T')[0]);
+            try {
+              const d = new Date(stDate);
+              if (!isNaN(d.getTime())) {
+                d.setDate(d.getDate() + 6);
+                setNewEnd(d.toISOString().split('T')[0]);
+              }
+            } catch (e) {}
           } else if (ext.endDate) {
             setNewEnd(ext.endDate);
           }
-          if (ext.dailyRate) setNewDailyRate(ext.dailyRate.toString());
+
+          // Read dailyRate
+          if (ext.dailyRate) {
+            setNewDailyRate(ext.dailyRate.toString());
+          } else if (ext.amounts && ext.amounts.length > 0) {
+            setNewDailyRate(ext.amounts[0].toString());
+          }
+
           if (ext.overtimeRate) setNewOvertimeRate(ext.overtimeRate.toString());
           if (ext.sohraRate) setNewSohraRate(ext.sohraRate.toString());
           if (ext.previousTotal) setNewPrevTotal(ext.previousTotal.toString());
@@ -945,8 +963,19 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   }, [archives, timesheets]);
 
   return (
-    <div className="space-y-6 print:hidden">
-      {/* Navigation Department Tabs */}
+    <div className="space-y-6">
+      {/* Scoped style block to force landscape print specifically for this timesheet */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: landscape !important;
+            margin: 8mm 10mm 8mm 10mm !important;
+          }
+        }
+      `}} />
+
+      <div className="space-y-6 print:hidden">
+        {/* Navigation Department Tabs */}
       <div className="flex border-b border-slate-800 gap-2">
         <button
           onClick={() => setActiveTab('entry')}
@@ -1702,6 +1731,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
 
         </div>
       )}
+      </div>
       {/* Landscape print-only layout matching image_282f9b.png */}
       {selectedSheet && computedSums && (
         <div className="hidden print:block w-full text-black font-sans landscape-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>

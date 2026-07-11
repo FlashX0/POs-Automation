@@ -90,12 +90,37 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
             alert('تم استخراج بيانات مستخلص المقاول بنجاح 🎉');
           }
 
-          if (ext.subcontractor) setNewSub(ext.subcontractor);
-          if (ext.project) setNewProj(ext.project);
+          if (ext.subcontractor) {
+            setNewSub(ext.subcontractor);
+          } else if (ext.names && ext.names.length > 0) {
+            setNewSub(ext.names[0]);
+          }
+
+          if (ext.project) {
+            setNewProj(ext.project);
+          } else {
+            setNewProj("عام");
+          }
+
           if (ext.statementNo) setNewStatementNo(ext.statementNo);
-          if (ext.supervisor) setNewSupervisor(ext.supervisor);
-          if (ext.accountant) setNewAccountant(ext.accountant);
-          if (ext.previousBalance) setNewPrevBalance(ext.previousBalance.toString());
+          
+          if (ext.supervisor) {
+            setNewSupervisor(ext.supervisor);
+          } else if (ext.names && ext.names.length > 1) {
+            setNewSupervisor(ext.names[1]);
+          }
+
+          if (ext.accountant) {
+            setNewAccountant(ext.accountant);
+          } else if (ext.names && ext.names.length > 2) {
+            setNewAccountant(ext.names[2]);
+          }
+
+          if (ext.previousBalance) {
+            setNewPrevBalance(ext.previousBalance.toString());
+          } else if (ext.amounts && ext.amounts.length > 0) {
+            setNewPrevBalance(ext.amounts[0].toString());
+          }
         } else {
           if (onNotify) {
             onNotify('error', 'فشل تحليل المستند', data.error || 'حدث خطأ في قراءة المستخلص بالذكاء الاصطناعي.');
@@ -879,7 +904,17 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   }, [archives, contracts]);
 
   return (
-    <div className="space-y-6 print:hidden">
+    <div className="space-y-6">
+      {/* Scoped style block to force portrait print specifically for this certificate */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: portrait !important;
+            margin: 8mm 10mm 8mm 10mm !important;
+          }
+        }
+      `}} />
+
       <div className="no-print space-y-6">
         {/* Department Top Tab Switches */}
       <div className="flex border-b border-slate-800 gap-2">

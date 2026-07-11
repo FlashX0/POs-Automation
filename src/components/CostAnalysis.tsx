@@ -104,58 +104,41 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
     }
   };
 
-  const processExcelFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        
-        // Extract raw JSON rows
-        const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-        if (rawRows.length === 0) {
-          alert("شيت Excel فارغ ولا يحتوي على أي بيانات!");
-          return;
-        }
+  const processExcelFile = async (file: File) => {
+    setIsParsingExcel(true);
+    setExcelPreviewEntries([]);
+    if (onNotify) {
+      onNotify('info', 'جاري فحص وتصنيف بيانات Excel بالذكاء الاصطناعي... 🤖', 'يتم فحص شيت المصروفات، وتحديد المبالغ، وتصنيف كل معاملة للبند الأنسب تلقائياً...');
+    }
 
-        setIsParsingExcel(true);
-        setExcelPreviewEntries([]);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/ai/excel-analysis', {
+        method: 'POST',
+        body: formData
+      });
+
+      const resData = await res.json();
+      if (res.ok && resData.success) {
+        setExcelPreviewEntries(resData.entries);
         if (onNotify) {
-          onNotify('info', 'جاري فحص وتصنيف بيانات Excel بالذكاء الاصطناعي... 🤖', 'يتم فحص شيت المصروفات، وتحديد المبالغ، وتصنيف كل معاملة للبند الأنسب تلقائياً...');
+          onNotify('success', 'نجح تصنيف البيانات بالـ AI 🎉', `تم استخراج وتصنيف عدد ${resData.entries.length} مصروف بنجاح مذهل! يرجى مراجعتها وتأكيد حفظها بالأسفل.`);
         }
-
-        const res = await fetch('/api/ai/parse-excel-expenses', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            expenses: rawRows,
-            approvedCategories: categories
-          })
-        });
-
-        const resData = await res.json();
-        if (res.ok && resData.success) {
-          setExcelPreviewEntries(resData.entries);
-          if (onNotify) {
-            onNotify('success', 'نجح تصنيف البيانات بالـ AI 🎉', `تم استخراج وتصنيف عدد ${resData.entries.length} مصروف بنجاح مذهل! يرجى مراجعتها وتأكيد حفظها بالأسفل.`);
-          }
-        } else {
-          throw new Error(resData.error || "فشل تصنيف البيانات بالذكاء الاصطناعي.");
-        }
-      } catch (err: any) {
-        console.error("Excel parse AI error:", err);
-        if (onNotify) {
-          onNotify('error', 'فشل معالجة شيت Excel', err.message || 'حدث خطأ أثناء معالجة أو تصنيف البيانات.');
-        } else {
-          alert("فشل تحليل وتصنيف البيانات: " + err.message);
-        }
-      } finally {
-        setIsParsingExcel(false);
+      } else {
+        throw new Error(resData.error || "فشل تصنيف البيانات بالذكاء الاصطناعي.");
       }
-    };
-    reader.readAsBinaryString(file);
+    } catch (err: any) {
+      console.error("Excel parse AI error:", err);
+      if (onNotify) {
+        onNotify('error', 'فشل معالجة شيت Excel', err.message || 'حدث خطأ أثناء معالجة أو تصنيف البيانات.');
+      } else {
+        alert("فشل تحليل وتصنيف البيانات: " + err.message);
+      }
+    } finally {
+      setIsParsingExcel(false);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -652,6 +635,16 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Scoped style block to force landscape print specifically for this financial report */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: landscape !important;
+            margin: 8mm 10mm 8mm 10mm !important;
+          }
+        }
+      `}} />
+
       {/* Print-only beautifully styled header */}
       <div className="hidden print:block w-full text-right mb-6 font-sans text-black" dir="rtl">
         <div className="border-4 border-dashed border-[#4F81BD] p-5 bg-white space-y-4">
@@ -1147,7 +1140,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
       {/* Charts & Interactive Dashboards */}
       {entries.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print">
           {/* Category spending distribution chart */}
           <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md flex flex-col space-y-4">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800/60 pb-3">
@@ -1249,7 +1242,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
       )}
 
       {/* Filtering & Table Panel */}
-      <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md space-y-4">
+      <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md space-y-4 no-print">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800/60 pb-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <Grid className="text-indigo-400 w-4 h-4" />
@@ -1459,6 +1452,54 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
               </tfoot>
             )}
           </table>
+        </div>
+      </div>
+
+      {/* Print-only Category spending distribution table (Simple Landscape Sheet) */}
+      <div className="hidden print:block w-full mt-6 text-black" dir="rtl">
+        <table className="w-full border-collapse border-2 border-[#4F81BD] text-center font-sans">
+          <thead>
+            <tr className="bg-[#D9E1F2] text-[#1F4E78] font-black text-sm border-b-2 border-[#4F81BD]">
+              <th className="py-3 px-4 border border-[#4F81BD] w-[10%] text-center">م</th>
+              <th className="py-3 px-4 border border-[#4F81BD] text-right pr-6 w-[50%]">بند التكلفة والمصروف (Category)</th>
+              <th className="py-3 px-4 border border-[#4F81BD] w-[20%] text-center">النسبة المئوية (%)</th>
+              <th className="py-3 px-4 border border-[#4F81BD] text-left pl-6 w-[20%]">إجمالي قيمة المنصرف (EGP)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categoryChartData.map((item, index) => (
+              <tr key={item.name} className="border-b border-dashed border-slate-300 hover:bg-slate-50 text-xs font-bold text-slate-800">
+                <td className="py-3 px-4 border border-[#4F81BD] font-mono text-center">{index + 1}</td>
+                <td className="py-3 px-4 border border-[#4F81BD] text-right pr-6 font-black text-[#1F4E78]">{item.name}</td>
+                <td className="py-3 px-4 border border-[#4F81BD] font-mono text-[#375623] text-center">{item.percentage}%</td>
+                <td className="py-3 px-4 border border-[#4F81BD] text-left pl-6 font-mono text-slate-900">{item.value.toLocaleString()} EGP</td>
+              </tr>
+            ))}
+            {/* Total Row */}
+            <tr className="bg-[#E2EFDA] text-[#375623] font-black text-sm">
+              <td className="py-3 px-4 border border-[#4F81BD] text-center" colSpan={2}>إجمالي المصروفات المصنفة والمحللة كلياً</td>
+              <td className="py-3 px-4 border border-[#4F81BD] font-mono text-center">100%</td>
+              <td className="py-3 px-4 border border-[#4F81BD] text-left pl-6 font-mono">
+                {totalFilteredAmount.toLocaleString()} EGP
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Dynamic official signatures block */}
+        <div className="grid grid-cols-3 gap-6 text-center mt-12 pt-6 border-t border-dashed border-[#4F81BD] text-xs font-bold text-slate-700">
+          <div className="space-y-6">
+            <span>توقيع مهندس الموقع المسؤول</span>
+            <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
+          </div>
+          <div className="space-y-6">
+            <span>توقيع مراجع التكاليف المعتمد</span>
+            <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
+          </div>
+          <div className="space-y-6">
+            <span>اعتماد إدارة الشركة والختم الرسمي</span>
+            <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
+          </div>
         </div>
       </div>
     </div>
