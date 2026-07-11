@@ -445,7 +445,7 @@ html, body {
 }
 
 @media print {
-  body, html, #root, .main-container, main, .flex-1 {
+  body, html, #root, .main-container, main, .flex-1, div.min-h-screen, .min-h-screen {
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #000000 !important;
@@ -453,6 +453,12 @@ html, body {
     overflow: visible !important;
     height: auto !important;
     width: 100% !important;
+  }
+
+  /* Force all general background classes to be transparent during print to prevent dark mode/black leaks */
+  div, section, main, article, aside, header, footer, nav, [class*="bg-[#0"] {
+    background-color: transparent !important;
+    background: transparent !important;
   }
   
   header, 
@@ -467,7 +473,8 @@ html, body {
   section, 
   .bento-stats,
   #departments-dropdown-btn,
-  .alert-box {
+  .alert-box,
+  .no-print * {
     display: none !important;
     visibility: hidden !important;
     height: 0 !important;
@@ -490,18 +497,21 @@ html, body {
   }
 
   /* Make sure background colors for cells print neatly but stay readable */
-  .bg-[#D9E1F2] {
+  .bg-\[\#D9E1F2\], .bg-\[\#d9e1f2\] {
     background-color: #D9E1F2 !important;
+    background: #D9E1F2 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  .bg-[#F2F2F2], .bg-slate-100 {
+  .bg-\[\#F2F2F2\], .bg-\[\#f2f2f2\], .bg-slate-100 {
     background-color: #F2F2F2 !important;
+    background: #F2F2F2 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  .bg-[#E2EFDA] {
+  .bg-\[\#E2EFDA\], .bg-\[\#e2efda\] {
     background-color: #E2EFDA !important;
+    background: #E2EFDA !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }

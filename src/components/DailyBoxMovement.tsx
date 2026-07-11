@@ -634,7 +634,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   return (
     <div className="space-y-6">
       {/* Date & Starting Balance Panel */}
-      <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
+      <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-md flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
           <div className="flex items-center gap-3">
             <User className="text-indigo-400 w-5 h-5" />
@@ -779,11 +779,11 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                   </div>
 
                   {/* Opening Balance Block */}
-                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] py-2 px-3 font-bold text-xs bg-slate-50">
-                    <div className="col-span-1 text-left text-[#1F4E78] font-mono">
+                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] py-2 px-3 font-bold text-xs bg-slate-50 text-[#1F4E78]">
+                    <div className="col-span-1 text-right font-mono font-bold">
                       {formatCurrency(startingBal)} EGP
                     </div>
-                    <div className="col-span-4 text-right text-slate-700">رصيد أول اليوم (مرحل تلقائياً من إغلاق اليوم السابق)</div>
+                    <div className="col-span-4 text-right pr-2 text-slate-700">رصيد أول اليوم</div>
                   </div>
 
                   {/* Header Row */}
@@ -830,7 +830,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                       +{formatCurrency(totalInflow)} EGP
                     </div>
                     <div className="text-center text-slate-500">-</div>
-                    <div className="text-right text-slate-700 font-extrabold text-[#1f4e78]">إجمالي الحركات اليومية:</div>
+                    <div className="text-right text-[#1f4e78] font-extrabold">الاجـــــــمـــــــالــــــــــــــــــــــــى</div>
                     <div className="text-left text-rose-700 font-mono">
                       -{formatCurrency(totalOutflow)} EGP
                     </div>
@@ -839,11 +839,11 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
                   {/* Ending Balance Row */}
                   <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] bg-[#E2EFDA] font-black text-xs py-2 px-3 text-[#375623]">
-                    <div className="text-left font-mono">
+                    <div className="col-span-1 text-right font-mono font-black">
                       {formatCurrency(dayEndingBal)} EGP
                     </div>
-                    <div className="col-span-4 text-right">
-                      رصيد آخر اليوم: (رصيد أول اليوم {formatCurrency(startingBal)} + إجمالي المدين {formatCurrency(totalInflow)} - إجمالي الدائن {formatCurrency(totalOutflow)})
+                    <div className="col-span-4 text-right pr-2 font-black">
+                      رصيد آخر اليوم
                     </div>
                   </div>
                 </div>
@@ -854,7 +854,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
       </div>
 
       {/* Overview Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 no-print">
         <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl shadow-md flex items-center gap-4">
           <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl">
             <DollarSign className="w-5 h-5" />
@@ -906,7 +906,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
       {/* Pending Transactions Section */}
       {pendingTransactions.length > 0 && (
-        <div className="bg-[#111827] border-2 border-amber-500/30 rounded-2xl p-6 shadow-md space-y-4">
+        <div className="bg-[#111827] border-2 border-amber-500/30 rounded-2xl p-6 shadow-md space-y-4 no-print">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-3 gap-2">
             <div>
               <h3 className="text-sm font-bold text-amber-400 flex items-center gap-2">
@@ -1003,7 +1003,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
       )}
 
       {/* Main Grid Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
         {/* Input Form Card */}
         <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md h-fit space-y-4">
           <h3 className="text-sm font-bold text-white border-b border-slate-850 pb-3 flex items-center gap-2">
