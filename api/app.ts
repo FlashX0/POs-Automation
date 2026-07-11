@@ -5608,5 +5608,96 @@ app.post("/api/engineers/upload-file", upload.single("file"), async (req, res) =
   }
 });
 
+/**
+ * AI-POWERED EXCEL EXPENSES EXTRACTION & CLASSIFICATION
+ */
+app.post("/api/ai/parse-excel-expenses", async (req, res) => {
+  try {
+    const { expenses, approvedCategories } = req.body;
+    if (!expenses || !Array.isArray(expenses) || expenses.length === 0) {
+      return res.status(400).json({ success: false, error: "لم يتم تزويد قائمة مصروفات صالحة للتحليل والتصنيف." });
+    }
+
+    if (!geminiApiKey) {
+      return res.status(500).json({
+        success: false,
+        error: "لم يتم تكوين مفتاح API لجيميني (GEMINI_API_KEY). الرجاء إضافته في إعدادات لتفعيل التجميع والتصنيف الذكي."
+      });
+    }
+
+    const categoriesList = approvedCategories || ["مواد تشغيل", "بوفيه وضيافة", "منتجات أسمنتية", "حديد تسليح", "أدوات ومهمات"];
+
+    const systemInstruction = `You are an expert AI Construction Cost Accountant and Data Specialist.
+Process a list of raw expenses parsed from an Excel sheet. Clean their descriptions, format amounts/dates, and classify/map each expense *strictly* to one of the approved categories list provided: ${JSON.stringify(categoriesList)}.
+For each raw item, you must:
+1. Parse the date and format it strictly as 'YYYY-MM-DD'. If the date is missing, incorrect, or not a string, use today's date or the default '2026-07-11'.
+2. Format and clean the description to be brief, professional, and clear in Arabic (e.g. "شراء حديد تسليح للموقع").
+3. Map the category *strictly* to one of the approved categories: ${JSON.stringify(categoriesList)}. Do not invent categories that are not in this list. If none match, use the closest general term or the first category in the list.
+4. Keep the original amount as a number. If it is null or undefined or invalid, use 0.
+5. If a project is specified, use it or clean it up. If not, default to "عام".
+6. If an engineer is specified, keep it.
+Return the structured list as a JSON object with key 'categorizedEntries'.`;
+
+    const textContent = `Clean, format, and classify these raw expenses into our approved categories list.
+Raw expenses:
+${JSON.stringify(expenses, null, 2)}
+Output the results strictly as a JSON object matching the requested schema.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: { parts: [{ text: textContent }] },
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            categorizedEntries: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  project: { type: Type.STRING, description: "Project name associated with the expense." },
+                  category: { type: Type.STRING, description: "Clean category mapped strictly to one of the approved categories." },
+                  amount: { type: Type.NUMBER, description: "Clean expense cost amount as a number." },
+                  date: { type: Type.STRING, description: "Expense date formatted as YYYY-MM-DD." },
+                  description: { type: Type.STRING, description: "Brief cleaned description of the expense in Arabic." },
+                  engineer: { type: Type.STRING, description: "Engineer associated if any (optional)." }
+                },
+                required: ["project", "category", "amount", "date", "description"]
+              }
+            }
+          },
+          required: ["categorizedEntries"]
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text || "{}");
+    const categorizedEntries = parsedData.categorizedEntries || [];
+
+    // Assign IDs to entries
+    const formattedEntries = categorizedEntries.map((entry: any, index: number) => ({
+      id: `cost_excel_${Date.now()}_${index}`,
+      project: entry.project || "عام",
+      category: entry.category || categoriesList[0],
+      amount: parseFloat(entry.amount) || 0,
+      date: entry.date || new Date().toISOString().split("T")[0],
+      description: entry.description || "",
+      engineer: entry.engineer || undefined
+    }));
+
+    res.json({
+      success: true,
+      entries: formattedEntries,
+      message: `تم استخراج وتصنيف عدد ${formattedEntries.length} قيد مالي بالذكاء الاصطناعي بنجاح مذهل!`
+    });
+
+  } catch (err: any) {
+    console.error("AI excel parse expense route error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Export the app
 export default app;

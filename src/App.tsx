@@ -952,7 +952,9 @@ export default function App() {
   useEffect(() => {
     if (isVerifyingSession) return;
     if (currentUser) {
-      const allowed = currentUser.allowed_departments || [];
+      const allowed = currentUser.role === 'admin'
+        ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+        : (currentUser.allowed_departments || []);
       if (allowed.length > 0 && !allowed.includes(selectedDepartment)) {
         if (allowed.includes('procurement')) {
           setSelectedDepartment('procurement');
@@ -4681,22 +4683,9 @@ export default function App() {
     );
   }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  const allowedDepts = currentUser?.role === 'admin'
+    ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+    : (currentUser?.allowed_departments || []);
 
   return (
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans overflow-x-hidden w-full max-w-full">
@@ -4760,7 +4749,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1">
                           {/* Department 1: Procurement */}
-                          {(currentUser?.allowed_departments || []).includes('procurement') && (
+                          {allowedDepts.includes('procurement') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('procurement');
@@ -4783,7 +4772,7 @@ export default function App() {
                           )}
 
                           {/* Department 2: Petty Cash */}
-                          {(currentUser?.allowed_departments || []).includes('petty_cash') && (
+                          {allowedDepts.includes('petty_cash') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('petty_cash');
@@ -4806,7 +4795,7 @@ export default function App() {
                           )}
 
                           {/* Department 3: Subcontractors */}
-                          {(currentUser?.allowed_departments || []).includes('subcontractors') && (
+                          {allowedDepts.includes('subcontractors') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('subcontractors');
@@ -4829,7 +4818,7 @@ export default function App() {
                           )}
 
                           {/* Department 4: Labor Timesheet */}
-                          {(currentUser?.allowed_departments || []).includes('labor_timesheet') && (
+                          {allowedDepts.includes('labor_timesheet') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('labor_timesheet');
@@ -4852,7 +4841,7 @@ export default function App() {
                           )}
 
                           {/* Department 5: Cost Analysis */}
-                          {(currentUser?.allowed_departments || []).includes('cost_analysis') && (
+                          {allowedDepts.includes('cost_analysis') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('cost_analysis');
@@ -4875,7 +4864,7 @@ export default function App() {
                           )}
 
                           {/* Department 6: Engineer Management */}
-                          {(currentUser?.allowed_departments || []).includes('engineers') && (
+                          {allowedDepts.includes('engineers') && (
                             <button
                               onClick={() => {
                                 setSelectedDepartment('engineers');

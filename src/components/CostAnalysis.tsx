@@ -13,7 +13,11 @@ import {
   PieChart as PieIcon, 
   Grid,
   Sparkles,
-  Printer
+  Printer,
+  Upload,
+  Check,
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { 
   PieChart, 
@@ -87,6 +91,124 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   const [targetMonth, setTargetMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [isEngineerAggregating, setIsEngineerAggregating] = useState<boolean>(false);
   const [archiveUrl, setArchiveUrl] = useState<string>('');
+
+  // Excel Parse states
+  const [isParsingExcel, setIsParsingExcel] = useState<boolean>(false);
+  const [excelPreviewEntries, setExcelPreviewEntries] = useState<CostEntry[]>([]);
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+  const handleExcelFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processExcelFile(file);
+    }
+  };
+
+  const processExcelFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        
+        // Extract raw JSON rows
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        if (rawRows.length === 0) {
+          alert("شيت Excel فارغ ولا يحتوي على أي بيانات!");
+          return;
+        }
+
+        setIsParsingExcel(true);
+        setExcelPreviewEntries([]);
+        if (onNotify) {
+          onNotify('info', 'جاري فحص وتصنيف بيانات Excel بالذكاء الاصطناعي... 🤖', 'يتم فحص شيت المصروفات، وتحديد المبالغ، وتصنيف كل معاملة للبند الأنسب تلقائياً...');
+        }
+
+        const res = await fetch('/api/ai/parse-excel-expenses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expenses: rawRows,
+            approvedCategories: categories
+          })
+        });
+
+        const resData = await res.json();
+        if (res.ok && resData.success) {
+          setExcelPreviewEntries(resData.entries);
+          if (onNotify) {
+            onNotify('success', 'نجح تصنيف البيانات بالـ AI 🎉', `تم استخراج وتصنيف عدد ${resData.entries.length} مصروف بنجاح مذهل! يرجى مراجعتها وتأكيد حفظها بالأسفل.`);
+          }
+        } else {
+          throw new Error(resData.error || "فشل تصنيف البيانات بالذكاء الاصطناعي.");
+        }
+      } catch (err: any) {
+        console.error("Excel parse AI error:", err);
+        if (onNotify) {
+          onNotify('error', 'فشل معالجة شيت Excel', err.message || 'حدث خطأ أثناء معالجة أو تصنيف البيانات.');
+        } else {
+          alert("فشل تحليل وتصنيف البيانات: " + err.message);
+        }
+      } finally {
+        setIsParsingExcel(false);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        processExcelFile(file);
+      } else {
+        alert("الرجاء اختيار ملف Excel صالح (.xlsx, .xls) فقط!");
+      }
+    }
+  };
+
+  const handleSavePreviewEntries = () => {
+    if (excelPreviewEntries.length === 0) return;
+    onSave([...excelPreviewEntries, ...entries], categories);
+    setExcelPreviewEntries([]);
+    if (onNotify) {
+      onNotify('success', 'تم حفظ القيود بنجاح 💾', `تم اعتماد وحفظ عدد ${excelPreviewEntries.length} قيد مالي مصنف في سجل التكاليف بنجاح!`);
+    } else {
+      alert("تم حفظ البنود بنجاح!");
+    }
+  };
+
+  const handleDiscardPreview = () => {
+    if (window.confirm("هل أنت متأكد من إلغاء وتجاهل هذه البنود المستخرجة؟")) {
+      setExcelPreviewEntries([]);
+    }
+  };
+
+  const handleUpdatePreviewEntry = (id: string, field: keyof CostEntry, value: any) => {
+    setExcelPreviewEntries(prev => prev.map(entry => {
+      if (entry.id === id) {
+        return { ...entry, [field]: value };
+      }
+      return entry;
+    }));
+  };
+
+  const handleDeletePreviewEntry = (id: string) => {
+    setExcelPreviewEntries(prev => prev.filter(entry => entry.id !== id));
+  };
 
   useEffect(() => {
     if (engineers.length > 0 && !targetEngineer) {
@@ -615,6 +737,183 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span>تحميل شيت الأرشيف المعتمد 📊</span>
             </a>
+          </div>
+        )}
+      </div>
+
+      {/* --- AI-Powered Excel Upload & Classification Section --- */}
+      <div className="bg-[#111827] border border-indigo-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden no-print space-y-6">
+        <div className="absolute left-0 top-0 h-full w-1.5 bg-gradient-to-b from-indigo-500 to-purple-600" />
+        
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Upload className="w-4 h-4 text-indigo-400" />
+              <span>استيراد وتصنيف مصروفات الموقع الذكي من Excel 📊🤖</span>
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              قم برفع شيت Excel يحتوي على بنود ومصروفات عهدة الموقع، وسيقوم الذكاء الاصطناعي باستخراج القيم وتصنيفها آلياً إلى البنود المعتمدة في النظام.
+            </p>
+          </div>
+          
+          <div className="text-right text-[10px] text-slate-400 font-bold bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800">
+            البنود المتاحة للتصنيف: {categories.join(' | ')}
+          </div>
+        </div>
+
+        {/* Drag and Drop Zone */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => document.getElementById('excel-file-upload-input')?.click()}
+          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+            isDragOver 
+              ? 'border-indigo-400 bg-indigo-500/10 shadow-lg shadow-indigo-950/20 scale-[1.01]' 
+              : 'border-slate-800 hover:border-slate-700 bg-slate-950/40'
+          }`}
+        >
+          <input
+            id="excel-file-upload-input"
+            type="file"
+            accept=".xlsx, .xls"
+            onChange={handleExcelFileSelect}
+            className="hidden"
+          />
+          
+          <div className="flex flex-col items-center justify-center space-y-3">
+            <div className={`p-4 rounded-2xl transition-all ${isDragOver ? 'bg-indigo-500/20 text-indigo-400 scale-110' : 'bg-slate-900/60 text-slate-400'}`}>
+              <Grid className="w-8 h-8" />
+            </div>
+            
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-slate-200">
+                {isDragOver ? 'أفلت الملف الآن للبدء! 🚀' : 'اسحب وأفلت ملف الـ Excel الخاص بالمصروفات هنا'}
+              </p>
+              <p className="text-[10px] text-slate-500">
+                أو انقر لتصفح الملفات من جهازك (يدعم صيغ .xlsx أو .xls)
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Loading / Processing State */}
+        {isParsingExcel && (
+          <div className="p-6 bg-indigo-500/5 border border-indigo-500/15 rounded-xl flex flex-col items-center justify-center space-y-4 text-center animate-pulse">
+            <div className="relative">
+              <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+              <Sparkles className="w-4 h-4 text-amber-400 absolute inset-0 m-auto" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-extrabold text-white">جاري تحليل شيت المصروفات وتصنيف البنود بالـ AI... 🤖</p>
+              <p className="text-[10px] text-slate-400">يقوم نموذج جيمي فلاش الآن بفحص محتويات الملف ومطابقة الأوصاف والمبالغ مع بنود السجلات المعتمدة.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Classified Excel Preview Table */}
+        {excelPreviewEntries.length > 0 && (
+          <div className="space-y-4 pt-2">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-amber-500/5 border border-amber-500/10 p-4 rounded-xl">
+              <div className="flex items-center gap-2 text-right">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                <div className="space-y-0.5">
+                  <h4 className="text-xs font-bold text-amber-400">مراجعة البنود المستخرجة والمصنفة بالذكاء الاصطناعي</h4>
+                  <p className="text-[10px] text-slate-400">تم استخراج {excelPreviewEntries.length} قيد مالي بنجاح. يمكنك تعديل المشروع أو بند تصنيف التكلفة من الجدول مباشرة قبل الحفظ.</p>
+                </div>
+              </div>
+              
+              <div className="flex gap-2 w-full sm:w-auto shrink-0 justify-end">
+                <button
+                  onClick={handleDiscardPreview}
+                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>تجاهل الكل</span>
+                </button>
+                <button
+                  onClick={handleSavePreviewEntries}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-md shadow-indigo-950/55"
+                >
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>اعتماد وحفظ القيود في السجلات</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Preview Editable Table */}
+            <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/20 max-h-[400px]">
+              <table className="w-full text-right text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-900/60 sticky top-0 z-10 select-none">
+                    <th className="py-2.5 px-3">المشروع</th>
+                    <th className="py-2.5 px-3">بند تصنيف المصروف</th>
+                    <th className="py-2.5 px-3 text-left">المبلغ (EGP)</th>
+                    <th className="py-2.5 px-3">التاريخ</th>
+                    <th className="py-2.5 px-3">الوصف والبيان التفصيلي للعهدة</th>
+                    <th className="py-2.5 px-3 text-center">حذف</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850">
+                  {excelPreviewEntries.map(item => (
+                    <tr key={item.id} className="hover:bg-slate-900/40 transition-colors">
+                      <td className="py-2 px-3">
+                        <input
+                          type="text"
+                          value={item.project}
+                          onChange={(e) => handleUpdatePreviewEntry(item.id, 'project', e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 text-white rounded px-2 py-1 text-xs outline-none focus:border-indigo-500 font-bold"
+                        />
+                      </td>
+                      <td className="py-2 px-3">
+                        <select
+                          value={item.category}
+                          onChange={(e) => handleUpdatePreviewEntry(item.id, 'category', e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 text-white rounded px-2 py-1 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+                        >
+                          {categories.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 px-3 text-left">
+                        <input
+                          type="number"
+                          value={item.amount}
+                          onChange={(e) => handleUpdatePreviewEntry(item.id, 'amount', parseFloat(e.target.value) || 0)}
+                          className="w-24 bg-slate-900 border border-slate-700 text-emerald-400 text-left rounded px-2 py-1 text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                        />
+                      </td>
+                      <td className="py-2 px-3">
+                        <input
+                          type="date"
+                          value={item.date}
+                          onChange={(e) => handleUpdatePreviewEntry(item.id, 'date', e.target.value)}
+                          className="w-32 bg-slate-900 border border-slate-700 text-slate-300 rounded px-2 py-1 text-xs font-mono outline-none focus:border-indigo-500 cursor-pointer"
+                        />
+                      </td>
+                      <td className="py-2 px-3">
+                        <input
+                          type="text"
+                          value={item.description}
+                          onChange={(e) => handleUpdatePreviewEntry(item.id, 'description', e.target.value)}
+                          className="w-full min-w-[200px] bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1 text-xs outline-none focus:border-indigo-500"
+                        />
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePreviewEntry(item.id)}
+                          className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
