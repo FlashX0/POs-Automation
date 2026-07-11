@@ -50,6 +50,7 @@ interface CostAnalysisProps {
   categories: string[];
   onSave: (updatedEntries: CostEntry[], updatedCategories: string[]) => void;
   engineers?: { id: string; name: string; project: string }[];
+  boxDays?: any[];
   onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
 }
 
@@ -59,6 +60,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   categories,
   onSave,
   engineers = [],
+  boxDays = [],
   onNotify
 }) => {
   // Input Form States
@@ -79,6 +81,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   const [filterEngineer, setFilterEngineer] = useState<string>('all');
   const [filterMonthYear, setFilterMonthYear] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [showSignaturesInPrint, setShowSignaturesInPrint] = useState<boolean>(true);
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -447,9 +450,64 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
     }
   };
 
+  // Memoized mapping of petty cash daily box transactions into CostEntry list
+  const mappedPettyCashEntries = useMemo(() => {
+    if (!boxDays || boxDays.length === 0) return [];
+    if (filterEngineer === 'all' || filterMonthYear === 'all') return [];
+
+    const result: CostEntry[] = [];
+    
+    // helper to map description to category based on keywords
+    const mapDescriptionToCategory = (desc: string, availableCategories: string[]): string => {
+      const normalized = desc.toLowerCase();
+      const mappings: { keywords: string[]; category: string }[] = [
+        { keywords: ['حديد', 'أسمنت', 'طوب', 'رمل', 'خرسانة', 'خامات', 'مواد', 'سيراميك', 'جبس', 'دهان'], category: 'مواد تشغيل' },
+        { keywords: ['يومية', 'عامل', 'صنايعي', 'أجرة', 'مصنعية', 'عمال', 'عمالة', 'راتب', 'رواتب', 'مهندسين'], category: 'يوميات وعمالة' },
+        { keywords: ['نقل', 'مشوار', 'توصيل', 'تاكسي', 'شحن', 'مواصلات', 'سفر', 'بنزين', 'سولار'], category: 'انتقالات ومواصلات' },
+        { keywords: ['غداء', 'عشاء', 'فطور', 'أكل', 'شاي', 'قهوة', 'ضيافة', 'مياه', 'وجبة'], category: 'ضيافة وإقامة' },
+        { keywords: ['تأجير', 'إيجار', 'لودر', 'حفار', 'ونش', 'معدة', 'مولد', 'سقالة'], category: 'إيجار معدات' },
+        { keywords: ['فاتورة', 'كهرباء', 'رخصة', 'رصيد', 'شحن', 'تصاريح', 'غرامة', 'دمغة'], category: 'مصروفات إدارية ورخص' },
+      ];
+
+      for (const map of mappings) {
+        if (map.keywords.some(keyword => normalized.includes(keyword))) {
+          const matched = availableCategories.find(c => c.includes(map.category) || map.category.includes(c));
+          if (matched) return matched;
+        }
+      }
+
+      // Default category fallback
+      const defaultCat = availableCategories.find(c => c.includes('عهد') || c.includes('مصروفات') || c.includes('تشغيل')) || availableCategories[0] || 'مواد تشغيل';
+      return defaultCat;
+    };
+
+    boxDays.forEach((day: any) => {
+      if (!day || !day.date || !day.date.startsWith(filterMonthYear)) return;
+      
+      if (day.engineer && day.engineer.trim().toLowerCase() === filterEngineer.trim().toLowerCase()) {
+        const txs = day.transactions || [];
+        txs.forEach((tx: any) => {
+          if (tx.outflow && tx.outflow > 0) {
+            result.push({
+              id: `petty-${day.date}-${tx.id}-${tx.outflow}`,
+              project: tx.project || 'عام / إدارة',
+              category: mapDescriptionToCategory(tx.description || '', categories),
+              amount: tx.outflow,
+              date: day.date,
+              description: `[حركة الصندوق والعهد] ${tx.description || ''} (${tx.method || 'نقدي'})`,
+              engineer: day.engineer
+            });
+          }
+        });
+      }
+    });
+
+    return result;
+  }, [boxDays, filterEngineer, filterMonthYear, categories]);
+
   // Filtered cost entries for display
   const filteredEntries = useMemo(() => {
-    return entries.filter(item => {
+    const baseFiltered = entries.filter(item => {
       const matchProject = filterProject === 'all' || item.project === filterProject;
       const matchCategory = filterCategory === 'all' || item.category === filterCategory;
       const matchEngineer = filterEngineer === 'all' || item.engineer === filterEngineer;
@@ -467,7 +525,19 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
         (item.engineer && item.engineer.toLowerCase().includes(searchTerm.toLowerCase()));
       return matchProject && matchCategory && matchEngineer && matchMonthYear && matchSearch;
     });
-  }, [entries, filterProject, filterCategory, filterEngineer, filterMonthYear, searchTerm]);
+
+    const filteredMapped = mappedPettyCashEntries.filter(item => {
+      const matchProject = filterProject === 'all' || item.project === filterProject;
+      const matchCategory = filterCategory === 'all' || item.category === filterCategory;
+      const matchSearch = !searchTerm.trim() || 
+        item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.project.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.category.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchProject && matchCategory && matchSearch;
+    });
+
+    return [...filteredMapped, ...baseFiltered];
+  }, [entries, mappedPettyCashEntries, filterProject, filterCategory, filterEngineer, filterMonthYear, searchTerm]);
 
   // Total cost computed from active filtered list
   const totalFilteredAmount = useMemo(() => {
@@ -1249,7 +1319,16 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             <span>سجل بنود المصروفات المحللة والمصنفة</span>
           </h3>
 
-          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
+            <label className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-300 cursor-pointer hover:bg-slate-850 hover:border-slate-700 transition-all no-print select-none">
+              <input
+                type="checkbox"
+                checked={showSignaturesInPrint}
+                onChange={(e) => setShowSignaturesInPrint(e.target.checked)}
+                className="rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>إظهار جدول التوقيعات في الطباعة</span>
+            </label>
             <button
               onClick={() => window.print()}
               className="px-3.5 py-1.5 bg-[#4F81BD]/20 hover:bg-[#4F81BD]/30 text-[#4F81BD] rounded-xl text-xs font-bold border border-[#4F81BD]/25 transition-all flex items-center gap-1.5 cursor-pointer no-print"
@@ -1350,6 +1429,24 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Dynamic Petty Cash aggregation status alert banner */}
+        {filterEngineer !== 'all' && filterMonthYear !== 'all' && (
+          <div className="bg-slate-900/60 border border-indigo-500/10 p-4 rounded-xl flex items-center gap-3 no-print">
+            <AlertCircle className="text-indigo-400 w-5 h-5 flex-shrink-0" />
+            <div className="text-xs font-bold text-slate-300">
+              {mappedPettyCashEntries.length > 0 ? (
+                <span>
+                  تم دمج وتوزيع تلقائي لـ <span className="text-indigo-400 font-extrabold font-mono text-sm">{mappedPettyCashEntries.length}</span> مصروفات لعهدة المهندس <span className="text-indigo-400 font-extrabold">({filterEngineer})</span> لشهر <span className="text-indigo-400 font-extrabold font-mono">({filterMonthYear})</span> من حركة الصندوق والعهد.
+                </span>
+              ) : (
+                <span className="text-amber-400">
+                  تنبيه لطيف: لم يتم العثور على أي مصروفات عهدة مسجلة للمهندس <span className="font-extrabold">({filterEngineer})</span> في حركة الصندوق لشهر <span className="font-extrabold font-mono">({filterMonthYear})</span>.
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Categories management quick rails */}
         <div className="flex flex-wrap gap-2 items-center text-xs">
@@ -1487,20 +1584,22 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
         </table>
 
         {/* Dynamic official signatures block */}
-        <div className="grid grid-cols-3 gap-6 text-center mt-12 pt-6 border-t border-dashed border-[#4F81BD] text-xs font-bold text-slate-700">
-          <div className="space-y-6">
-            <span>توقيع مهندس الموقع المسؤول</span>
-            <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
+        {showSignaturesInPrint && (
+          <div className="grid grid-cols-3 gap-6 text-center mt-12 pt-6 border-t border-dashed border-[#4F81BD] text-xs font-bold text-slate-700">
+            <div className="space-y-6">
+              <span>توقيع مهندس الموقع المسؤول</span>
+              <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
+            </div>
+            <div className="space-y-6">
+              <span>توقيع مراجع التكاليف المعتمد</span>
+              <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
+            </div>
+            <div className="space-y-6">
+              <span>اعتماد إدارة الشركة والختم الرسمي</span>
+              <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
+            </div>
           </div>
-          <div className="space-y-6">
-            <span>توقيع مراجع التكاليف المعتمد</span>
-            <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
-          </div>
-          <div className="space-y-6">
-            <span>اعتماد إدارة الشركة والختم الرسمي</span>
-            <div className="border-b border-dotted border-slate-400 mx-auto w-36"></div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -531,8 +531,31 @@ html, body {
   }
 
   /* Force table layout structure during print */
-  table, thead, tbody, tr, th, td {
+  table, .printable-table, .main-table-container {
     display: table !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: auto !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
+  }
+  thead {
+    display: table-header-group !important;
+  }
+  tbody {
+    display: table-row-group !important;
+  }
+  tr {
+    display: table-row !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
+  }
+  th, td {
+    display: table-cell !important;
+    padding: 8px !important;
+    font-size: 11pt !important;
     background-color: #ffffff !important;
     color: #000000 !important;
     border-color: #000000 !important;

@@ -7106,6 +7106,7 @@ export default function App() {
           categories={costAnalysisCategories}
           onSave={updateCostAnalysis}
           engineers={engineers}
+          boxDays={pettyCashBoxDays}
           onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
         />
       </main>
