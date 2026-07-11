@@ -245,7 +245,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
     }
   };
 
-  const handleDeleteUser = async (email: string, name: string) => {
+  const handleDeleteUser = async (id: string, email: string, name: string) => {
     const confirmDelete = window.confirm(`هل أنت متأكد تماماً من رغبتك في حذف حساب الموظف (${name}) نهائياً من قواعد البيانات؟ لا يمكن التراجع عن هذا الإجراء.`);
     if (!confirmDelete) return;
 
@@ -253,7 +253,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
       const res = await fetch('/api/admin/users/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ id, email })
       });
       const data = await safeJson(res);
       if (res.ok && data.success) {
@@ -506,7 +506,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                         <td className="py-4 px-6 text-center align-middle">
                           <div className="flex items-center justify-center gap-3">
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 setEditUserId(user.id);
                                 setEditUserEmail(user.email);
                                 setEditUserNewEmail(user.email);
@@ -515,6 +515,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                                 setEditError('');
                                 setEditUserDepartments(user.allowed_departments || []);
                                 setEditModalOpen(true);
+
+                                // Pre-fetch the latest user data on demand to reflect real database values immediately
+                                try {
+                                  const res = await fetch('/api/admin/users');
+                                  const data = await safeJson(res);
+                                  if (res.ok && data.success && data.users) {
+                                    setUsers(data.users);
+                                    const matched = data.users.find((u: any) => u.email.toLowerCase() === user.email.toLowerCase());
+                                    if (matched) {
+                                      setEditUserDepartments(matched.allowed_departments || []);
+                                    }
+                                  }
+                                } catch (err) {
+                                  console.error("Failed to pre-fetch user details for modal:", err);
+                                }
                               }}
                               className="bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-slate-950 px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-black flex items-center gap-1.5 border border-amber-500/20 shadow-md shadow-amber-500/5"
                               title="تعديل بيانات الحساب"
@@ -525,7 +540,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
 
                             <button
                               disabled={isSelf}
-                              onClick={() => handleDeleteUser(user.email, user.name)}
+                              onClick={() => handleDeleteUser(user.id, user.email, user.name)}
                               className={`p-2 rounded-xl hover:bg-red-500/10 transition-all inline-flex items-center justify-center ${
                                 isSelf ? 'text-slate-650 cursor-not-allowed' : 'text-red-500 hover:text-red-400 cursor-pointer'
                               }`}

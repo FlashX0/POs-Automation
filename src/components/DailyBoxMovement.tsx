@@ -149,10 +149,6 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   // Handlers
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!project) {
-      alert('حقل اختيار المشروع إجباري لإتمام العملية!');
-      return;
-    }
     if (!description.trim()) {
       alert('الرجاء إدخال البيان!');
       return;
@@ -752,7 +748,6 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
         <div className="border-0 p-0 bg-white space-y-6">
           <div className="text-center pb-4 border-b-2 border-[#4F81BD]">
             <h2 className="text-2xl font-black text-[#1F4E78]">حركة صندوق {selectedEngineer ? selectedEngineer : "العام"}</h2>
-            <p className="text-sm font-bold text-slate-700 mt-1">المستخرج الرسمي المعتمد من النظام</p>
           </div>
 
           <div className="space-y-8">
@@ -787,16 +782,21 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                     حركة صندوق {selectedEngineer ? selectedEngineer : "العام"} ليوم {formattedDate}
                   </div>
 
-                  {/* Opening Balance Block (Merged and Centered) */}
+                  {/* Opening Balance Block (Right-aligned numbers, Centered Labels) */}
                   <div className="grid grid-cols-5 border-b border-[#4F81BD] py-3 px-3 font-bold text-sm bg-slate-50 text-[#1F4E78]">
-                    <div className="col-span-5 text-center flex items-center justify-center gap-2">
-                      <span className="font-extrabold text-slate-700">رصيد أول اليوم:</span>
-                      <span className="font-mono font-black text-sm">{formatPrintCurrency(startingBal)}</span>
+                    <div className="font-mono font-black text-sm flex items-center justify-center text-center self-center pr-2">
+                      {formatPrintCurrency(startingBal)}
                     </div>
+                    <div></div>
+                    <div className="text-center flex items-center justify-center self-center font-extrabold text-slate-700">
+                      رصيد أول اليوم
+                    </div>
+                    <div></div>
+                    <div></div>
                   </div>
 
-                  {/* Header Row */}
-                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-slate-100 text-center font-extrabold text-xs py-2.5 text-slate-700">
+                  {/* Header Row (Hidden on print to avoid overlaps) */}
+                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-slate-100 text-center font-extrabold text-xs py-2.5 text-slate-700 print:hidden">
                     <div className="flex items-center justify-center text-center self-center font-black">مدين</div>
                     <div className="flex items-center justify-center text-center self-center font-black">طريقة الإيداع</div>
                     <div className="flex items-center justify-center text-center self-center font-black">الوصف / البيان</div>
@@ -848,12 +848,17 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                     <div className="text-slate-500 flex items-center justify-center text-center self-center">-</div>
                   </div>
 
-                  {/* Ending Balance Row (Merged and Centered) */}
+                  {/* Ending Balance Row (Right-aligned numbers, Centered Labels) */}
                   <div className="grid grid-cols-5 bg-[#E2EFDA] font-black text-sm py-3 text-[#375623]">
-                    <div className="col-span-5 text-center flex items-center justify-center gap-2">
-                      <span className="font-extrabold text-[#375623]">رصيد آخر اليوم:</span>
-                      <span className="font-mono font-black text-sm">{formatPrintCurrency(dayEndingBal)}</span>
+                    <div className="font-mono font-black text-sm flex items-center justify-center text-center self-center pr-2">
+                      {formatPrintCurrency(dayEndingBal)}
                     </div>
+                    <div></div>
+                    <div className="text-center flex items-center justify-center self-center font-extrabold text-[#375623]">
+                      رصيد آخر اليوم
+                    </div>
+                    <div></div>
+                    <div></div>
                   </div>
                 </div>
               );
@@ -1022,14 +1027,13 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
           <form onSubmit={handleAddTransaction} className="space-y-4 text-right">
             <div>
-              <label className="text-xs text-slate-400 font-bold block mb-1.5">المشروع الحالي (إجباري) *</label>
+              <label className="text-xs text-slate-400 font-bold block mb-1.5">المشروع الحالي (اختياري)</label>
               <select
                 value={project}
                 onChange={(e) => setProject(e.target.value)}
-                required
                 className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs font-bold outline-none focus:border-emerald-500 cursor-pointer"
               >
-                <option value="">-- اختر المشروع --</option>
+                <option value="">-- اختر المشروع (عام / لا يوجد) --</option>
                 {projectsList.map((p) => (
                   <option key={p} value={p}>
                     {p}

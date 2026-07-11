@@ -431,12 +431,30 @@ html, body {
   }
 
   /* 4. تثبيت نسب الأعمدة بدقة كربونية لمنع اتساع خانات الأسعار */
-  th:nth-child(1), td:nth-child(1) { width: 5% !important; }   /* رقم البند No */
-  th:nth-child(2), td:nth-child(2) { width: 53% !important; text-align: right !important; }  /* الوصف Description مع محاذاة لليمين */
-  th:nth-child(3), td:nth-child(3) { width: 10% !important; }  /* الوحدة Unit */
-  th:nth-child(4), td:nth-child(4) { width: 8% !important; }   /* الكمية Qty */
-  th:nth-child(5), td:nth-child(5) { width: 12% !important; whitespace: nowrap !important; }  /* السعر Price */
-  th:nth-child(6), td:nth-child(6) { width: 12% !important; whitespace: nowrap !important; }  /* الإجمالي Amount */
+  #printable-excel-sheet-delta-isolated th:nth-child(1), #printable-excel-sheet-delta-isolated td:nth-child(1) { width: 5% !important; }   /* رقم البند No */
+  #printable-excel-sheet-delta-isolated th:nth-child(2), #printable-excel-sheet-delta-isolated td:nth-child(2) { width: 53% !important; text-align: right !important; }  /* الوصف Description مع محاذاة لليمين */
+  #printable-excel-sheet-delta-isolated th:nth-child(3), #printable-excel-sheet-delta-isolated td:nth-child(3) { width: 10% !important; }  /* الوحدة Unit */
+  #printable-excel-sheet-delta-isolated th:nth-child(4), #printable-excel-sheet-delta-isolated td:nth-child(4) { width: 8% !important; }   /* الكمية Qty */
+  #printable-excel-sheet-delta-isolated th:nth-child(5), #printable-excel-sheet-delta-isolated td:nth-child(5) { width: 12% !important; whitespace: nowrap !important; }  /* السعر Price */
+  #printable-excel-sheet-delta-isolated th:nth-child(6), #printable-excel-sheet-delta-isolated td:nth-child(6) { width: 12% !important; whitespace: nowrap !important; }  /* الإجمالي Amount */
+
+  /* 4b. تنسيق جدول كشف التحليل عند الطباعة تلقائياً دون قيود عرض */
+  #cost-analysis-table {
+    width: 100% !important;
+    table-layout: auto !important;
+  }
+  #cost-analysis-table th, 
+  #cost-analysis-table td {
+    width: auto !important;
+    font-size: 14px !important; /* تكبير حجم الخط العام للجدول لزيادة مقروئيته */
+    padding: 12px 10px !important;
+    text-align: right !important;
+  }
+  #cost-analysis-table th {
+    background-color: #f1f5f9 !important;
+    color: #1e293b !important;
+    font-weight: 800 !important;
+  }
 
   /* 5. منع انقسام التاريخ وجعله في سطر واحد */
   .date-container, .date-text {

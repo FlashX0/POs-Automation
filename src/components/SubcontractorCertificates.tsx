@@ -1651,7 +1651,6 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
             {/* Header / Title Banner */}
             <div className="text-center pb-4 border-b-2 border-dashed border-[#4F81BD]">
               <h2 className="text-2xl font-black text-[#1F4E78]">كشف مستخلص مقاول الباطن (دفعة جاري الأعمال)</h2>
-              <p className="text-sm font-bold text-slate-700 mt-1">المستخرج الرسمي المعتمد من النظام المالي</p>
             </div>
 
             {/* Contract Meta Block */}

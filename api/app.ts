@@ -3689,26 +3689,37 @@ app.post("/api/admin/users/update", async (req, res) => {
 // Admin Route: Delete User (or de-activate)
 app.post("/api/admin/users/delete", async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, error: "البريد الإلكتروني مطلوب" });
+    const { id, email } = req.body;
+    if (!id && !email) {
+      return res.status(400).json({ success: false, error: "البريد الإلكتروني أو المعرف الفريد مطلوب" });
     }
 
-    const lowerEmail = email.toLowerCase().trim();
+    const lowerEmail = email ? email.toLowerCase().trim() : "";
     const db = getDb();
     db.users = db.users || [];
 
     // Find user ID first before deleting locally
-    const userToDelete = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
-    const targetUserId = userToDelete ? userToDelete.id : null;
+    let targetUserId = id;
+    if (!targetUserId && lowerEmail) {
+      const userToDelete = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
+      targetUserId = userToDelete ? userToDelete.id : null;
+    }
 
     // Delete locally
-    db.users = db.users.filter((u: any) => u.email.toLowerCase() !== lowerEmail);
+    if (targetUserId) {
+      db.users = db.users.filter((u: any) => u.id !== targetUserId);
+    } else if (lowerEmail) {
+      db.users = db.users.filter((u: any) => u.email.toLowerCase() !== lowerEmail);
+    }
     saveDb(db);
 
     // Delete from MongoDB
     if (mongoose.connection.readyState === 1) {
-      await User.deleteOne({ email: lowerEmail });
+      if (targetUserId) {
+        await User.deleteOne({ _id: targetUserId });
+      } else if (lowerEmail) {
+        await User.deleteOne({ email: lowerEmail });
+      }
     }
 
     // Delete from Supabase Auth and Tables
@@ -3716,7 +3727,7 @@ app.post("/api/admin/users/delete", async (req, res) => {
     if (adminClient) {
       try {
         let authUserId = targetUserId;
-        if (!authUserId) {
+        if (!authUserId && lowerEmail) {
           console.log(`[Supabase Delete] UID not found in local db. Trying Direct Supabase Auth lookup for: ${lowerEmail}`);
           const { data: { users: authUsers }, error: listErr } = await adminClient.auth.admin.listUsers();
           if (!listErr && authUsers) {
@@ -3728,14 +3739,30 @@ app.post("/api/admin/users/delete", async (req, res) => {
           }
         }
 
-        console.log(`[Supabase Delete] Deleting user profiles/auth for email: ${lowerEmail}, UID: ${authUserId}`);
+        // Determine email if we only have id
+        let userEmailForDeletion = lowerEmail;
+        if (!userEmailForDeletion && authUserId) {
+          const matchedLocal = db.users.find((u: any) => u.id === authUserId);
+          if (matchedLocal) {
+            userEmailForDeletion = matchedLocal.email;
+          } else {
+            const { data: { user: authUser }, error: getErr } = await adminClient.auth.admin.getUserById(authUserId);
+            if (!getErr && authUser) {
+              userEmailForDeletion = authUser.email?.toLowerCase().trim() || "";
+            }
+          }
+        }
+
+        console.log(`[Supabase Delete] Deleting user profiles/auth for email: ${userEmailForDeletion}, UID: ${authUserId}`);
         
         // Delete from profiles and employees tables by email and id
-        const { error: profDelEmailErr } = await adminClient.from('profiles').delete().eq('email', lowerEmail);
-        if (profDelEmailErr) console.warn("[Supabase Delete] Delete profiles by email error:", profDelEmailErr.message);
+        if (userEmailForDeletion) {
+          const { error: profDelEmailErr } = await adminClient.from('profiles').delete().eq('email', userEmailForDeletion);
+          if (profDelEmailErr) console.warn("[Supabase Delete] Delete profiles by email error:", profDelEmailErr.message);
 
-        const { error: empDelEmailErr } = await adminClient.from('employees').delete().eq('email', lowerEmail);
-        if (empDelEmailErr) console.warn("[Supabase Delete] Delete employees by email error:", empDelEmailErr.message);
+          const { error: empDelEmailErr } = await adminClient.from('employees').delete().eq('email', userEmailForDeletion);
+          if (empDelEmailErr) console.warn("[Supabase Delete] Delete employees by email error:", empDelEmailErr.message);
+        }
 
         if (authUserId) {
           const { error: profDelIdErr } = await adminClient.from('profiles').delete().eq('id', authUserId);

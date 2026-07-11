@@ -1390,7 +1390,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
         {/* Data table */}
         <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-900/10">
-          <table className="w-full text-right text-xs border-collapse">
+          <table id="cost-analysis-table" className="w-full text-right text-xs border-collapse">
             <thead>
               <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-900/40 select-none">
                 <th className="py-3 px-4">المشروع</th>
