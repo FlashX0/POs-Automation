@@ -62,6 +62,15 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
+  const formatPrintCurrency = (val: number): string => {
+    const absVal = Math.abs(val);
+    const formatted = absVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    if (val < 0) {
+      return `${formatted}-`;
+    }
+    return formatted;
+  };
+
   const [selectedEngineer, setSelectedEngineer] = useState<string>(
     engineers.length > 0 ? engineers[0].name : ''
   );
@@ -739,9 +748,9 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
       </div>
 
       {/* Portrait print-only layout matching image_282819.png */}
-      <div className="hidden print:block w-full max-w-4xl mx-auto text-black font-sans portrait-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>
-        <div className="border-4 border-dashed border-[#4F81BD] p-6 bg-white space-y-6">
-          <div className="text-center pb-4 border-b-2 border-dashed border-[#4F81BD]">
+      <div className="hidden print:block w-full max-w-none mx-auto text-black font-sans portrait-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>
+        <div className="border-0 p-0 bg-white space-y-6">
+          <div className="text-center pb-4 border-b-2 border-[#4F81BD]">
             <h2 className="text-2xl font-black text-[#1F4E78]">حركة صندوق {selectedEngineer ? selectedEngineer : "العام"}</h2>
             <p className="text-sm font-bold text-slate-700 mt-1">المستخرج الرسمي المعتمد من النظام</p>
           </div>
@@ -772,51 +781,51 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
 
               return (
-                <div key={day.date} className="space-y-0.5 break-inside-avoid text-black bg-white p-4 border border-dashed border-[#4F81BD] rounded-lg">
+                <div key={day.date} className="space-y-0.5 break-inside-avoid text-black bg-white p-0 border border-solid border-[#4F81BD] rounded-lg overflow-hidden">
                   {/* Day Title Row */}
-                  <div className="text-center font-bold text-[#1F4E78] text-base py-2 bg-[#D9E1F2] border border-[#4F81BD]">
+                  <div className="text-center font-bold text-[#1F4E78] text-base py-3 bg-[#D9E1F2] border-b border-[#4F81BD]">
                     حركة صندوق {selectedEngineer ? selectedEngineer : "العام"} ليوم {formattedDate}
                   </div>
 
-                  {/* Opening Balance Block */}
-                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] py-2 px-3 font-bold text-xs bg-slate-50 text-[#1F4E78]">
-                    <div className="col-span-1 text-right font-mono font-bold">
-                      {formatCurrency(startingBal)} EGP
+                  {/* Opening Balance Block (Merged and Centered) */}
+                  <div className="grid grid-cols-5 border-b border-[#4F81BD] py-3 px-3 font-bold text-sm bg-slate-50 text-[#1F4E78]">
+                    <div className="col-span-5 text-center flex items-center justify-center gap-2">
+                      <span className="font-extrabold text-slate-700">رصيد أول اليوم:</span>
+                      <span className="font-mono font-black text-sm">{formatPrintCurrency(startingBal)}</span>
                     </div>
-                    <div className="col-span-4 text-right pr-2 text-slate-700">رصيد أول اليوم</div>
                   </div>
 
                   {/* Header Row */}
-                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] bg-slate-100 text-center font-bold text-[11px] py-1 text-slate-700">
-                    <div>مدين (+)</div>
-                    <div>طريقة الإيداع</div>
-                    <div>الوصف / البيان</div>
-                    <div>دائن (-)</div>
-                    <div>المشروع</div>
+                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-slate-100 text-center font-extrabold text-xs py-2.5 text-slate-700">
+                    <div className="flex items-center justify-center text-center self-center font-black">مدين</div>
+                    <div className="flex items-center justify-center text-center self-center font-black">طريقة الإيداع</div>
+                    <div className="flex items-center justify-center text-center self-center font-black">الوصف / البيان</div>
+                    <div className="flex items-center justify-center text-center self-center font-black">دائن</div>
+                    <div className="flex items-center justify-center text-center self-center font-black">المشروع</div>
                   </div>
 
                   {/* Transactions */}
                   {dayTransactions.length === 0 ? (
-                    <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] text-center text-xs py-3 text-slate-500 font-bold bg-white">
+                    <div className="grid grid-cols-5 border-b border-[#4F81BD] text-center text-sm py-4 text-slate-500 font-bold bg-white">
                       <div className="col-span-5 text-center">لا توجد حركات مسجلة لهذا اليوم</div>
                     </div>
                   ) : (
                     dayTransactions.map((tx) => {
                       return (
-                        <div key={tx.id} className="grid grid-cols-5 border-x border-b border-[#4F81BD] text-center text-[11px] py-2 bg-white text-black">
-                          <div className="font-mono font-bold text-emerald-700 text-left px-2">
-                            {tx.inflow > 0 ? formatCurrency(tx.inflow) : '-'}
+                        <div key={tx.id} className="grid grid-cols-5 border-b border-[#4F81BD] text-center text-xs sm:text-sm py-3 bg-white text-black min-h-[44px]">
+                          <div className="font-mono font-black text-emerald-700 flex items-center justify-center text-center self-center">
+                            {tx.inflow > 0 ? formatPrintCurrency(tx.inflow) : '-'}
                           </div>
-                          <div className="text-right px-2">
+                          <div className="text-slate-800 flex items-center justify-center text-center self-center font-semibold">
                             {tx.inflow > 0 ? tx.method : '-'}
                           </div>
-                          <div className="text-right px-2 font-medium">
+                          <div className="text-slate-900 flex items-center justify-center text-center self-center font-bold px-1.5 leading-relaxed">
                             {tx.description}
                           </div>
-                          <div className="font-mono font-bold text-rose-700 text-left px-2">
-                            {tx.outflow > 0 ? formatCurrency(tx.outflow) : '-'}
+                          <div className="font-mono font-black text-rose-700 flex items-center justify-center text-center self-center">
+                            {tx.outflow > 0 ? formatPrintCurrency(tx.outflow) : '-'}
                           </div>
-                          <div className="text-right px-2 text-slate-600">
+                          <div className="text-slate-700 flex items-center justify-center text-center self-center font-semibold">
                             {tx.project || '-'}
                           </div>
                         </div>
@@ -825,25 +834,25 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                   )}
 
                   {/* Totals Row */}
-                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] bg-[#F2F2F2] font-bold text-xs py-2 px-3">
-                    <div className="text-left text-emerald-700 font-mono">
-                      +{formatCurrency(totalInflow)} EGP
+                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-[#F2F2F2] font-black text-sm py-3">
+                    <div className="text-emerald-700 font-mono flex items-center justify-center text-center self-center">
+                      {formatPrintCurrency(totalInflow)}
                     </div>
-                    <div className="text-center text-slate-500">-</div>
-                    <div className="text-right text-[#1f4e78] font-extrabold">الاجـــــــمـــــــالــــــــــــــــــــــــى</div>
-                    <div className="text-left text-rose-700 font-mono">
-                      -{formatCurrency(totalOutflow)} EGP
+                    <div className="text-slate-500 flex items-center justify-center text-center self-center">-</div>
+                    <div className="text-[#1f4e78] font-black flex items-center justify-center text-center self-center text-sm">
+                      الاجـــــــمـــــــالــــــــــــــــــــــــى
                     </div>
-                    <div className="text-right text-slate-600">-</div>
+                    <div className="text-rose-700 font-mono flex items-center justify-center text-center self-center">
+                      {formatPrintCurrency(totalOutflow)}
+                    </div>
+                    <div className="text-slate-500 flex items-center justify-center text-center self-center">-</div>
                   </div>
 
-                  {/* Ending Balance Row */}
-                  <div className="grid grid-cols-5 border-x border-b border-[#4F81BD] bg-[#E2EFDA] font-black text-xs py-2 px-3 text-[#375623]">
-                    <div className="col-span-1 text-right font-mono font-black">
-                      {formatCurrency(dayEndingBal)} EGP
-                    </div>
-                    <div className="col-span-4 text-right pr-2 font-black">
-                      رصيد آخر اليوم
+                  {/* Ending Balance Row (Merged and Centered) */}
+                  <div className="grid grid-cols-5 bg-[#E2EFDA] font-black text-sm py-3 text-[#375623]">
+                    <div className="col-span-5 text-center flex items-center justify-center gap-2">
+                      <span className="font-extrabold text-[#375623]">رصيد آخر اليوم:</span>
+                      <span className="font-mono font-black text-sm">{formatPrintCurrency(dayEndingBal)}</span>
                     </div>
                   </div>
                 </div>

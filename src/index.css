@@ -445,7 +445,8 @@ html, body {
 }
 
 @media print {
-  body, html, #root, .main-container, main, .flex-1, div.min-h-screen, .min-h-screen {
+  /* Enforce white background and black text across the entire page & all containers during print */
+  html, body, #root, .main-container, main, section, article, div, .min-h-screen {
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #000000 !important;
@@ -453,14 +454,23 @@ html, body {
     overflow: visible !important;
     height: auto !important;
     width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    border-color: #000000 !important;
   }
 
-  /* Force all general background classes to be transparent during print to prevent dark mode/black leaks */
-  div, section, main, article, aside, header, footer, nav, [class*="bg-[#0"] {
+  /* Completely strip backgrounds from any elements that match dark colors to prevent black blocks */
+  [class*="bg-[#"], [class*="bg-slate-"], [class*="bg-gray-"], [class*="bg-zinc-"], [class*="bg-black"], [class*="bg-indigo-"], [class*="bg-amber-"], [class*="bg-blue-"], [class*="bg-rose-"] {
     background-color: transparent !important;
     background: transparent !important;
+    color: #000000 !important;
+    border-color: #e2e8f0 !important;
   }
-  
+
+  /* Hide all headers, sidebars, navigation, forms, alerts, and administrative buttons */
   header, 
   .sidebar, 
   .navbar, 
@@ -469,8 +479,9 @@ html, body {
   input, 
   select, 
   textarea, 
-  .form-container, 
-  section, 
+  .form-container,
+  form,
+  #cost-entry-form,
   .bento-stats,
   #departments-dropdown-btn,
   .alert-box,
@@ -478,14 +489,19 @@ html, body {
     display: none !important;
     visibility: hidden !important;
     height: 0 !important;
+    width: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
+    border: none !important;
   }
-  
+
+  /* Ensure printed tables and elements are properly visible */
   .printable-table-zone, 
   .portrait-print, 
+  .landscape-print,
   .print-me,
-  #printable-excel-sheet-delta-isolated {
+  #printable-excel-sheet-delta-isolated,
+  .print\:block {
     display: block !important;
     visibility: visible !important;
     width: 100% !important;
@@ -496,20 +512,28 @@ html, body {
     color: #000000 !important;
   }
 
-  /* Make sure background colors for cells print neatly but stay readable */
-  .bg-\[\#D9E1F2\], .bg-\[\#d9e1f2\] {
+  /* Force table layout structure during print */
+  table, thead, tbody, tr, th, td {
+    display: table !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
+  }
+
+  /* Keep specific Excel style print header backgrounds legible but neatly tinted */
+  .bg-\[\#D9E1F2\], .bg-\[\#d9e1f2\], .bg-[#D9E1F2], .bg-[#d9e1f2] {
     background-color: #D9E1F2 !important;
     background: #D9E1F2 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  .bg-\[\#F2F2F2\], .bg-\[\#f2f2f2\], .bg-slate-100 {
+  .bg-\[\#F2F2F2\], .bg-\[\#f2f2f2\], .bg-slate-100, .bg-[#F2F2F2], .bg-[#f2f2f2] {
     background-color: #F2F2F2 !important;
     background: #F2F2F2 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  .bg-\[\#E2EFDA\], .bg-\[\#e2efda\] {
+  .bg-\[\#E2EFDA\], .bg-\[\#e2efda\], .bg-[#E2EFDA], .bg-[#e2efda] {
     background-color: #E2EFDA !important;
     background: #E2EFDA !important;
     -webkit-print-color-adjust: exact !important;

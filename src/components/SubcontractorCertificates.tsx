@@ -126,10 +126,28 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
     contracts[0]?.id || ''
   );
 
+  const [certificateType, setCertificateType] = useState<'periodic' | 'cumulative'>('cumulative');
+
   // Selected contract details
   const selectedContract = useMemo(() => {
     return contracts.find((c) => c.id === selectedContractId);
   }, [contracts, selectedContractId]);
+
+  // Preceding contracts matching subcontractor, project and with a lower statement number
+  const precedingContracts = useMemo(() => {
+    if (!selectedContract) return [];
+    const currentSub = selectedContract.subcontractor.trim().toLowerCase();
+    const currentProj = selectedContract.project;
+    const currentNo = parseFloat(selectedContract.statementNo) || 0;
+
+    return contracts.filter((c) => {
+      if (c.id === selectedContract.id) return false;
+      const sameSub = c.subcontractor.trim().toLowerCase() === currentSub;
+      const sameProj = c.project === currentProj;
+      const otherNo = parseFloat(c.statementNo) || 0;
+      return sameSub && sameProj && otherNo < currentNo;
+    });
+  }, [selectedContract, contracts]);
 
   // Contract creation form states
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
@@ -184,6 +202,11 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   useEffect(() => {
     if (!selectedContract || !itemDesc.trim()) return;
 
+    if (certificateType === 'periodic') {
+      setItemPrevQty('0');
+      return;
+    }
+
     const subName = selectedContract.subcontractor.trim().toLowerCase();
     
     // Find all contracts for this subcontractor except the selected one
@@ -236,25 +259,97 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
   // Compute sums for grid UI
-  const { totalItemsValue, totalPayments, netRemaining } = useMemo(() => {
-    if (!selectedContract) return { totalItemsValue: 0, totalPayments: 0, netRemaining: 0 };
-    
-    const itemsVal = selectedContract.items.reduce((sum, item) => {
-      const totQty = item.previousQty + item.currentQty;
-      const totVal = totQty * item.rate;
-      const dueVal = totVal * (item.completionPercent / 100);
-      return sum + dueVal;
-    }, 0);
+  const { 
+    totalItemsValue, // Net current due of items
+    cumulativeItemsValue, 
+    previousItemsValue, 
+    previousPaidAmount, 
+    totalPayments, // Current payments
+    totalCumulativePayments, 
+    netRemaining 
+  } = useMemo(() => {
+    if (!selectedContract) {
+      return { 
+        totalItemsValue: 0, 
+        cumulativeItemsValue: 0, 
+        previousItemsValue: 0, 
+        previousPaidAmount: 0, 
+        totalPayments: 0, 
+        totalCumulativePayments: 0, 
+        netRemaining: 0 
+      };
+    }
 
-    const payVal = selectedContract.payments.reduce((sum, pay) => sum + pay.amount, 0);
+    // Preceding contracts matching subcontractor & project & lower statement number
+    const currentSub = selectedContract.subcontractor.trim().toLowerCase();
+    const currentProj = selectedContract.project;
+    const currentNo = parseFloat(selectedContract.statementNo) || 0;
+
+    const preceding = contracts.filter((c) => {
+      if (c.id === selectedContract.id) return false;
+      const sameSub = c.subcontractor.trim().toLowerCase() === currentSub;
+      const sameProj = c.project === currentProj;
+      const otherNo = parseFloat(c.statementNo) || 0;
+      return sameSub && sameProj && otherNo < currentNo;
+    });
+
+    // 1. Calculate dynamic previous quantities & values of items
+    let cumDueSum = 0;
+    let prevDueSum = 0;
+    let currDueSum = 0;
+
+    selectedContract.items.forEach((item) => {
+      // Find previous quantities of this item in preceding contracts
+      const prevQty = certificateType === 'cumulative' 
+        ? preceding.reduce((sum, c) => {
+            const matchedItem = c.items.find(
+              (it) => it.description.trim().toLowerCase() === item.description.trim().toLowerCase()
+            );
+            return sum + (matchedItem ? matchedItem.currentQty : 0);
+          }, 0)
+        : 0;
+
+      const cumQty = prevQty + item.currentQty;
+      const cumVal = cumQty * item.rate;
+      const cumDue = cumVal * (item.completionPercent / 100);
+
+      const prevDue = prevQty * item.rate * (item.completionPercent / 100);
+      const currDue = cumDue - prevDue;
+
+      cumDueSum += cumDue;
+      prevDueSum += prevDue;
+      currDueSum += currDue;
+    });
+
+    // 2. Payments Calculations
+    const currentPaymentsSum = selectedContract.payments.reduce((sum, pay) => sum + pay.amount, 0);
+    const prevPaymentsSum = certificateType === 'cumulative'
+      ? preceding.reduce((sum, c) => {
+          const pSum = c.payments.reduce((pAcc, p) => pAcc + p.amount, 0);
+          return sum + pSum;
+        }, 0)
+      : 0;
+
+    const totalCumPaymentsSum = prevPaymentsSum + currentPaymentsSum;
     const prevBal = selectedContract.previousBalance || 0;
 
+    // Net remaining accounts
+    // For cumulative mode: Net remaining = previous balance + cumulative items value - total cumulative payments
+    // For periodic mode: Net remaining = previous balance + current items value - current payments
+    const net = certificateType === 'cumulative'
+      ? prevBal + cumDueSum - totalCumPaymentsSum
+      : prevBal + currDueSum - currentPaymentsSum;
+
     return {
-      totalItemsValue: itemsVal,
-      totalPayments: payVal,
-      netRemaining: prevBal + itemsVal - payVal
+      totalItemsValue: currDueSum,
+      cumulativeItemsValue: cumDueSum,
+      previousItemsValue: prevDueSum,
+      previousPaidAmount: prevPaymentsSum,
+      totalPayments: currentPaymentsSum,
+      totalCumulativePayments: totalCumPaymentsSum,
+      netRemaining: net
     };
-  }, [selectedContract]);
+  }, [selectedContract, contracts, certificateType]);
 
   const handleCreateContract = (e: React.FormEvent) => {
     e.preventDefault();
@@ -378,6 +473,25 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   const generateSubcontractorWorkbook = (contract: SubcontractorContract) => {
     const rows: any[][] = [];
 
+    // Preceding contracts matching subcontractor, project and with a lower statement number
+    const preceding = contracts.filter((c) => {
+      if (c.id === contract.id) return false;
+      const sameSub = c.subcontractor.trim().toLowerCase() === contract.subcontractor.trim().toLowerCase();
+      const sameProj = c.project === contract.project;
+      const otherNo = parseFloat(c.statementNo) || 0;
+      return sameSub && sameProj && otherNo < (parseFloat(contract.statementNo) || 0);
+    });
+
+    const getPrevQty = (desc: string) => {
+      if (certificateType === 'periodic') return 0;
+      return preceding.reduce((sum, c) => {
+        const matchedItem = c.items.find(
+          (it) => it.description.trim().toLowerCase() === desc.trim().toLowerCase()
+        );
+        return sum + (matchedItem ? matchedItem.currentQty : 0);
+      }, 0);
+    };
+
     // Title Row
     rows.push(["كشف مستخلص مقاول الباطن (Subcontractor Progress Certificate)", "", "", "", "", "", "", "", "", "", "", "", ""]);
     rows.push(["", "", "", "", "", "", "", "", "", "", "", "", ""]); // divider
@@ -403,7 +517,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
       "إجمالي كمية (Total Qty)",
       "القيمة الإجمالية (Total Value)",
       "نسبة المستحق % (Comp %)",
-      "قيمة المستحق الحالية (Due Value)",
+      "صافي قيمة المستحق (Due Value)",
       "دفعات المقاول (تاريخ)",
       "دفعات المقاول (ملاحظات)",
       "قيمة الدفعة (Amount)"
@@ -416,17 +530,19 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
       const pay = contract.payments[i];
       const rIdx = 6 + i; // 1-indexed Excel row is rIdx + 1
 
+      const prevQtyVal = item ? getPrevQty(item.description) : 0;
+
       const rData = [
         item ? item.date : "",
         item ? item.description : "",
         item ? item.unit : "",
         item ? item.rate : "",
-        item ? item.previousQty : "",
+        item ? prevQtyVal : "",
         item ? item.currentQty : "",
         item ? { f: `E${rIdx + 1}+F${rIdx + 1}` } : "", // Total Qty
         item ? { f: `G${rIdx + 1}*D${rIdx + 1}` } : "", // Total Value
         item ? item.completionPercent : "",
-        item ? { f: `H${rIdx + 1}*(I${rIdx + 1}/100)` } : "", // Due Value
+        item ? { f: `F${rIdx + 1}*D${rIdx + 1}*(I${rIdx + 1}/100)` } : "", // Net current due value
         pay ? pay.date : "",
         pay ? pay.description : "",
         pay ? pay.amount : ""
@@ -811,6 +927,33 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                 ))}
               </select>
 
+              {/* Options Toggle for Accountant */}
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1 rounded-xl no-print">
+                <span className="text-[10px] font-bold text-slate-400 px-2">نمط الحساب:</span>
+                <button
+                  type="button"
+                  onClick={() => setCertificateType('periodic')}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
+                    certificateType === 'periodic'
+                      ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30'
+                      : 'text-slate-500 hover:text-slate-300 border border-transparent'
+                  }`}
+                >
+                  دوري (Periodic) 📅
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCertificateType('cumulative')}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
+                    certificateType === 'cumulative'
+                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
+                      : 'text-slate-500 hover:text-slate-300 border border-transparent'
+                  }`}
+                >
+                  تراكمي نهائي (Cumulative) 📈
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setShowCreateForm(!showCreateForm)}
@@ -1177,9 +1320,20 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                           </tr>
                         ) : (
                           selectedContract.items.map((item) => {
-                            const totalQty = item.previousQty + item.currentQty;
+                            const prevQty = certificateType === 'cumulative'
+                              ? precedingContracts.reduce((sum, c) => {
+                                  const matchedItem = c.items.find(
+                                    (it) => it.description.trim().toLowerCase() === item.description.trim().toLowerCase()
+                                  );
+                                  return sum + (matchedItem ? matchedItem.currentQty : 0);
+                                }, 0)
+                              : 0;
+                            const totalQty = prevQty + item.currentQty;
                             const totalValue = totalQty * item.rate;
-                            const dueValue = totalValue * (item.completionPercent / 100);
+                            
+                            const cumDue = totalValue * (item.completionPercent / 100);
+                            const prevDue = prevQty * item.rate * (item.completionPercent / 100);
+                            const dueValue = cumDue - prevDue;
 
                             return (
                               <tr key={item.id} className="border-b border-slate-850 hover:bg-slate-900/30 transition-colors font-medium">
@@ -1188,7 +1342,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                                 </td>
                                 <td className="py-3 px-1 text-slate-400">{item.unit}</td>
                                 <td className="py-3 px-1 font-mono text-slate-300">{item.rate.toLocaleString()}</td>
-                                <td className="py-3 px-1 font-mono text-slate-400">{item.previousQty}</td>
+                                <td className="py-3 px-1 font-mono text-slate-400">{prevQty}</td>
                                 <td className="py-3 px-1 font-mono text-white font-bold">{item.currentQty}</td>
                                 <td className="py-3 px-1 font-mono text-amber-400 font-bold">{totalQty}</td>
                                 <td className="py-3 px-1 font-mono text-slate-300">{totalValue.toLocaleString()}</td>
@@ -1263,18 +1417,57 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                     </table>
                   </div>
 
-                  <div className="bg-[#111827] border border-slate-800/80 p-4 rounded-2xl shadow-sm space-y-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">إجمالي مستحق أعمال المقاول الباطن:</span>
-                      <span className="font-mono text-emerald-400 font-bold">+{totalItemsValue.toLocaleString()} EGP</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">إجمالي الدفعات والمسحوبات:</span>
-                      <span className="font-mono text-rose-400 font-bold">-{totalPayments.toLocaleString()} EGP</span>
-                    </div>
-                    <div className="border-t border-slate-800 my-2 pt-2 flex justify-between items-center text-sm">
-                      <span className="font-bold text-white">الصافي المتبقي للمقاول:</span>
-                      <span className={`font-mono font-black ${netRemaining >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  <div className="bg-[#111827] border border-slate-800/80 p-4 rounded-2xl shadow-sm space-y-2.5">
+                    {certificateType === 'cumulative' ? (
+                      <>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">إجمالي مستحق الأعمال التراكمي (Cumulative):</span>
+                          <span className="font-mono text-cyan-400 font-bold">+{cumulativeItemsValue.toLocaleString()} EGP</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">قيمة الأعمال السابقة المعتمدة (Previous):</span>
+                          <span className="font-mono text-slate-400">-{previousItemsValue.toLocaleString()} EGP</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs border-b border-slate-850 pb-1.5">
+                          <span className="text-slate-300 font-bold">صافي مستحق مستخلص الأعمال الحالي (Net Current):</span>
+                          <span className="font-mono text-emerald-400 font-extrabold">+{totalItemsValue.toLocaleString()} EGP</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">إجمالي دفعات المقاول التراكمية (Prev + Curr Paid):</span>
+                          <span className="font-mono text-rose-500">-{totalCumulativePayments.toLocaleString()} EGP</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">منها مبالغ سابق صرفها (Previous Paid):</span>
+                          <span className="font-mono text-slate-400">-{previousPaidAmount.toLocaleString()} EGP</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">العهد والدفعات الجديدة بهذا الكشف:</span>
+                          <span className="font-mono text-rose-400 font-bold">-{totalPayments.toLocaleString()} EGP</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">إجمالي مستحق أعمال المقاول الباطن:</span>
+                          <span className="font-mono text-emerald-400 font-bold">+{totalItemsValue.toLocaleString()} EGP</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">إجمالي الدفعات والمسحوبات الجديدة:</span>
+                          <span className="font-mono text-rose-400 font-bold">-{totalPayments.toLocaleString()} EGP</span>
+                        </div>
+                      </>
+                    )}
+                    {selectedContract.previousBalance !== undefined && selectedContract.previousBalance !== 0 && (
+                      <div className="flex justify-between items-center text-xs border-t border-slate-850 pt-1.5">
+                        <span className="text-slate-400">الرصيد السابق المرحل (من الكشف السابق):</span>
+                        <span className={`font-mono font-bold ${selectedContract.previousBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {selectedContract.previousBalance >= 0 ? '+' : ''}{selectedContract.previousBalance.toLocaleString()} EGP
+                        </span>
+                      </div>
+                    )}
+                    <div className="border-t-2 border-dashed border-slate-800 my-2 pt-2 flex justify-between items-center text-sm">
+                      <span className="font-black text-white">الصافي النهائي المستحق للمقاول (Net Remaining Balance):</span>
+                      <span className={`font-mono font-black text-base ${netRemaining >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {netRemaining.toLocaleString()} EGP
                       </span>
                     </div>
@@ -1511,15 +1704,27 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                     </tr>
                   ) : (
                     selectedContract.items.map((item) => {
-                      const totalQty = item.previousQty + item.currentQty;
+                      const prevQty = certificateType === 'cumulative'
+                        ? precedingContracts.reduce((sum, c) => {
+                            const matchedItem = c.items.find(
+                              (it) => it.description.trim().toLowerCase() === item.description.trim().toLowerCase()
+                            );
+                            return sum + (matchedItem ? matchedItem.currentQty : 0);
+                          }, 0)
+                        : 0;
+                      const totalQty = prevQty + item.currentQty;
                       const totalValue = totalQty * item.rate;
-                      const dueValue = totalValue * (item.completionPercent / 100);
+                      
+                      const cumDue = totalValue * (item.completionPercent / 100);
+                      const prevDue = prevQty * item.rate * (item.completionPercent / 100);
+                      const dueValue = cumDue - prevDue;
+
                       return (
                         <tr key={item.id} className="border-b-2 border-dashed border-[#4F81BD] font-medium text-slate-800">
                           <td className="py-2 px-1 text-right border-e-2 border-dashed border-[#4F81BD] font-bold">{item.description}</td>
                           <td className="py-2 border-e-2 border-dashed border-[#4F81BD]">{item.unit}</td>
                           <td className="py-2 border-e-2 border-dashed border-[#4F81BD] font-mono">{item.rate.toLocaleString()} EGP</td>
-                          <td className="py-2 border-e-2 border-dashed border-[#4F81BD] font-mono">{item.previousQty}</td>
+                          <td className="py-2 border-e-2 border-dashed border-[#4F81BD] font-mono">{prevQty}</td>
                           <td className="py-2 border-e-2 border-dashed border-[#4F81BD] font-mono font-bold text-slate-900">{item.currentQty}</td>
                           <td className="py-2 border-e-2 border-dashed border-[#4F81BD] font-mono font-bold text-amber-600">{totalQty}</td>
                           <td className="py-2 border-e-2 border-dashed border-[#4F81BD] font-mono">{totalValue.toLocaleString()} EGP</td>
@@ -1564,22 +1769,53 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 
             {/* Financial Summary Box */}
             <div className="border-2 border-dashed border-[#4F81BD] p-4 rounded-xl bg-[#F2F6FA] text-xs font-bold space-y-2">
-              <div className="flex justify-between items-center text-slate-700">
-                <span>إجمالي قيمة بنود الأعمال المعتمدة:</span>
-                <span className="font-mono text-emerald-600 text-sm">+{totalItemsValue.toLocaleString()} EGP</span>
-              </div>
+              {certificateType === 'cumulative' ? (
+                <>
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span>إجمالي قيمة الأعمال التراكمية (Cumulative Value):</span>
+                    <span className="font-mono text-[#1F4E78] text-sm">+{cumulativeItemsValue.toLocaleString()} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span>قيمة الأعمال السابقة المعتمدة (Previous Approved):</span>
+                    <span className="font-mono text-slate-500 text-sm">-{previousItemsValue.toLocaleString()} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-700 border-b border-dashed border-[#4F81BD] pb-1.5">
+                    <span>صافي قيمة بنود الأعمال الحالية (Net Current Value):</span>
+                    <span className="font-mono text-emerald-600 text-sm font-black">+{totalItemsValue.toLocaleString()} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span>إجمالي دفعات المقاول التراكمية (Total Cumulative Paid):</span>
+                    <span className="font-mono text-rose-600 text-sm">-{totalCumulativePayments.toLocaleString()} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span>منها دفعات سابق صرفها (Previous Paid):</span>
+                    <span className="font-mono text-slate-500 text-sm">-{previousPaidAmount.toLocaleString()} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span>العهد والدفعات الجديدة بهذا الكشف (Current Paid):</span>
+                    <span className="font-mono text-rose-600 text-sm">-{totalPayments.toLocaleString()} EGP</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span>إجمالي قيمة بنود الأعمال المعتمدة:</span>
+                    <span className="font-mono text-emerald-600 text-sm">+{totalItemsValue.toLocaleString()} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span>إجمالي الدفعات والخصومات الجديدة:</span>
+                    <span className="font-mono text-rose-600 text-sm">-{totalPayments.toLocaleString()} EGP</span>
+                  </div>
+                </>
+              )}
               {selectedContract.previousBalance !== undefined && selectedContract.previousBalance !== 0 && (
-                <div className="flex justify-between items-center text-slate-700">
+                <div className="flex justify-between items-center text-slate-700 border-t border-dashed border-[#4F81BD] pt-1.5">
                   <span>الرصيد السابق المرحل (من المستخلص السابق):</span>
                   <span className={`font-mono text-sm ${selectedContract.previousBalance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                     {selectedContract.previousBalance >= 0 ? '+' : ''}{selectedContract.previousBalance.toLocaleString()} EGP
                   </span>
                 </div>
               )}
-              <div className="flex justify-between items-center text-slate-700">
-                <span>إجمالي الدفعات والخصومات الجديدة:</span>
-                <span className="font-mono text-rose-600 text-sm">-{totalPayments.toLocaleString()} EGP</span>
-              </div>
               <div className="border-t-2 border-dashed border-[#4F81BD] pt-2 flex justify-between items-center text-sm font-black text-[#1F4E78] bg-[#D9E1F2]/50 px-2 py-1 rounded">
                 <span>الصافي المتبقي للمقاول (الرصيد النهائي):</span>
                 <span className={`font-mono text-base ${netRemaining >= 0 ? 'text-[#375623]' : 'text-rose-700'}`}>

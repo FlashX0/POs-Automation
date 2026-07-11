@@ -2965,6 +2965,7 @@ app.post("/api/auth/login", async (req, res) => {
               password: mongoUser.password,
               role: mongoUser.role || "user",
               status: mongoUser.status || "active",
+              allowed_departments: mongoUser.allowed_departments || [],
               createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
             };
             db.users.push(matchedUser);
@@ -3008,6 +3009,7 @@ app.post("/api/auth/login", async (req, res) => {
               password: mongoUser.password,
               role: mongoUser.role || "user",
               status: mongoUser.status || "active",
+              allowed_departments: mongoUser.allowed_departments || [],
               createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
             };
             // Sync to local db
@@ -3114,6 +3116,7 @@ app.post("/api/auth/verify-session", async (req, res) => {
             password: mongoUser.password,
             role: mongoUser.role || "user",
             status: mongoUser.status || "active",
+            allowed_departments: mongoUser.allowed_departments || [],
             createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
           };
           // Sync to local
