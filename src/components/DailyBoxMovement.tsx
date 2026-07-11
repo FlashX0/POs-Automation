@@ -74,6 +74,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const [selectedEngineer, setSelectedEngineer] = useState<string>(
     engineers.length > 0 ? engineers[0].name : ''
   );
+  const [printStyle, setPrintStyle] = useState<'solid' | 'modern' | 'minimal'>('solid');
   const [pendingAttachmentPath, setPendingAttachmentPath] = useState<string>('');
   const [pendingAttachmentName, setPendingAttachmentName] = useState<string>('');
 
@@ -667,45 +668,44 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
             margin: 8mm 10mm 8mm 10mm !important;
           }
           /* Custom print rules for clean ledger table with solid borders */
-          .print-ledger-box {
-            border: 2px solid #000000 !important;
+          .print-ledger-table {
             border-collapse: collapse !important;
-            margin-bottom: 20px !important;
-            border-radius: 0px !important;
+            width: 100% !important;
+            border-spacing: 0 !important;
+            margin-bottom: 25px !important;
+            page-break-inside: avoid !important;
           }
-          .print-ledger-row {
-            display: grid !important;
-            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-            border-bottom: 1px solid #000000 !important;
-          }
-          .print-ledger-row:last-child {
-            border-bottom: none !important;
-          }
-          .print-ledger-cell {
-            border-inline-end: 1px solid #000000 !important;
-            padding: 8px 4px !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            text-align: center !important;
+          .print-ledger-table, .print-ledger-table th, .print-ledger-table td {
+            border: 1.5px solid ${
+              printStyle === 'solid' ? '#000000' :
+              printStyle === 'modern' ? '#4F81BD' :
+              '#94A3B8'
+            } !important;
+            border-collapse: collapse !important;
+            padding: 8px 10px !important;
             font-size: 11px !important;
             font-weight: bold !important;
             color: #000000 !important;
+            background-clip: padding-box !important;
           }
-          .print-ledger-cell:last-child {
-            border-inline-end: none !important;
-          }
-          /* Ensure header row is visible in print with clear borders */
-          .print-ledger-header-row {
-            display: grid !important;
-            background-color: #D9E1F2 !important;
-            border-bottom: 1px solid #000000 !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          .print-ledger-header-cell {
+          .print-ledger-title-cell {
+            font-size: 14px !important;
             font-weight: 900 !important;
-            color: #000000 !important;
+            background-color: ${
+              printStyle === 'solid' ? '#E5E7EB' :
+              printStyle === 'modern' ? '#D9E1F2' :
+              '#F1F5F9'
+            } !important;
+            color: ${
+              printStyle === 'solid' ? '#000000' :
+              printStyle === 'modern' ? '#1F4E78' :
+              '#334155'
+            } !important;
+            border-bottom: 2px solid ${
+              printStyle === 'solid' ? '#000000' :
+              printStyle === 'modern' ? '#4F81BD' :
+              '#94A3B8'
+            } !important;
           }
         }
       `}} />
@@ -785,6 +785,19 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl no-print">
+              <span className="text-[10px] text-slate-400 font-bold">نمط تنسيق الطباعة:</span>
+              <select
+                value={printStyle}
+                onChange={(e) => setPrintStyle(e.target.value as any)}
+                className="bg-slate-900 text-white text-xs font-bold rounded-lg border-0 focus:ring-1 focus:ring-indigo-500 py-1 px-2.5 outline-none cursor-pointer"
+              >
+                <option value="solid">شبكة مصمتة داكنة 🖤</option>
+                <option value="modern">تنسيق كحلي حديث 💙</option>
+                <option value="minimal">تنسيق رمادي هادئ 🩶</option>
+              </select>
+            </div>
+
             <label className={`bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md ${isProcessingAI ? 'opacity-60 pointer-events-none' : ''}`}>
               <Upload className={`w-4 h-4 text-emerald-400 ${isProcessingAI ? 'animate-spin' : ''}`} />
               <span>{isProcessingAI ? 'جاري تحليل الصورة 🤖...' : 'تحليل تصفية بالذكاء الاصطناعي 🤖'}</span>
@@ -848,90 +861,87 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
 
               return (
-                <div key={day.date} className="break-inside-avoid text-black bg-white p-0 border border-solid border-[#4F81BD] rounded-lg overflow-hidden print-ledger-box">
-                  {/* Day Title Row */}
-                  <div className="text-center font-bold text-[#1F4E78] text-base py-3 bg-[#D9E1F2] border-b border-[#4F81BD]">
-                    حركة صندوق {selectedEngineer ? selectedEngineer : "العام"} ليوم {formattedDate}
-                  </div>
+                <div key={day.date} className="break-inside-avoid text-black bg-white p-0 overflow-hidden print-ledger-box">
+                  <table className="print-ledger-table w-full text-center border-collapse text-xs sm:text-sm font-sans" style={{ borderCollapse: 'collapse', width: '100%' }}>
+                    <thead>
+                      <tr className="bg-[#D9E1F2]">
+                        <th colSpan={5} className="py-3 px-4 font-black text-[#1F4E78] text-base text-center print-ledger-title-cell">
+                          حركة صندوق {selectedEngineer ? selectedEngineer : "العام"} ليوم {formattedDate}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Opening Balance Row */}
+                      <tr className="bg-slate-50 text-[#1F4E78] font-bold print-ledger-row">
+                        <td className="py-2.5 px-3 font-mono font-black text-center print-ledger-cell">
+                          {formatPrintCurrency(startingBal)}
+                        </td>
+                        <td className="py-2.5 px-3 print-ledger-cell"></td>
+                        <td className="py-2.5 px-3 font-extrabold text-slate-700 text-center print-ledger-cell">
+                          رصيد أول اليوم
+                        </td>
+                        <td className="py-2.5 px-3 print-ledger-cell"></td>
+                        <td className="py-2.5 px-3 print-ledger-cell"></td>
+                      </tr>
 
-                  {/* Opening Balance Block (Right-aligned numbers, Centered Labels) */}
-                  <div className="grid grid-cols-5 border-b border-[#4F81BD] py-3 px-3 font-bold text-sm bg-slate-50 text-[#1F4E78] print-ledger-row">
-                    <div className="font-mono font-black text-sm flex items-center justify-center text-center self-center pr-2 print-ledger-cell">
-                      {formatPrintCurrency(startingBal)}
-                    </div>
-                    <div className="print-ledger-cell"></div>
-                    <div className="text-center flex items-center justify-center self-center font-extrabold text-slate-700 print-ledger-cell">
-                      رصيد أول اليوم
-                    </div>
-                    <div className="print-ledger-cell"></div>
-                    <div className="print-ledger-cell"></div>
-                  </div>
+                      {/* Transactions */}
+                      {dayTransactions.length === 0 ? (
+                        <tr className="bg-white print-ledger-row">
+                          <td colSpan={5} className="py-4 text-center text-slate-500 font-bold print-ledger-cell">
+                            لا توجد حركات مسجلة لهذا اليوم
+                          </td>
+                        </tr>
+                      ) : (
+                        dayTransactions.map((tx) => (
+                          <tr key={tx.id} className="bg-white text-black print-ledger-row">
+                            <td className="py-2.5 px-3 font-mono font-black text-emerald-700 text-center print-ledger-cell">
+                              {tx.inflow > 0 ? formatPrintCurrency(tx.inflow) : '-'}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-800 text-center font-semibold print-ledger-cell">
+                              {tx.inflow > 0 ? tx.method : '-'}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-900 text-center font-bold px-1.5 leading-relaxed print-ledger-cell">
+                              {tx.description}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono font-black text-rose-700 text-center print-ledger-cell">
+                              {tx.outflow > 0 ? formatPrintCurrency(tx.outflow) : '-'}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-700 text-center font-semibold print-ledger-cell">
+                              {tx.project || '-'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
 
-                  {/* Header Row */}
-                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-slate-100 text-center font-extrabold text-xs py-2.5 text-slate-700 print-ledger-row print-ledger-header-row">
-                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">مدين</div>
-                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">طريقة الإيداع</div>
-                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">الوصف / البيان</div>
-                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">دائن</div>
-                    <div className="flex items-center justify-center text-center self-center font-black print-ledger-cell print-ledger-header-cell">المشروع</div>
-                  </div>
+                      {/* Totals Row */}
+                      <tr className="bg-[#F2F2F2] font-black print-ledger-row">
+                        <td className="py-2.5 px-3 text-emerald-700 font-mono text-center print-ledger-cell">
+                          {formatPrintCurrency(totalInflow)}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-500 text-center print-ledger-cell">-</td>
+                        <td className="py-2.5 px-3 text-[#1f4e78] font-black text-center text-sm print-ledger-cell">
+                          الاجـــــــمـــــــالــــــــــــــــــــــــى
+                        </td>
+                        <td className="py-2.5 px-3 text-rose-700 font-mono text-center print-ledger-cell">
+                          {formatPrintCurrency(totalOutflow)}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-500 text-center print-ledger-cell">-</td>
+                      </tr>
 
-                  {/* Transactions */}
-                  {dayTransactions.length === 0 ? (
-                    <div className="grid grid-cols-5 border-b border-[#4F81BD] text-center text-sm py-4 text-slate-500 font-bold bg-white print-ledger-row">
-                      <div className="col-span-5 text-center py-4 print-ledger-cell">لا توجد حركات مسجلة لهذا اليوم</div>
-                    </div>
-                  ) : (
-                    dayTransactions.map((tx) => {
-                      return (
-                        <div key={tx.id} className="grid grid-cols-5 border-b border-[#4F81BD] text-center text-xs sm:text-sm py-3 bg-white text-black min-h-[44px] print-ledger-row">
-                          <div className="font-mono font-black text-emerald-700 flex items-center justify-center text-center self-center print-ledger-cell">
-                            {tx.inflow > 0 ? formatPrintCurrency(tx.inflow) : '-'}
-                          </div>
-                          <div className="text-slate-800 flex items-center justify-center text-center self-center font-semibold print-ledger-cell">
-                            {tx.inflow > 0 ? tx.method : '-'}
-                          </div>
-                          <div className="text-slate-900 flex items-center justify-center text-center self-center font-bold px-1.5 leading-relaxed print-ledger-cell">
-                            {tx.description}
-                          </div>
-                          <div className="font-mono font-black text-rose-700 flex items-center justify-center text-center self-center print-ledger-cell">
-                            {tx.outflow > 0 ? formatPrintCurrency(tx.outflow) : '-'}
-                          </div>
-                          <div className="text-slate-700 flex items-center justify-center text-center self-center font-semibold print-ledger-cell">
-                            {tx.project || '-'}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-
-                  {/* Totals Row */}
-                  <div className="grid grid-cols-5 border-b border-[#4F81BD] bg-[#F2F2F2] font-black text-sm py-3 print-ledger-row">
-                    <div className="text-emerald-700 font-mono flex items-center justify-center text-center self-center print-ledger-cell">
-                      {formatPrintCurrency(totalInflow)}
-                    </div>
-                    <div className="text-slate-500 flex items-center justify-center text-center self-center print-ledger-cell">-</div>
-                    <div className="text-[#1f4e78] font-black flex items-center justify-center text-center self-center text-sm print-ledger-cell">
-                      الاجـــــــمـــــــالــــــــــــــــــــــــى
-                    </div>
-                    <div className="text-rose-700 font-mono flex items-center justify-center text-center self-center print-ledger-cell">
-                      {formatPrintCurrency(totalOutflow)}
-                    </div>
-                    <div className="text-slate-500 flex items-center justify-center text-center self-center print-ledger-cell">-</div>
-                  </div>
-
-                  {/* Ending Balance Row (Right-aligned numbers, Centered Labels) */}
-                  <div className="grid grid-cols-5 bg-[#E2EFDA] font-black text-sm py-3 text-[#375623] print-ledger-row">
-                    <div className="font-mono font-black text-sm flex items-center justify-center text-center self-center pr-2 print-ledger-cell">
-                      {formatPrintCurrency(dayEndingBal)}
-                    </div>
-                    <div className="print-ledger-cell"></div>
-                    <div className="text-center flex items-center justify-center self-center font-extrabold text-[#375623] print-ledger-cell">
-                      رصيد آخر اليوم
-                    </div>
-                    <div className="print-ledger-cell"></div>
-                    <div className="print-ledger-cell"></div>
-                  </div>
+                      {/* Ending Balance Row */}
+                      <tr className="bg-[#E2EFDA] font-black text-[#375623] print-ledger-row">
+                        <td className="py-2.5 px-3 font-mono font-black text-center print-ledger-cell">
+                          {formatPrintCurrency(dayEndingBal)}
+                        </td>
+                        <td className="py-2.5 px-3 print-ledger-cell"></td>
+                        <td className="py-2.5 px-3 text-center font-extrabold text-[#375623] print-ledger-cell">
+                          رصيد آخر اليوم
+                        </td>
+                        <td className="py-2.5 px-3 print-ledger-cell"></td>
+                        <td className="py-2.5 px-3 print-ledger-cell"></td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               );
             })}

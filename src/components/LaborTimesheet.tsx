@@ -964,12 +964,31 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Scoped style block to force landscape print specifically for this timesheet */}
+      {/* Scoped style block to force landscape print and solid professional borders */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page {
             size: landscape !important;
             margin: 8mm 10mm 8mm 10mm !important;
+          }
+          /* Eliminate all dashed borders in printing and replace with crisp solid borders */
+          table, th, td, div {
+            border-style: solid !important;
+            border-color: #4F81BD !important;
+            border-width: 1px !important;
+          }
+          /* Extra custom overrides for the print table borders */
+          .border-dashed {
+            border-style: solid !important;
+          }
+          .border-e-2 {
+            border-inline-end-width: 1.5px !important;
+          }
+          .border-b-2 {
+            border-bottom-width: 1.5px !important;
+          }
+          .border-t-2 {
+            border-top-width: 1.5px !important;
           }
         }
       `}} />
@@ -1214,33 +1233,45 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                     <span>ضبط فئات الحساب وأجور هذا الكشف</span>
                   </h4>
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-4">
                     <div>
-                      <label className="text-[10px] text-slate-400 font-bold block mb-1">فئة اليومية الأساسية:</label>
+                      <label className="text-[10px] text-slate-400 font-bold block mb-1">اسم العامل اليومي:</label>
                       <input
-                        type="number"
-                        value={selectedSheet.dailyRate}
-                        onChange={(e) => handleMetaFieldChange('dailyRate', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold font-mono outline-none focus:border-indigo-500"
+                        type="text"
+                        value={selectedSheet.workerName}
+                        onChange={(e) => handleMetaFieldChange('workerName', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500"
                       />
                     </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-bold block mb-1">فئة الإضافي (يوم):</label>
-                      <input
-                        type="number"
-                        value={selectedSheet.overtimeRate}
-                        onChange={(e) => handleMetaFieldChange('overtimeRate', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold font-mono outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="text-[10px] text-slate-400 font-bold block mb-1">فئة السهرة الإضافية (ساعة):</label>
-                      <input
-                        type="number"
-                        value={selectedSheet.sohraRate}
-                        onChange={(e) => handleMetaFieldChange('sohraRate', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold font-mono outline-none focus:border-indigo-500"
-                      />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] text-slate-400 font-bold block mb-1">فئة اليومية الأساسية:</label>
+                        <input
+                          type="number"
+                          value={selectedSheet.dailyRate}
+                          onChange={(e) => handleMetaFieldChange('dailyRate', e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold font-mono outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 font-bold block mb-1">فئة الإضافي (يوم):</label>
+                        <input
+                          type="number"
+                          value={selectedSheet.overtimeRate}
+                          onChange={(e) => handleMetaFieldChange('overtimeRate', e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold font-mono outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] text-slate-400 font-bold block mb-1">فئة السهرة الإضافية (ساعة):</label>
+                        <input
+                          type="number"
+                          value={selectedSheet.sohraRate}
+                          onChange={(e) => handleMetaFieldChange('sohraRate', e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold font-mono outline-none focus:border-indigo-500"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1735,21 +1766,21 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
       {/* Landscape print-only layout matching image_282f9b.png */}
       {selectedSheet && computedSums && (
         <div className="hidden print:block w-full text-black font-sans landscape-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>
-          <div className="border-4 border-dashed border-[#4F81BD] p-6 bg-white space-y-4">
+          <div className="border-4 border-solid border-[#4F81BD] p-6 bg-white space-y-4">
             
             {/* Header Banner */}
-            <div className="flex justify-between items-center pb-4 border-b-2 border-dashed border-[#4F81BD]">
+            <div className="flex justify-between items-center pb-4 border-b-2 border-solid border-[#4F81BD]">
               {/* Balances Block */}
               <div className="flex gap-4">
-                <div className="border-2 border-dashed border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
+                <div className="border-2 border-solid border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
                   <div className="text-[10px] font-bold text-slate-500">المتبقي السابق</div>
                   <div className="text-xs font-black text-rose-700">{selectedSheet.previousRemaining.toLocaleString()} EGP</div>
                 </div>
-                <div className="border-2 border-dashed border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
+                <div className="border-2 border-solid border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
                   <div className="text-[10px] font-bold text-slate-500">المسدد السابق</div>
                   <div className="text-xs font-black text-slate-700">{selectedSheet.previousPaid.toLocaleString()} EGP</div>
                 </div>
-                <div className="border-2 border-dashed border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
+                <div className="border-2 border-solid border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
                   <div className="text-[10px] font-bold text-slate-500">الاجمالي السابق</div>
                   <div className="text-xs font-black text-slate-700">{selectedSheet.previousTotal.toLocaleString()} EGP</div>
                 </div>
@@ -1758,11 +1789,21 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               {/* Title Block */}
               <div className="text-center">
                 <h2 className="text-xl font-black text-[#1F4E78]">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
-                <p className="text-sm font-extrabold text-[#1F4E78] mt-1">العامل: {selectedSheet.workerName}</p>
+                <div className="flex items-center justify-center gap-1.5 mt-2 select-none">
+                  <span className="text-[#1F4E78] text-base md:text-lg font-black">العامل:</span>
+                  <input
+                    type="text"
+                    value={selectedSheet.workerName}
+                    onChange={(e) => handleMetaFieldChange('workerName', e.target.value)}
+                    className="bg-[#1F4E78]/5 border-b border-[#4F81BD]/50 hover:border-[#4F81BD] focus:border-[#1F4E78] focus:ring-0 text-base md:text-lg font-black text-[#1F4E78] text-right px-2 py-0.5 outline-none transition-all w-48 no-print rounded-md"
+                    placeholder="شاهر"
+                  />
+                  <span className="hidden print:inline text-base md:text-lg font-black text-[#1F4E78]">{selectedSheet.workerName}</span>
+                </div>
               </div>
 
               {/* Date Block */}
-              <div className="flex items-center gap-3 border-2 border-dashed border-[#4F81BD] rounded-2xl px-5 py-3 bg-[#F2F6FA]">
+              <div className="flex items-center gap-3 border-2 border-solid border-[#4F81BD] rounded-2xl px-5 py-3 bg-[#F2F6FA]">
                 <div className="text-center">
                   <span className="text-xs font-black text-[#1F4E78] block mb-1">الفترة الزمنية لشيت الحضور</span>
                   <span className="text-base font-black text-slate-900 tracking-wider font-mono">{selectedSheet.startDate} ➔ {selectedSheet.endDate}</span>
@@ -1770,35 +1811,35 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               </div>
             </div>
 
-            {/* Dynamic Columns Attendance Table with blue dashed borders */}
+            {/* Dynamic Columns Attendance Table with blue solid borders */}
             <div className="overflow-visible">
-              <table className="w-full text-center border-2 border-dashed border-[#4F81BD] border-collapse text-[10px] font-sans">
+              <table className="w-full text-center border-2 border-solid border-[#4F81BD] border-collapse text-[10px] font-sans">
                 <thead>
                   {/* Nested Header Row 1 */}
-                  <tr className="border-b-2 border-dashed border-[#4F81BD] text-[#1F4E78] bg-[#D9E1F2] font-black">
-                    <th className="py-2.5 px-1 border-e-2 border-dashed border-[#4F81BD]" rowSpan={2}>اليوم</th>
-                    <th className="py-2.5 px-1 border-e-2 border-dashed border-[#4F81BD]" rowSpan={2}>التاريخ</th>
-                    <th colSpan={computedSums.projects.length} className="py-1.5 text-center border-e-2 border-dashed border-[#4F81BD] bg-[#F2F6FA]">مشروع - يومية (حضور)</th>
-                    <th colSpan={computedSums.projects.length} className="py-1.5 text-center border-e-2 border-dashed border-[#4F81BD] bg-[#E2EFDA]">إضافي (يوم)</th>
+                  <tr className="border-b-2 border-solid border-[#4F81BD] text-[#1F4E78] bg-[#D9E1F2] font-black">
+                    <th className="py-2.5 px-1 border-e-2 border-solid border-[#4F81BD]" rowSpan={2}>اليوم</th>
+                    <th className="py-2.5 px-1 border-e-2 border-solid border-[#4F81BD]" rowSpan={2}>التاريخ</th>
+                    <th colSpan={computedSums.projects.length} className="py-1.5 text-center border-e-2 border-solid border-[#4F81BD] bg-[#F2F6FA]">مشروع - يومية (حضور)</th>
+                    <th colSpan={computedSums.projects.length} className="py-1.5 text-center border-e-2 border-solid border-[#4F81BD] bg-[#E2EFDA]">إضافي (يوم)</th>
                     <th colSpan={computedSums.projects.length} className="py-1.5 text-center bg-[#FFF2CC]">سهرات بالساعة (ساعة)</th>
                   </tr>
                   {/* Nested Header Row 2 (Project names) */}
-                  <tr className="border-b-2 border-dashed border-[#4F81BD] text-slate-700 font-extrabold bg-[#F9FBFD]">
+                  <tr className="border-b-2 border-solid border-[#4F81BD] text-slate-700 font-extrabold bg-[#F9FBFD]">
                     {/* Daily */}
                     {computedSums.projects.map((proj, idx) => (
-                      <th key={`print-head-daily-${proj}`} className={`py-2 px-1 border-e-2 border-dashed border-[#4F81BD] ${idx === computedSums.projects.length - 1 ? 'border-e-2 border-dashed border-[#4F81BD]' : ''}`}>
+                      <th key={`print-head-daily-${proj}`} className={`py-2 px-1 border-e-2 border-solid border-[#4F81BD] ${idx === computedSums.projects.length - 1 ? 'border-e-2 border-solid border-[#4F81BD]' : ''}`}>
                         {proj}
                       </th>
                     ))}
                     {/* Overtime */}
                     {computedSums.projects.map((proj, idx) => (
-                      <th key={`print-head-ot-${proj}`} className={`py-2 px-1 border-e-2 border-dashed border-[#4F81BD] ${idx === computedSums.projects.length - 1 ? 'border-e-2 border-dashed border-[#4F81BD]' : ''}`}>
+                      <th key={`print-head-ot-${proj}`} className={`py-2 px-1 border-e-2 border-solid border-[#4F81BD] ${idx === computedSums.projects.length - 1 ? 'border-e-2 border-solid border-[#4F81BD]' : ''}`}>
                         {proj}
                       </th>
                     ))}
                     {/* Sohra */}
                     {computedSums.projects.map((proj, idx) => (
-                      <th key={`print-head-sohra-${proj}`} className={`py-2 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-dashed border-[#4F81BD]'}`}>
+                      <th key={`print-head-sohra-${proj}`} className={`py-2 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-solid border-[#4F81BD]'}`}>
                         {proj}
                       </th>
                     ))}
@@ -1808,25 +1849,25 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   {selectedSheet.days.map((day, dIdx) => {
                     const valMap = getNormalizedDayValues(day, computedSums.projects, selectedSheet);
                     return (
-                      <tr key={day.date} className="border-b border-dashed border-[#4F81BD] text-slate-800 font-bold bg-white">
-                        <td className="py-2 px-1 border-e-2 border-dashed border-[#4F81BD] bg-[#F5F7FA]">{day.dayName}</td>
-                        <td className="py-2 px-1 border-e-2 border-dashed border-[#4F81BD] font-mono text-[9px]">{day.date}</td>
+                      <tr key={day.date} className="border-b border-solid border-[#4F81BD] text-slate-800 font-bold bg-white">
+                        <td className="py-2 px-1 border-e-2 border-solid border-[#4F81BD] bg-[#F5F7FA]">{day.dayName}</td>
+                        <td className="py-2 px-1 border-e-2 border-solid border-[#4F81BD] font-mono text-[9px]">{day.date}</td>
                         
                         {/* Daily values */}
                         {computedSums.projects.map((proj, idx) => (
-                          <td key={`print-val-daily-${proj}`} className={`py-2 px-1 border-e-2 border-dashed border-[#4F81BD] ${valMap[proj]?.daily ? 'bg-[#F2F6FA]' : ''}`}>
+                          <td key={`print-val-daily-${proj}`} className={`py-2 px-1 border-e-2 border-solid border-[#4F81BD] ${valMap[proj]?.daily ? 'bg-[#F2F6FA]' : ''}`}>
                             {valMap[proj]?.daily || 0}
                           </td>
                         ))}
                         {/* Overtime values */}
                         {computedSums.projects.map((proj, idx) => (
-                          <td key={`print-val-ot-${proj}`} className={`py-2 px-1 border-e-2 border-dashed border-[#4F81BD] ${valMap[proj]?.overtime ? 'bg-[#E2EFDA]' : ''}`}>
+                          <td key={`print-val-ot-${proj}`} className={`py-2 px-1 border-e-2 border-solid border-[#4F81BD] ${valMap[proj]?.overtime ? 'bg-[#E2EFDA]' : ''}`}>
                             {valMap[proj]?.overtime || 0}
                           </td>
                         ))}
                         {/* Sohra values */}
                         {computedSums.projects.map((proj, idx) => (
-                          <td key={`print-val-sohra-${proj}`} className={`py-2 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-dashed border-[#4F81BD]'} ${valMap[proj]?.sohra ? 'bg-[#FFF2CC]' : ''}`}>
+                          <td key={`print-val-sohra-${proj}`} className={`py-2 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-solid border-[#4F81BD]'} ${valMap[proj]?.sohra ? 'bg-[#FFF2CC]' : ''}`}>
                             {valMap[proj]?.sohra || 0}
                           </td>
                         ))}
@@ -1835,63 +1876,63 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   })}
 
                   {/* Totals Row */}
-                  <tr className="border-t-2 border-dashed border-[#4F81BD] font-black bg-[#F2F2F2] text-[#1F4E78]">
-                    <td className="py-2.5 px-1 border-e-2 border-dashed border-[#4F81BD]" colSpan={2}>عدد الايام / الساعات</td>
+                  <tr className="border-t-2 border-solid border-[#4F81BD] font-black bg-[#F2F2F2] text-[#1F4E78]">
+                    <td className="py-2.5 px-1 border-e-2 border-solid border-[#4F81BD]" colSpan={2}>عدد الايام / الساعات</td>
                     
                     {computedSums.projects.map((p) => (
-                      <td key={`print-sum-daily-${p}`} className="py-2.5 px-1 border-e-2 border-dashed border-[#4F81BD]">
+                      <td key={`print-sum-daily-${p}`} className="py-2.5 px-1 border-e-2 border-solid border-[#4F81BD]">
                         {computedSums.projectSums[p]?.sumDaily || 0}
                       </td>
                     ))}
                     {computedSums.projects.map((p) => (
-                      <td key={`print-sum-ot-${p}`} className="py-2.5 px-1 border-e-2 border-dashed border-[#4F81BD]">
+                      <td key={`print-sum-ot-${p}`} className="py-2.5 px-1 border-e-2 border-solid border-[#4F81BD]">
                         {computedSums.projectSums[p]?.sumOvertime || 0}
                       </td>
                     ))}
                     {computedSums.projects.map((p, idx) => (
-                      <td key={`print-sum-sohra-${p}`} className={`py-2.5 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-dashed border-[#4F81BD]'}`}>
+                      <td key={`print-sum-sohra-${p}`} className={`py-2.5 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-solid border-[#4F81BD]'}`}>
                         {computedSums.projectSums[p]?.sumSohra || 0}
                       </td>
                     ))}
                   </tr>
 
                   {/* Rate Row */}
-                  <tr className="border-t border-dashed border-[#4F81BD] font-black bg-[#E9EEF4]">
-                    <td className="py-2.5 px-1 border-e-2 border-dashed border-[#4F81BD]" colSpan={2}>الفئة اليومية والاجر</td>
+                  <tr className="border-t border-solid border-[#4F81BD] font-black bg-[#E9EEF4]">
+                    <td className="py-2.5 px-1 border-e-2 border-solid border-[#4F81BD]" colSpan={2}>الفئة اليومية والاجر</td>
                     
                     {computedSums.projects.map((p) => (
-                      <td key={`print-rate-daily-${p}`} className="py-2.5 px-1 border-e-2 border-dashed border-[#4F81BD]">
+                      <td key={`print-rate-daily-${p}`} className="py-2.5 px-1 border-e-2 border-solid border-[#4F81BD]">
                         {selectedSheet.dailyRate.toLocaleString()}
                       </td>
                     ))}
                     {computedSums.projects.map((p) => (
-                      <td key={`print-rate-ot-${p}`} className="py-2.5 px-1 border-e-2 border-dashed border-[#4F81BD]">
+                      <td key={`print-rate-ot-${p}`} className="py-2.5 px-1 border-e-2 border-solid border-[#4F81BD]">
                         {selectedSheet.overtimeRate.toLocaleString()}
                       </td>
                     ))}
                     {computedSums.projects.map((p, idx) => (
-                      <td key={`print-rate-sohra-${p}`} className={`py-2.5 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-dashed border-[#4F81BD]'}`}>
+                      <td key={`print-rate-sohra-${p}`} className={`py-2.5 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-solid border-[#4F81BD]'}`}>
                         {selectedSheet.sohraRate.toLocaleString()}
                       </td>
                     ))}
                   </tr>
 
                   {/* Weekly Subtotal Row */}
-                  <tr className="border-t-2 border-b-2 border-dashed border-[#4F81BD] font-black bg-[#E2EFDA] text-[#375623]">
-                    <td className="py-3 px-1 border-e-2 border-dashed border-[#4F81BD]" colSpan={2}>اجمالي اسبوعي لكل مشروع</td>
+                  <tr className="border-t-2 border-b-2 border-solid border-[#4F81BD] font-black bg-[#E2EFDA] text-[#375623]">
+                    <td className="py-3 px-1 border-e-2 border-solid border-[#4F81BD]" colSpan={2}>اجمالي اسبوعي لكل مشروع</td>
                     
                     {computedSums.projects.map((p) => (
-                      <td key={`print-tot-daily-${p}`} className="py-3 px-1 border-e-2 border-dashed border-[#4F81BD]">
+                      <td key={`print-tot-daily-${p}`} className="py-3 px-1 border-e-2 border-solid border-[#4F81BD]">
                         {(computedSums.projectSums[p]?.totalDailyVal || 0).toLocaleString()} EGP
                       </td>
                     ))}
                     {computedSums.projects.map((p) => (
-                      <td key={`print-tot-ot-${p}`} className="py-3 px-1 border-e-2 border-dashed border-[#4F81BD]">
+                      <td key={`print-tot-ot-${p}`} className="py-3 px-1 border-e-2 border-solid border-[#4F81BD]">
                         {(computedSums.projectSums[p]?.totalOvertimeVal || 0).toLocaleString()} EGP
                       </td>
                     ))}
                     {computedSums.projects.map((p, idx) => (
-                      <td key={`print-tot-sohra-${p}`} className={`py-3 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-dashed border-[#4F81BD]'}`}>
+                      <td key={`print-tot-sohra-${p}`} className={`py-3 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-solid border-[#4F81BD]'}`}>
                         {(computedSums.projectSums[p]?.totalSohraVal || 0).toLocaleString()} EGP
                       </td>
                     ))}
@@ -1901,29 +1942,29 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             </div>
 
             {/* New Clean Excel-like Summary Table Directly Under the Main Table */}
-            <div className="mt-4 border-2 border-dashed border-[#4F81BD] rounded-xl p-4 bg-white max-w-md mr-auto break-inside-avoid">
+            <div className="mt-4 border-2 border-solid border-[#4F81BD] rounded-xl p-4 bg-white max-w-md mr-auto break-inside-avoid">
               <table className="w-full text-right border-collapse text-[10px] font-sans">
                 <tbody>
                   <tr className="border-b border-[#4F81BD] bg-[#F2F6FA]">
-                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">إجمالي أسبوعي (حساب الأسبوع الحالي)</td>
+                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">إجمالي أسبوعي</td>
                     <td className="py-2 px-3 font-black text-slate-950 font-mono text-left border border-[#4F81BD]">
                       {computedSums.weeklyTotal.toLocaleString()} EGP
                     </td>
                   </tr>
                   <tr className="border-b border-[#4F81BD] bg-white">
-                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">الإجمالي (مجموع الأسبوع السابق المرحل + الأسبوع الحالي)</td>
+                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">الإجمالي</td>
                     <td className="py-2 px-3 font-black text-slate-950 font-mono text-left border border-[#4F81BD]">
                       {computedSums.overallTotal.toLocaleString()} EGP
                     </td>
                   </tr>
                   <tr className="border-b border-[#4F81BD] bg-[#FFF2CC]">
-                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">المسدد (المبلغ المدفوع فعلياً)</td>
+                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">المسدد</td>
                     <td className="py-2 px-3 font-black text-rose-700 font-mono text-left border border-[#4F81BD]">
                       {selectedSheet.currentPaid.toLocaleString()} EGP
                     </td>
                   </tr>
                   <tr className="bg-[#E2EFDA] text-[#375623]">
-                    <td className="py-2 px-3 font-black border border-[#4F81BD]">المتبقي (الصافي النهائي المتبقي للعمل)</td>
+                    <td className="py-2 px-3 font-black border border-[#4F81BD]">المتبقي</td>
                     <td className="py-2 px-3 font-black font-mono text-sm text-left border border-[#4F81BD]">
                       {computedSums.remainingBalance.toLocaleString()} EGP
                     </td>
