@@ -1190,6 +1190,23 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               background-color: #D9E1F2 !important;
             }
           `}
+
+          /* Enforce black text color on all elements unconditionally during printing */
+          * {
+            color: #000000 !important;
+          }
+
+          /* Enforce solid black grid lines on all tables and cells unconditionally during printing */
+          table, th, td {
+            border: 1.5px solid #000000 !important;
+            border-collapse: collapse !important;
+          }
+
+          /* Re-apply non-print-border exception so layout helper tables stay borderless */
+          table.no-print-border, table.no-print-border tr, table.no-print-border td {
+            border: none !important;
+            border-style: none !important;
+          }
         }
       `}} />
 
@@ -2033,29 +2050,29 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           <div className="landscape-print-outer-container space-y-4 bg-white">
             
             {/* Real Official Header Banner matching user layout */}
-            <div className="border-b-2 border-solid border-[#4F81BD] pb-3 flex justify-between items-start gap-4" dir="rtl" style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              {/* Right Side: Title and Info (Clean Stacked Layout) */}
-              <div className="text-right flex flex-col gap-1.5 flex-1" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <h2 className="text-[18px] font-black text-[#1F4E78] tracking-wide mb-1">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
+            <div className="border-b-2 border-solid border-[#4F81BD] pb-3 relative min-h-[115px]" dir="rtl" style={{ display: 'block', position: 'relative', minHeight: '115px', width: '100%' }}>
+              {/* Right Side: Title and Info (Clean Stacked Layout, pushed right by marginLeft) */}
+              <div className="text-right flex flex-col gap-2" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '280px', marginRight: '0px' }}>
+                <h2 className="text-[18px] font-black text-[#1F4E78] tracking-wide mb-1" style={{ whiteSpace: 'nowrap' }}>بيان حضور العمالة اليومية وتفصيل الأجور</h2>
                 
-                <div className="flex flex-col gap-1.5 text-[10.5px] font-bold text-slate-800" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div className="flex items-center gap-1.5" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div className="flex flex-col gap-2 text-[11px] font-bold text-slate-800" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div className="flex items-center gap-2" style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
                     <span className="text-[#1F4E78] font-black">العامل:</span>
                     <span className="text-slate-950 font-black text-sm px-2.5 py-0.5 bg-slate-50 rounded border border-slate-200">{selectedSheet.workerName}</span>
                   </div>
-                  <div className="flex items-center gap-1.5" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div className="flex items-center gap-2" style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
                     <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور:</span>
                     <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-2.5 py-0.5 rounded border border-[#4F81BD]/20">من {selectedSheet.startDate} إلى {selectedSheet.endDate}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Left Side: Compact Sticky Note Previous Balances Card (Naturally aligned to the left/الشمال in RTL row) */}
-              <div className="shrink-0" style={{ width: '250px', display: 'block' }}>
+              {/* Left Side: Compact Sticky Note Previous Balances Card (Absolute positioned to the far top left) */}
+              <div style={{ position: 'absolute', left: '0', top: '0', display: 'block', width: '260px' }}>
                 <div className="text-[9px] text-slate-500 font-black text-right mb-1">
                   📌 الرصيد السابق
                 </div>
-                <div className="print-sticky-note" style={{ width: '250px' }}>
+                <div className="print-sticky-note" style={{ width: '260px', maxWidth: '260px', minWidth: '260px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <tbody>
                       <tr>
@@ -2207,12 +2224,12 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             </div>
 
             {/* New Clean Sticky-note Summary Card (Symmetrical, aligned to the right/اليمين) */}
-            <div className="w-full flex justify-start mt-4 break-inside-avoid" dir="rtl" style={{ display: 'flex', justifyContent: 'flex-start' }}>
-              <div style={{ display: 'block', width: '250px' }}>
+            <div className="w-full mt-4 break-inside-avoid" dir="rtl" style={{ display: 'block', textAlign: 'right', width: '100%' }}>
+              <div style={{ display: 'inline-block', width: '250px' }}>
                 <div className="text-[9px] text-slate-500 font-black text-right mb-1">
                   📌 ملخص الرصيد الحالي والشيت
                 </div>
-                <div className="print-sticky-note" style={{ width: '250px' }}>
+                <div className="print-sticky-note" style={{ width: '250px', maxWidth: '250px', minWidth: '250px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <tbody>
                       <tr>
@@ -2228,7 +2245,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                         <td className="value-rose">{selectedSheet.currentPaid.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="label" style={{ color: '#047857' }}>المتبقي</td>
+                        <td className="label" style={{ color: '#000000' }}>المتبقي</td>
                         <td className="value-emerald">{computedSums.remainingBalance.toLocaleString()}</td>
                       </tr>
                     </tbody>
