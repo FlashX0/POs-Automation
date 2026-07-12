@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { getSupabaseClient } from '../lib/supabaseClient';
 import { 
   Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, 
   Layers, FileText, User, Folder, FolderOpen, FileSpreadsheet, 
@@ -489,6 +490,13 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
     if (!selectedContractId) return;
     if (confirm('هل أنت متأكد من رغبتك في حذف هذا المستخلص بالكامل؟')) {
       try {
+        // Direct Supabase Hard Delete
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          const { error: sbErr } = await supabase.from('subcontractor_contracts').delete().eq('id', selectedContractId);
+          if (sbErr) console.error('خطأ في حذف المستخلص من السيرفر:', sbErr.message);
+        }
+
         const res = await fetch('/api/subcontractors/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

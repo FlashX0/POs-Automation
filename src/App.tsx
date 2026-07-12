@@ -1123,28 +1123,28 @@ export default function App() {
         if (finRes.ok) {
           const finData = await finRes.json();
           if (finData.success) {
-            if (finData.pettyCashBoxDays && finData.pettyCashBoxDays.length > 0) {
+            if (finData.pettyCashBoxDays !== undefined) {
               setPettyCashBoxDays(finData.pettyCashBoxDays);
             }
-            if (finData.subcontractorContracts && finData.subcontractorContracts.length > 0) {
+            if (finData.subcontractorContracts !== undefined) {
               setSubcontractorContracts(finData.subcontractorContracts);
             }
-            if (finData.laborTimesheets && finData.laborTimesheets.length > 0) {
+            if (finData.laborTimesheets !== undefined) {
               setLaborTimesheets(finData.laborTimesheets);
             }
-            if (finData.costAnalysisEntries && finData.costAnalysisEntries.length > 0) {
+            if (finData.costAnalysisEntries !== undefined) {
               setCostAnalysisEntries(finData.costAnalysisEntries);
             }
-            if (finData.costAnalysisCategories && finData.costAnalysisCategories.length > 0) {
+            if (finData.costAnalysisCategories !== undefined) {
               setCostAnalysisCategories(finData.costAnalysisCategories);
             }
-            if (finData.pendingTransactions && finData.pendingTransactions.length > 0) {
+            if (finData.pendingTransactions !== undefined) {
               setPendingTransactions(finData.pendingTransactions);
             }
-            if (finData.archives && finData.archives.length > 0) {
+            if (finData.archives !== undefined) {
               setArchives(finData.archives);
             }
-            if (finData.engineers && finData.engineers.length > 0) {
+            if (finData.engineers !== undefined) {
               setEngineers(finData.engineers);
             }
           }

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { getSupabaseClient } from '../lib/supabaseClient';
 import { 
   Plus, 
   Trash2, 
@@ -459,10 +460,36 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   };
 
   // Delete cost entry
-  const handleDeleteEntry = (id: string) => {
+  const handleDeleteEntry = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا القيد التحليلي؟')) {
-      const updated = entries.filter(item => item.id !== id);
-      onSave(updated, categories);
+      try {
+        // Direct Supabase Hard Delete
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          const { error: sbErr } = await supabase.from('cost_analysis_entries').delete().eq('id', id);
+          if (sbErr) console.error('خطأ في حذف القيد التحليلي من السيرفر:', sbErr.message);
+        }
+
+        const res = await fetch('/api/cost-analysis/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            const updated = entries.filter(item => item.id !== id);
+            onSave(updated, categories);
+          } else {
+            alert(`فشل حذف القيد التحليلي: ${data.error || 'خطأ غير معروف'}`);
+          }
+        } else {
+          alert('فشل الاتصال بالسيرفر لحذف القيد التحليلي.');
+        }
+      } catch (err) {
+        console.error('Error deleting cost analysis entry:', err);
+        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف القيد التحليلي.');
+      }
     }
   };
 

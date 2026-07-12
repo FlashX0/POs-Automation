@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { getSupabaseClient } from '../lib/supabaseClient';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   User, Phone, Briefcase, Hash, Plus, Edit2, Trash2, Check, X, Search, 
@@ -256,6 +257,16 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
   const handleDelete = async (id: string, engName: string) => {
     if (window.confirm(`هل أنت متأكد من حذف المهندس "${engName}" وكل سجلاته؟`)) {
       try {
+        // Direct Supabase Hard Delete
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          const { error: sbErr1 } = await supabase.from('petty_cash_box_days').delete().eq('engineer', engName);
+          if (sbErr1) console.error('خطأ في حذف حركات الصندوق من السيرفر:', sbErr1.message);
+          
+          const { error: sbErr2 } = await supabase.from('engineers').delete().eq('id', id);
+          if (sbErr2) console.error('خطأ في حذف المهندس من السيرفر:', sbErr2.message);
+        }
+
         const res = await fetch('/api/engineers/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

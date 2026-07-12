@@ -5340,6 +5340,35 @@ app.post("/api/labor-timesheets/delete", async (req, res) => {
   }
 });
 
+app.post("/api/cost-analysis/delete", async (req, res) => {
+  try {
+    const { id } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (db.costAnalysisEntries) {
+      db.costAnalysisEntries = db.costAnalysisEntries.filter((item: any) => item.id !== id);
+    }
+    
+    await saveDb(db);
+    
+    // Try to delete from Supabase Database if tables exist
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('cost_analysis_entries').delete().eq('id', id);
+      } catch (sbErr) {
+        console.warn("[Supabase Table Sync] Skip direct table delete because tables might not exist:", sbErr);
+      }
+    }
+    
+    res.json({ success: true, message: "تم حذف القيد التحليلي بنجاح" });
+  } catch (err: any) {
+    console.error("Delete cost analysis error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get("/api/financial-data", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
@@ -5443,7 +5472,7 @@ app.post("/api/engineers/ledger/reset", async (req, res) => {
       if (db.engineers) {
         db.engineers = db.engineers.map((eng: any) => {
           if (eng.name === engineerName) {
-            return { ...eng, initialBalance: 0 };
+            return { ...eng, initialBalance: 0, openingBalance: 0, opening_balance: 0 };
           }
           return eng;
         });
@@ -5452,7 +5481,7 @@ app.post("/api/engineers/ledger/reset", async (req, res) => {
       db.engineerLedgers = {};
       db.pettyCashBoxDays = [];
       if (db.engineers) {
-        db.engineers = db.engineers.map((eng: any) => ({ ...eng, initialBalance: 0 }));
+        db.engineers = db.engineers.map((eng: any) => ({ ...eng, initialBalance: 0, openingBalance: 0, opening_balance: 0 }));
       }
     }
     

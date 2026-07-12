@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { getSupabaseClient } from '../lib/supabaseClient';
 import { 
   Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, 
   Clock, Users, User, Folder, FolderOpen, FileSpreadsheet, 
@@ -620,6 +621,13 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
       )
     ) {
       try {
+        // Direct Supabase Hard Delete
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          const { error: sbErr } = await supabase.from('labor_timesheets').delete().eq('id', selectedSheetId);
+          if (sbErr) console.error('خطأ في حذف الكشف من السيرفر:', sbErr.message);
+        }
+
         const res = await fetch('/api/labor-timesheets/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
