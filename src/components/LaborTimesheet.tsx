@@ -1059,15 +1059,13 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
 
           /* Custom Sticky Notes / Accounting Squares for printing */
           .print-sticky-note {
-            width: 190px !important;
-            max-width: 190px !important;
-            min-width: 190px !important;
+            min-width: 170px !important;
+            display: inline-block !important;
             background-color: #ffffff !important;
-            border: 2px solid #000000 !important;
+            border: 2.2px solid #000000 !important;
             border-radius: 0px !important;
             padding: 0px !important;
             box-sizing: border-box !important;
-            display: block !important;
           }
 
           .print-sticky-note table {
@@ -1083,11 +1081,11 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           }
 
           .print-sticky-note td {
-            padding: 5px 6px !important;
+            padding: 5px 10px !important; /* Spacious, professional padding */
             background: #ffffff !important;
             border: 1.5px solid #000000 !important;
             vertical-align: middle !important;
-            font-size: 11px !important;
+            font-size: 11.5px !important;
             line-height: 1.2 !important;
           }
 
@@ -1095,8 +1093,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             text-align: center !important;
             font-weight: bold !important;
             color: #000000 !important;
-            background-color: #f8f9fa !important;
-            width: 45% !important;
+            background-color: #f2f2f2 !important; /* Soft gray for accountant look */
+            white-space: nowrap !important; /* Do not wrap text */
           }
 
           .print-sticky-note td.value {
@@ -1104,7 +1102,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             font-weight: 900 !important;
             font-family: monospace !important;
             color: #000000 !important;
-            width: 55% !important;
+            white-space: nowrap !important; /* Let column grow dynamically with number length */
           }
 
           .print-sticky-note td.value-rose {
@@ -1112,7 +1110,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             font-weight: 900 !important;
             font-family: monospace !important;
             color: #be123c !important;
-            width: 55% !important;
+            white-space: nowrap !important;
           }
 
           .print-sticky-note td.value-emerald {
@@ -1120,7 +1118,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             font-weight: 900 !important;
             font-family: monospace !important;
             color: #047857 !important;
-            width: 55% !important;
+            white-space: nowrap !important;
           }
 
           .landscape-print .overflow-visible {
@@ -2047,16 +2045,16 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   <table>
                     <tbody>
                       <tr>
-                        <td className="value">{selectedSheet.previousTotal.toLocaleString()}</td>
                         <td className="label">الإجمالي السابق</td>
+                        <td className="value">{selectedSheet.previousTotal.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="value">{selectedSheet.previousPaid.toLocaleString()}</td>
                         <td className="label">المسدد السابق</td>
+                        <td className="value">{selectedSheet.previousPaid.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="value-rose">{selectedSheet.previousRemaining.toLocaleString()}</td>
                         <td className="label" style={{ color: '#991b1b' }}>المتبقي السابق</td>
+                        <td className="value-rose">{selectedSheet.previousRemaining.toLocaleString()}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -2204,20 +2202,20 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   <table>
                     <tbody>
                       <tr>
-                        <td className="value">{computedSums.weeklyTotal.toLocaleString()}</td>
                         <td className="label">إجمالي أسبوعي</td>
+                        <td className="value">{computedSums.weeklyTotal.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="value">{computedSums.overallTotal.toLocaleString()}</td>
                         <td className="label">الإجمالي</td>
+                        <td className="value">{computedSums.overallTotal.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="value-rose">{selectedSheet.currentPaid.toLocaleString()}</td>
                         <td className="label">المسدد</td>
+                        <td className="value-rose">{selectedSheet.currentPaid.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="value-emerald">{computedSums.remainingBalance.toLocaleString()}</td>
                         <td className="label" style={{ color: '#047857' }}>المتبقي</td>
+                        <td className="value-emerald">{computedSums.remainingBalance.toLocaleString()}</td>
                       </tr>
                     </tbody>
                   </table>
