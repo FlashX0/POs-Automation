@@ -1191,25 +1191,37 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             }
           `}
 
-          /* Enforce black text color on all elements unconditionally during printing */
-          * {
+          /* Enforce black text color on all elements unconditionally during printing and screen reports */
+          .landscape-print, 
+          .landscape-print *, 
+          .landscape-print h2, 
+          .landscape-print h1, 
+          .landscape-print span, 
+          .landscape-print div, 
+          .landscape-print td, 
+          .landscape-print th, 
+          .landscape-print table {
             color: #000000 !important;
           }
 
-          /* Enforce solid black grid lines on all tables and cells unconditionally during printing with high specificity */
-          table, th, td,
-          .landscape-print table, 
-          .landscape-print th, 
-          .landscape-print td,
-          .landscape-print .landscape-print-attendance-table, 
-          .landscape-print .landscape-print-attendance-table th, 
-          .landscape-print .landscape-print-attendance-table td,
-          .print-sticky-note, 
-          .print-sticky-note table, 
-          .print-sticky-note th, 
-          .print-sticky-note td {
+          /* Enforce solid black grid lines on all tables and cells unconditionally with extremely high specificity */
+          body .landscape-print table.landscape-print-attendance-table, 
+          body .landscape-print table.landscape-print-attendance-table tr, 
+          body .landscape-print table.landscape-print-attendance-table th, 
+          body .landscape-print table.landscape-print-attendance-table td,
+          body .landscape-print .print-sticky-note, 
+          body .landscape-print .print-sticky-note table, 
+          body .landscape-print .print-sticky-note tr, 
+          body .landscape-print .print-sticky-note th, 
+          body .landscape-print .print-sticky-note td,
+          body .print-sticky-note, 
+          body .print-sticky-note table, 
+          body .print-sticky-note tr, 
+          body .print-sticky-note th, 
+          body .print-sticky-note td {
             border: 1.5px solid #000000 !important;
             border-style: solid !important;
+            border-color: #000000 !important;
             border-collapse: collapse !important;
           }
 
@@ -1217,6 +1229,50 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           table.no-print-border, table.no-print-border tr, table.no-print-border td {
             border: none !important;
             border-style: none !important;
+          }
+
+          /* Complete and robust centering and balance CSS for Labor Report Header */
+          @media print, screen {
+            .labor-report-header {
+              display: grid !important;
+              grid-template-columns: 1fr 2fr 1fr !important; /* 3-part layout to guarantee perfect alignment */
+              align-items: start !important;
+              width: 100% !important;
+              margin-bottom: 25px !important;
+              color: #000000 !important;
+              border-bottom: 2.5px solid #000000 !important;
+              padding-bottom: 12px !important;
+            }
+
+            .header-center-titles {
+              text-align: center !important;
+              display: flex !important;
+              flex-direction: column !important;
+              gap: 8px !important;
+              justify-content: center !important;
+              align-items: center !important;
+            }
+
+            .header-center-titles h1, 
+            .header-center-titles h2, 
+            .header-center-titles p, 
+            .header-center-titles span {
+              color: #000000 !important;
+              font-weight: bold !important;
+              margin: 0 !important;
+              text-align: center !important;
+            }
+
+            /* Anchor the Previous Balances Card on the left (at end of grid in RTL) */
+            .header-left-balances {
+              justify-self: end !important;
+              width: 250px !important;
+              background: #ffffff !important;
+              border: 1.5px solid #000000 !important;
+              border-radius: 4px !important;
+              padding: 0px !important;
+              box-sizing: border-box !important;
+            }
           }
         }
       `}} />
@@ -2060,43 +2116,52 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
         <div className="hidden print:block w-full text-black font-sans landscape-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>
           <div className="landscape-print-outer-container space-y-4 bg-white">
             
-            {/* Real Official Header Banner matching user layout */}
-            <div className="border-b-2 border-solid border-[#4F81BD] pb-3 relative min-h-[115px]" dir="rtl" style={{ display: 'block', position: 'relative', minHeight: '115px', width: '100%' }}>
-              {/* Centered Title and Info (Clean Stacked Layout, padded from both sides to prevent overlap) */}
-              <div className="text-center flex flex-col gap-2 items-center justify-center text-black" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '280px', marginRight: '280px', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-                <h2 className="text-[18px] font-black text-[#1F4E78] tracking-wide mb-1 text-center" style={{ whiteSpace: 'nowrap', textAlign: 'center', color: '#000000' }}>بيان حضور العمالة اليومية وتفصيل الأجور</h2>
+            {/* Real Official Header Banner matching user layout with Grid Table Fixed Layout */}
+            <div className="labor-report-header" dir="rtl">
+              {/* Right Area (الطرف الأيمن): Empty space to maintain symmetric balance */}
+              <div style={{ width: '250px' }}></div>
+
+              {/* Center Area (المنتصف تماماً): Centered core texts on separate lines without overlap */}
+              <div className="header-center-titles">
+                <h2 className="text-[18px] font-black tracking-wide" style={{ whiteSpace: 'nowrap', textAlign: 'center', color: '#000000' }}>
+                  بيان حضور العمالة اليومية وتفصيل الأجور
+                </h2>
                 
-                <div className="flex flex-col gap-2 text-[11px] font-bold text-slate-800 items-center justify-center text-center" style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                <div className="flex flex-col gap-2 text-[12px] font-bold text-black items-center justify-center text-center" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
                   <div className="flex items-center gap-2 justify-center" style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap', justifyContent: 'center' }}>
-                    <span className="text-[#1F4E78] font-black" style={{ color: '#000000' }}>العامل:</span>
-                    <span className="text-slate-950 font-black text-sm px-2.5 py-0.5 bg-slate-50 rounded border border-slate-200" style={{ color: '#000000' }}>{selectedSheet.workerName}</span>
+                    <span style={{ color: '#000000' }}>العامل:</span>
+                    <span className="font-black px-2.5 py-0.5 bg-slate-50 rounded border border-slate-200" style={{ color: '#000000' }}>
+                      {selectedSheet.workerName}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 justify-center" style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap', justifyContent: 'center' }}>
-                    <span className="text-[#1F4E78] font-black" style={{ color: '#000000' }}>الفترة الزمنية لشيت الحضور:</span>
-                    <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-2.5 py-0.5 rounded border border-[#4F81BD]/20" style={{ color: '#000000' }}>من {selectedSheet.startDate} إلى {selectedSheet.endDate}</span>
+                    <span style={{ color: '#000000' }}>الفترة الزمنية لشيت الحضور:</span>
+                    <span className="font-mono bg-[#F2F6FA] px-2.5 py-0.5 rounded border border-slate-200" style={{ color: '#000000' }}>
+                      من {selectedSheet.startDate} إلى {selectedSheet.endDate}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Right Side: Compact Sticky Note Previous Balances Card (Absolute positioned to the far top right) */}
-              <div style={{ position: 'absolute', right: '0', top: '0', display: 'block', width: '260px' }}>
-                <div className="text-[9px] text-slate-500 font-black text-right mb-1" style={{ color: '#000000' }}>
+              {/* Left Area (الطرف الأيسر): Compact Sticky Note Previous Balances Card */}
+              <div className="header-left-balances">
+                <div className="text-[9px] font-black text-right mb-1" style={{ color: '#000000', padding: '3px 6px 0 0' }}>
                   📌 الرصيد السابق
                 </div>
-                <div className="print-sticky-note" style={{ width: '260px', maxWidth: '260px', minWidth: '260px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <div className="print-sticky-note" style={{ width: '100%', maxWidth: '100%', minWidth: '100%', border: 'none' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                     <tbody>
                       <tr>
-                        <td className="label">الإجمالي السابق</td>
-                        <td className="value">{selectedSheet.previousTotal.toLocaleString()}</td>
+                        <td className="label" style={{ color: '#000000', fontWeight: 'bold' }}>الإجمالي السابق</td>
+                        <td className="value" style={{ color: '#000000', fontWeight: 'bold' }}>{selectedSheet.previousTotal.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="label">المسدد السابق</td>
-                        <td className="value">{selectedSheet.previousPaid.toLocaleString()}</td>
+                        <td className="label" style={{ color: '#000000', fontWeight: 'bold' }}>المسدد السابق</td>
+                        <td className="value" style={{ color: '#000000', fontWeight: 'bold' }}>{selectedSheet.previousPaid.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="label" style={{ color: '#991b1b' }}>المتبقي السابق</td>
-                        <td className="value-rose">{selectedSheet.previousRemaining.toLocaleString()}</td>
+                        <td className="label" style={{ color: '#000000', fontWeight: 'bold' }}>المتبقي السابق</td>
+                        <td className="value-rose" style={{ color: '#000000', fontWeight: 'black' }}>{selectedSheet.previousRemaining.toLocaleString()}</td>
                       </tr>
                     </tbody>
                   </table>
