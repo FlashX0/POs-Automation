@@ -554,20 +554,35 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
     }
 
     const start = new Date(newStart);
-    const daysArr: DayEntry[] = [];
-    const dayNamesAr = ['الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد', 'الإثنين', 'الثلاثاء'];
+    const end = new Date(newEnd);
+    const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+    const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+    const diffDays = Math.floor((endUtc - startUtc) / (1000 * 60 * 60 * 24)) + 1;
 
-    for (let i = 0; i < 7; i++) {
+    if (diffDays <= 0) {
+      alert('تاريخ النهاية يجب أن يكون مساوياً أو بعد تاريخ البداية!');
+      return;
+    }
+
+    const daysArr: DayEntry[] = [];
+    const activeProjects = projectsList && projectsList.length > 0 ? projectsList : [];
+
+    for (let i = 0; i < diffDays; i++) {
       const currDate = new Date(start);
       currDate.setDate(start.getDate() + i);
+      
+      // Get dynamic Arabic weekday name
+      const dayName = currDate.toLocaleDateString('ar-EG', { weekday: 'long' });
+      
+      const projectValues: { [projectName: string]: { daily: number; overtime: number; sohra: number } } = {};
+      activeProjects.forEach(p => {
+        projectValues[p] = { daily: 0, overtime: 0, sohra: 0 };
+      });
+
       daysArr.push({
-        dayName: dayNamesAr[i] || 'يوم',
+        dayName: dayName,
         date: currDate.toISOString().split('T')[0],
-        projectValues: {
-          'الساحل': { daily: 0, overtime: 0, sohra: 0 },
-          'البروج': { daily: 0, overtime: 0, sohra: 0 },
-          'هايد بارك': { daily: 0, overtime: 0, sohra: 0 }
-        }
+        projectValues: projectValues
       });
     }
 
@@ -586,7 +601,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
       dailyRate: parseFloat(newDailyRate) || 300,
       overtimeRate: parseFloat(newOvertimeRate) || 300,
       sohraRate: parseFloat(newSohraRate) || 45,
-      projects: ['الساحل', 'البروج', 'هايد بارك'],
+      projects: activeProjects,
       days: daysArr,
     };
 
@@ -933,11 +948,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
 
   // Dynamic system project suggestions
   const dynamicProjects = useMemo(() => {
-    const list = [...projectsList];
-    ['الساحل', 'البروج', 'هايد بارك'].forEach(p => {
-      if (!list.includes(p)) list.push(p);
-    });
-    return list;
+    return projectsList;
   }, [projectsList]);
 
   // Group labor archives into virtual folder directories
@@ -2301,24 +2312,24 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                 <div className="text-[9px] text-slate-500 font-black text-right mb-1">
                   📌 ملخص الرصيد الحالي والشيت
                 </div>
-                <div className="print-sticky-note" style={{ width: '250px', maxWidth: '250px', minWidth: '250px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <div className="print-sticky-note" style={{ width: '250px', maxWidth: '250px', minWidth: '250px', border: '2.5px solid #000000' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                     <tbody>
-                      <tr>
-                        <td className="value" style={{ textAlign: 'right', fontWeight: '900', color: '#000000' }}>{computedSums.weeklyTotal.toLocaleString()}</td>
-                        <td className="label" style={{ textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px' }}>إجمالي أسبوعي</td>
+                      <tr style={{ border: 'none' }}>
+                        <td className="label" style={{ textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px', color: '#000000', border: '1.5px solid #000000' }}>إجمالي أسبوعي</td>
+                        <td className="value" style={{ textAlign: 'left', fontWeight: '900', color: '#000000', border: '1.5px solid #000000' }}>{computedSums.weeklyTotal.toLocaleString()}</td>
                       </tr>
-                      <tr>
-                        <td className="value" style={{ textAlign: 'right', fontWeight: '900', color: '#000000' }}>{computedSums.overallTotal.toLocaleString()}</td>
-                        <td className="label" style={{ textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px' }}>الإجمالي</td>
+                      <tr style={{ border: 'none' }}>
+                        <td className="label" style={{ textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px', color: '#000000', border: '1.5px solid #000000' }}>الإجمالي</td>
+                        <td className="value" style={{ textAlign: 'left', fontWeight: '900', color: '#000000', border: '1.5px solid #000000' }}>{computedSums.overallTotal.toLocaleString()}</td>
                       </tr>
-                      <tr>
-                        <td className="value-rose" style={{ textAlign: 'right', fontWeight: '900', color: '#be123c' }}>{selectedSheet.currentPaid.toLocaleString()}</td>
-                        <td className="label" style={{ textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px' }}>المسدد</td>
+                      <tr style={{ border: 'none' }}>
+                        <td className="label" style={{ textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px', color: '#000000', border: '1.5px solid #000000' }}>المسدد</td>
+                        <td className="value" style={{ textAlign: 'left', fontWeight: '900', color: '#000000', border: '1.5px solid #000000' }}>{selectedSheet.currentPaid.toLocaleString()}</td>
                       </tr>
-                      <tr>
-                        <td className="value-emerald" style={{ textAlign: 'right', fontWeight: '900', color: '#047857' }}>{computedSums.remainingBalance.toLocaleString()}</td>
-                        <td className="label" style={{ textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px' }}>المتبقي</td>
+                      <tr style={{ border: 'none' }}>
+                        <td className="label" style={{ textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px', color: '#000000', border: '1.5px solid #000000' }}>المتبقي</td>
+                        <td className="value" style={{ textAlign: 'left', fontWeight: '900', color: '#000000', border: '1.5px solid #000000' }}>{computedSums.remainingBalance.toLocaleString()}</td>
                       </tr>
                     </tbody>
                   </table>

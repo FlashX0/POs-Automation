@@ -1291,10 +1291,10 @@ async function saveDbToSupabase(data: any) {
     const bucketName = "POs Files";
     const supabasePath = "db_backup/db.json";
     const jsonStr = JSON.stringify(data, null, 2);
-    const fileBlob = new globalThis.Blob([jsonStr], { type: "application/json" });
+    const buffer = Buffer.from(jsonStr, "utf-8");
     const { error } = await supabase.storage
       .from(bucketName)
-      .upload(supabasePath, fileBlob, {
+      .upload(supabasePath, buffer, {
         contentType: "application/json",
         upsert: true
       });
@@ -1308,7 +1308,7 @@ async function saveDbToSupabase(data: any) {
   }
 }
 
-function saveDb(data: any) {
+async function saveDb(data: any) {
   if (data && data.documents) {
     data.documents = sanitizeAndExtractBrands(data.documents);
   }
@@ -1323,19 +1323,23 @@ function saveDb(data: any) {
   lastMongoSyncTime = Date.now() + 15000;
 
   // 1. Push backup to Supabase Storage
-  saveDbToSupabase(data).catch((err) => {
+  try {
+    await saveDbToSupabase(data);
+  } catch (err: any) {
     console.error("[Supabase Sync] Background save to Supabase failed:", err.message);
-  });
+  }
 
   // 2. Push to MongoDB Atlas asynchronously to keep all instances entirely in sync
   if (mongoose.connection.readyState === 1) {
-    AppState.updateOne(
-      { key: "global_state" },
-      { data: data },
-      { upsert: true }
-    ).catch((err) => {
+    try {
+      await AppState.updateOne(
+        { key: "global_state" },
+        { data: data },
+        { upsert: true }
+      );
+    } catch (err: any) {
       console.error("Could not background save AppState to MongoDB:", err.message);
-    });
+    }
   }
 }
 
@@ -5266,7 +5270,7 @@ app.post("/api/financial-data/update", async (req, res) => {
     if (archives !== undefined) db.archives = archives;
     if (engineers !== undefined) db.engineers = engineers;
     
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, message: "تم حفظ البيانات المالية المحاسبية بنجاح" });
   } catch (err: any) {
     console.error("Save financial data error:", err);
@@ -5409,7 +5413,7 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
       db.engineerLedgers[finalEngineerName].push(ledgerDayObj);
     }
     
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, message: "تم تسجيل حركة الصندوق بنجاح في قاعدة البيانات", pettyCashBoxDays: db.pettyCashBoxDays });
   } catch (err: any) {
     console.error("Insert petty cash transaction error:", err);
@@ -5447,7 +5451,7 @@ app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
       }).filter((d: any) => (d.transactions && d.transactions.length > 0) || d.startingBalanceOverride !== undefined);
     }
     
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, message: "تم حذف الحركة بنجاح", pettyCashBoxDays: db.pettyCashBoxDays });
   } catch (err: any) {
     console.error("Delete petty cash transaction error:", err);
@@ -5490,7 +5494,7 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
       });
     }
     
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: db.pettyCashBoxDays });
   } catch (err: any) {
     console.error("Update starting balance error:", err);
