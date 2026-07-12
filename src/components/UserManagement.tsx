@@ -60,6 +60,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState('');
 
+  // Reset Database State
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
+
   const safeJson = async (res: Response) => {
     const contentType = res.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
@@ -279,6 +286,41 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
     }
   };
 
+  const handleResetDatabase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPassword) {
+      setResetError('يرجى إدخال كلمة مرور مدير النظام');
+      return;
+    }
+    setResetLoading(true);
+    setResetError('');
+    setResetSuccess('');
+    try {
+      const res = await fetch('/api/admin/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: resetPassword })
+      });
+      const data = await safeJson(res);
+      if (res.ok && data.success) {
+        setResetSuccess('تم تصفير وإعادة تعيين الحركات والبيانات المالية بالكامل بنجاح!');
+        setResetPassword('');
+        setTimeout(() => {
+          setResetModalOpen(false);
+          setResetSuccess('');
+          fetchUsers();
+        }, 3000);
+      } else {
+        setResetError(data.error || 'فشل إعادة تعيين قاعدة البيانات');
+      }
+    } catch (err) {
+      console.error('Error resetting database:', err);
+      setResetError('حدث خطأ غير متوقع أثناء الاتصال بالخادم.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   // Stats
   const activeCount = users.filter(u => u.status === 'active').length;
   const blockedCount = users.filter(u => u.status === 'blocked').length;
@@ -329,6 +371,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
             >
               <Plus className="w-4 h-4" />
               إضافة موظف جديد
+            </button>
+
+            <button
+              onClick={() => {
+                setResetError('');
+                setResetSuccess('');
+                setResetPassword('');
+                setResetModalOpen(true);
+              }}
+              className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 px-5 rounded-xl shadow-lg shadow-rose-600/15 transition-all text-sm flex items-center gap-2 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              إعادة تعيين قاعدة البيانات
             </button>
           </div>
         </div>
@@ -939,6 +994,81 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                 )}
                 حفظ التعديلات
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RESET DATABASE MODAL */}
+      {resetModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+            <button 
+              onClick={() => setResetModalOpen(false)}
+              className="absolute top-4 left-4 text-slate-500 hover:text-slate-300 transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-right mb-6">
+              <h3 className="text-lg font-bold text-red-500 flex items-center gap-2 justify-start">
+                <AlertCircle className="w-5 h-5 text-red-500 animate-pulse shrink-0" />
+                <span>إعادة تعيين قاعدة البيانات بالكامل</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                ⚠️ <span className="text-red-400 font-bold">تنبيه حاسم:</span> هذا الإجراء سيمسح كافة كشوف العمالة، العهد ومصروفات المشاريع، ومستخلصات المقاولين ويعيد النظام لحالته الأولية! لن يتم مسح حسابات الموظفين.
+              </p>
+            </div>
+
+            <form onSubmit={handleResetDatabase} className="space-y-4 text-right">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-1.5 mr-1">كلمة مرور مدير النظام الخاصة بالإعادة (Admin Reset Key)</label>
+                <input 
+                  type="password"
+                  required
+                  placeholder="أدخل كلمة مرور الإعادة الفائقة..."
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-red-500 rounded-xl px-4 py-2.5 text-slate-200 text-sm outline-none transition-all text-center tracking-widest font-mono"
+                  autoFocus
+                />
+              </div>
+
+              {resetError && (
+                <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs py-2.5 px-3 rounded-xl font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{resetError}</span>
+                </div>
+              )}
+
+              {resetSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs py-2.5 px-3 rounded-xl font-bold flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{resetSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => setResetModalOpen(false)}
+                  className="w-1/2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition-all cursor-pointer text-sm"
+                >
+                  إلغاء التراجع
+                </button>
+                <button 
+                  type="submit"
+                  disabled={resetLoading}
+                  className="w-1/2 bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white font-black py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+                >
+                  {resetLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  تأكيد الحذف الفوري
+                </button>
+              </div>
             </form>
           </div>
         </div>

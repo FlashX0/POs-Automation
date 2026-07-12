@@ -1105,7 +1105,6 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             color: #000000 !important;
             background-color: #f2f2f2 !important; /* Soft gray for accountant look */
             white-space: nowrap !important; /* Do not wrap text */
-            width: 50% !important;
           }
 
           .print-sticky-note td.value {
@@ -1114,7 +1113,6 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             font-family: monospace !important;
             color: #000000 !important;
             white-space: nowrap !important; /* Let column grow dynamically with number length */
-            width: 50% !important;
           }
 
           .print-sticky-note td.value-rose {
@@ -1123,7 +1121,6 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             font-family: monospace !important;
             color: #be123c !important;
             white-space: nowrap !important;
-            width: 50% !important;
           }
 
           .print-sticky-note td.value-emerald {
@@ -1132,7 +1129,6 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             font-family: monospace !important;
             color: #047857 !important;
             white-space: nowrap !important;
-            width: 50% !important;
           }
 
           .landscape-print .overflow-visible {
@@ -1235,7 +1231,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           @media print, screen {
             .labor-report-header {
               display: grid !important;
-              grid-template-columns: 1fr 2fr 1fr !important; /* 3-part layout to guarantee perfect alignment */
+              grid-template-columns: 250px 1fr 250px !important; /* 3-part layout to guarantee perfect alignment */
               align-items: start !important;
               width: 100% !important;
               margin-bottom: 25px !important;
@@ -2152,15 +2148,15 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                     <tbody>
                       <tr>
-                        <td className="label" style={{ color: '#000000', fontWeight: 'bold' }}>الإجمالي السابق</td>
+                        <td className="label" style={{ color: '#000000', fontWeight: 'bold', width: '140px' }}>الإجمالي السابق</td>
                         <td className="value" style={{ color: '#000000', fontWeight: 'bold' }}>{selectedSheet.previousTotal.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="label" style={{ color: '#000000', fontWeight: 'bold' }}>المسدد السابق</td>
+                        <td className="label" style={{ color: '#000000', fontWeight: 'bold', width: '140px' }}>المسدد السابق</td>
                         <td className="value" style={{ color: '#000000', fontWeight: 'bold' }}>{selectedSheet.previousPaid.toLocaleString()}</td>
                       </tr>
                       <tr>
-                        <td className="label" style={{ color: '#000000', fontWeight: 'bold' }}>المتبقي السابق</td>
+                        <td className="label" style={{ color: '#000000', fontWeight: 'bold', width: '140px' }}>المتبقي السابق</td>
                         <td className="value-rose" style={{ color: '#000000', fontWeight: 'black' }}>{selectedSheet.previousRemaining.toLocaleString()}</td>
                       </tr>
                     </tbody>
@@ -2309,20 +2305,20 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <tbody>
                       <tr>
-                        <td className="label">إجمالي أسبوعي</td>
-                        <td className="value">{computedSums.weeklyTotal.toLocaleString()}</td>
+                        <td className="value" style={{ textAlign: 'right', fontWeight: '900', color: '#000000' }}>{computedSums.weeklyTotal.toLocaleString()}</td>
+                        <td className="label" style={{ textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px' }}>إجمالي أسبوعي</td>
                       </tr>
                       <tr>
-                        <td className="label">الإجمالي</td>
-                        <td className="value">{computedSums.overallTotal.toLocaleString()}</td>
+                        <td className="value" style={{ textAlign: 'right', fontWeight: '900', color: '#000000' }}>{computedSums.overallTotal.toLocaleString()}</td>
+                        <td className="label" style={{ textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px' }}>الإجمالي</td>
                       </tr>
                       <tr>
-                        <td className="label">المسدد</td>
-                        <td className="value-rose">{selectedSheet.currentPaid.toLocaleString()}</td>
+                        <td className="value-rose" style={{ textAlign: 'right', fontWeight: '900', color: '#be123c' }}>{selectedSheet.currentPaid.toLocaleString()}</td>
+                        <td className="label" style={{ textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px' }}>المسدد</td>
                       </tr>
                       <tr>
-                        <td className="label" style={{ color: '#000000' }}>المتبقي</td>
-                        <td className="value-emerald">{computedSums.remainingBalance.toLocaleString()}</td>
+                        <td className="value-emerald" style={{ textAlign: 'right', fontWeight: '900', color: '#047857' }}>{computedSums.remainingBalance.toLocaleString()}</td>
+                        <td className="label" style={{ textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2', width: '120px' }}>المتبقي</td>
                       </tr>
                     </tbody>
                   </table>

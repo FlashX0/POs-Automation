@@ -1281,6 +1281,33 @@ function sanitizeAndExtractBrands(docs: any[]): any[] {
 
 let lastMongoSyncTime = 0;
 
+async function saveDbToSupabase(data: any) {
+  const supabase = getSupabaseAdminClient() || getSupabaseClient();
+  if (!supabase) {
+    console.warn("[Supabase Sync] Cannot saveDb to Supabase: clients not initialized.");
+    return;
+  }
+  try {
+    const bucketName = "POs Files";
+    const supabasePath = "db_backup/db.json";
+    const jsonStr = JSON.stringify(data, null, 2);
+    const fileBlob = new globalThis.Blob([jsonStr], { type: "application/json" });
+    const { error } = await supabase.storage
+      .from(bucketName)
+      .upload(supabasePath, fileBlob, {
+        contentType: "application/json",
+        upsert: true
+      });
+    if (error) {
+      console.error("[Supabase Sync] Error uploading db.json backup to Supabase Storage:", error);
+    } else {
+      console.log("[Supabase Sync] Successfully backed up database to Supabase Storage: db_backup/db.json");
+    }
+  } catch (err: any) {
+    console.error("[Supabase Sync] Exception uploading db.json backup:", err.message);
+  }
+}
+
 function saveDb(data: any) {
   if (data && data.documents) {
     data.documents = sanitizeAndExtractBrands(data.documents);
@@ -1292,10 +1319,15 @@ function saveDb(data: any) {
     console.warn("Could not save to database file (expected in read-only Vercel serverless environments):", err);
   }
 
-  // Prevent subsequent reads from Atlas for the next 10 seconds to let this write fully propagate and avoid race conditions
-  lastMongoSyncTime = Date.now() + 10000;
+  // Prevent subsequent reads from Atlas or Supabase for the next 15 seconds to let this write fully propagate
+  lastMongoSyncTime = Date.now() + 15000;
 
-  // Push to MongoDB Atlas asynchronously to keep all instances entirely in sync
+  // 1. Push backup to Supabase Storage
+  saveDbToSupabase(data).catch((err) => {
+    console.error("[Supabase Sync] Background save to Supabase failed:", err.message);
+  });
+
+  // 2. Push to MongoDB Atlas asynchronously to keep all instances entirely in sync
   if (mongoose.connection.readyState === 1) {
     AppState.updateOne(
       { key: "global_state" },
@@ -1308,11 +1340,43 @@ function saveDb(data: any) {
 }
 
 async function fetchAndSyncDbFromMongo() {
-  // If we synced successfully from Mongo recently (or wrote to it recently), use local memory cache to avoid unnecessary slow queries and race conditions
-  if (Date.now() - lastMongoSyncTime < 15000) {
+  // If we synced successfully recently (or wrote to it recently), use local memory cache to avoid unnecessary slow queries
+  if (Date.now() - lastMongoSyncTime < 15000 && memoryDb) {
     return getDb();
   }
 
+  // 1. Try loading from Supabase Storage (Primary Cloud Persistent State)
+  const supabase = getSupabaseAdminClient() || getSupabaseClient();
+  if (supabase) {
+    try {
+      const bucketName = "POs Files";
+      const supabasePath = "db_backup/db.json";
+      console.log(`[Supabase Sync] Attempting to download db.json from Supabase bucket "${bucketName}"...`);
+      const { data, error } = await supabase.storage
+        .from(bucketName)
+        .download(supabasePath);
+      
+      if (!error && data) {
+        const text = await data.text();
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === "object") {
+          memoryDb = parsed;
+          try {
+            fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+          } catch {}
+          console.log("[Supabase Sync] Successfully loaded database state from Supabase Storage!");
+          lastMongoSyncTime = Date.now();
+          return memoryDb;
+        }
+      } else {
+        console.warn("[Supabase Sync] db_backup/db.json not found in Supabase Storage, trying MongoDB Atlas fallback...");
+      }
+    } catch (err: any) {
+      console.error("[Supabase Sync] Exception downloading db.json backup from Supabase:", err.message);
+    }
+  }
+
+  // 2. Try loading from MongoDB Atlas (Fallback)
   if (mongoose.connection.readyState === 1) {
     try {
       const dbDoc = await AppState.findOne({ key: "global_state" });
@@ -1323,6 +1387,9 @@ async function fetchAndSyncDbFromMongo() {
         } catch {}
         console.log("Successfully loaded database state from MongoDB Atlas!");
         lastMongoSyncTime = Date.now();
+        
+        // Push state to Supabase to keep them aligned
+        await saveDbToSupabase(memoryDb);
         return memoryDb;
       } else {
         // First run: save current local db.json/getDb state to Atlas
@@ -1335,6 +1402,9 @@ async function fetchAndSyncDbFromMongo() {
           );
           console.log("Seeded empty MongoDB Atlas with active local db.json data!");
           lastMongoSyncTime = Date.now();
+          
+          // Seed Supabase state
+          await saveDbToSupabase(localDb);
         }
       }
     } catch (err: any) {
@@ -3870,6 +3940,32 @@ app.post("/api/admin/change-password", (req, res) => {
     currentDb.adminPassword = newPassword.trim();
     saveDb(currentDb);
     return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/admin/reset", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (password !== "016135") {
+      return res.status(400).json({ success: false, error: "كلمة المرور غير صحيحة" });
+    }
+    
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    // Clear financial modules only (keep users and metadata intact)
+    db.pettyCashBoxDays = [];
+    db.subcontractorContracts = [];
+    db.laborTimesheets = [];
+    db.costAnalysisEntries = [];
+    db.pendingTransactions = [];
+    db.engineerLedgers = {};
+    db.archives = [];
+    
+    saveDb(db);
+    return res.json({ success: true, message: "تمت إعادة تعيين قاعدة البيانات بنجاح" });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
