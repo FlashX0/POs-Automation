@@ -7064,6 +7064,7 @@ export default function App() {
           onSavePending={updatePendingTransactions}
           onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
           engineers={engineers}
+          currentUser={currentUser}
         />
       </main>
     )}

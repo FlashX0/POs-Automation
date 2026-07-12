@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 
@@ -39,6 +39,7 @@ interface DailyBoxMovementProps {
   onSavePending?: (updatedPending: PendingTransaction[]) => void;
   onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
   engineers?: { id: string; name: string; project: string; initialBalance?: number }[];
+  currentUser?: any;
 }
 
 export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
@@ -49,6 +50,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   onSavePending = (updatedPending) => {},
   onNotify = (type, title, message) => {},
   engineers = [],
+  currentUser,
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
@@ -256,6 +258,102 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
     onSave(updatedDays);
     setEditingStartingBalance(false);
+  };
+
+  const [isSavingLedger, setIsSavingLedger] = useState(false);
+
+  const fetchEngineerLedger = async (engName: string) => {
+    if (!engName) return;
+    try {
+      const res = await fetch(`/api/engineers/ledger?engineerName=${encodeURIComponent(engName)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.ledgerData) {
+          const otherEngineersBoxDays = boxDays.filter(d => d.engineer !== engName);
+          const updated = [...otherEngineersBoxDays, ...data.ledgerData];
+          
+          const currentEngDaysStr = JSON.stringify(boxDays.filter(d => d.engineer === engName));
+          const fetchedEngDaysStr = JSON.stringify(data.ledgerData);
+          if (currentEngDaysStr !== fetchedEngDaysStr) {
+            onSave(updated);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch engineer ledger:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedEngineer) {
+      fetchEngineerLedger(selectedEngineer);
+    }
+  }, [selectedEngineer]);
+
+  const handleConfirmLedger = async () => {
+    if (!selectedEngineer) {
+      alert("الرجاء اختيار المهندس أولاً!");
+      return;
+    }
+    setIsSavingLedger(true);
+    try {
+      const engineerData = boxDays.filter(d => d.engineer === selectedEngineer);
+      const res = await fetch("/api/engineers/ledger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          engineerName: selectedEngineer,
+          ledgerData: engineerData
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          onNotify("success", "تم الاعتماد", "تم تأكيد واعتماد ترحيل العهدة للمهندس بنجاح في قاعدة البيانات!");
+        } else {
+          onNotify("error", "فشل الاعتماد", data.error || "حدث خطأ");
+        }
+      } else {
+        onNotify("error", "فشل الاتصال", "فشل الاتصال بالسيرفر لحفظ العهدة");
+      }
+    } catch (err) {
+      console.error(err);
+      onNotify("error", "خطأ", "حدث خطأ غير متوقع أثناء ترحيل العهدة");
+    } finally {
+      setIsSavingLedger(false);
+    }
+  };
+
+  const handleResetLedger = async () => {
+    if (!selectedEngineer) {
+      alert("الرجاء اختيار المهندس أولاً!");
+      return;
+    }
+    if (!window.confirm(`هل أنت متأكد من تصفير وإعادة تعيين حركة الحسابات بالكامل للمهندس (${selectedEngineer})؟ سيتم حذف جميع الحركات الحالية والبدء على مياه بيضاء ونظيفة.`)) {
+      return;
+    }
+    try {
+      const res = await fetch("/api/engineers/ledger/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          engineerName: selectedEngineer
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          onNotify("success", "تم التصفير والبدء على مياه بيضاء", "تم تصفير وإعادة تعيين الحركات للمهندس بنجاح!");
+          const updated = boxDays.filter(d => d.engineer !== selectedEngineer);
+          onSave(updated);
+        } else {
+          onNotify("error", "فشل التصفير", data.error || "حدث خطأ");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      onNotify("error", "خطأ", "حدث خطأ أثناء تصفير العهدة");
+    }
   };
 
   // Excel Export with formulas - Custom format matching image_282819.png with blue dashed borders
@@ -817,6 +915,23 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               <Download className="w-4 h-4" />
               <span>تصدير إلى Excel (بالمعادلات) 📥</span>
             </button>
+            <button
+              onClick={handleConfirmLedger}
+              disabled={isSavingLedger}
+              className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"
+            >
+              <CheckCircle className="w-4 h-4 text-amber-200" />
+              <span>{isSavingLedger ? "جاري الحفظ..." : "تأكيد واعتماد ترحيل العهدة 💾"}</span>
+            </button>
+            {currentUser?.role === 'admin' && (
+              <button
+                onClick={handleResetLedger}
+                className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"
+              >
+                <Trash2 className="w-4 h-4 text-rose-200" />
+                <span>تصفير وإعادة تعيين 🔄</span>
+              </button>
+            )}
             <button
               onClick={() => window.print()}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"

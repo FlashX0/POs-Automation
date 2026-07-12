@@ -5178,6 +5178,75 @@ app.post("/api/financial-data/update", async (req, res) => {
   }
 });
 
+app.get("/api/engineers/ledger", async (req, res) => {
+  try {
+    const { engineerName } = req.query;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    if (!db.engineerLedgers) db.engineerLedgers = {};
+    const ledgerData = db.engineerLedgers[String(engineerName)] || [];
+    res.json({ success: true, ledgerData });
+  } catch (err: any) {
+    console.error("Get engineer ledger error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/engineers/ledger", async (req, res) => {
+  try {
+    const { engineerName, ledgerData } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    if (!db.engineerLedgers) db.engineerLedgers = {};
+    db.engineerLedgers[String(engineerName)] = ledgerData || [];
+    
+    // Also merge these ledgerData back to db.pettyCashBoxDays so the general sync matches
+    if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
+    // Remove old boxDays for this engineer
+    db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => d.engineer !== engineerName);
+    // Add the new ones
+    if (Array.isArray(ledgerData)) {
+      ledgerData.forEach((day: any) => {
+        db.pettyCashBoxDays.push({
+          ...day,
+          engineer: engineerName
+        });
+      });
+    }
+    
+    saveDb(db);
+    res.json({ success: true, message: "تم ترحيل واعتماد العهدة للمهندس بنجاح" });
+  } catch (err: any) {
+    console.error("Save engineer ledger error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/engineers/ledger/reset", async (req, res) => {
+  try {
+    const { engineerName } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    if (!db.engineerLedgers) db.engineerLedgers = {};
+    
+    if (engineerName) {
+      db.engineerLedgers[String(engineerName)] = [];
+      if (db.pettyCashBoxDays) {
+        db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => d.engineer !== engineerName);
+      }
+    } else {
+      db.engineerLedgers = {};
+      db.pettyCashBoxDays = [];
+    }
+    
+    saveDb(db);
+    res.json({ success: true, message: "تم تصفير وإعادة تعيين حركة الحسابات بالكامل بنجاح" });
+  } catch (err: any) {
+    console.error("Reset engineer ledger error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /**
  * AI-POWERED MONTHLY FINANCIAL AGGREGATION & CATEGORIZATION
  */

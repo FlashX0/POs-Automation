@@ -1924,34 +1924,41 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           <div className="landscape-print-outer-container space-y-4 bg-white">
             
             {/* Real Official Header Banner matching user layout */}
-            <div className="border-b-2 border-solid border-[#4F81BD] pb-4 flex flex-col items-center text-center space-y-3">
-              <h2 className="text-2xl font-black text-[#1F4E78] tracking-wide">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
-              
-              <div className="flex flex-wrap items-center justify-center gap-8 text-sm font-bold text-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className="text-[#1F4E78] font-black">العامل:</span>
-                  <span className="text-slate-950 font-black px-2.5 py-1 bg-slate-100 rounded border border-slate-200">{selectedSheet.workerName}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور:</span>
-                  <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-3 py-1 rounded border border-[#4F81BD]/20">{selectedSheet.startDate} ➔ {selectedSheet.endDate}</span>
+            <div className="border-b-2 border-solid border-[#4F81BD] pb-4 flex items-start justify-between">
+              {/* Right Side: Title and Info */}
+              <div className="text-right space-y-3 flex-1">
+                <h2 className="text-xl font-black text-[#1F4E78] tracking-wide mb-2">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
+                
+                <div className="flex flex-col gap-2 text-xs font-bold text-slate-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#1F4E78] font-black">العامل:</span>
+                    <span className="text-slate-950 font-black px-2.5 py-1 bg-slate-100 rounded border border-slate-200">{selectedSheet.workerName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور:</span>
+                    <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-3 py-1 rounded border border-[#4F81BD]/20">{selectedSheet.startDate} ➔ {selectedSheet.endDate}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Balances Block */}
-              <div className="flex justify-center gap-4 pt-1">
-                <div className="border border-solid border-[#4F81BD] rounded-xl px-5 py-2 bg-slate-50 text-center min-w-[140px]">
-                  <div className="text-[9px] font-bold text-slate-500 mb-0.5">المتبقي السابق</div>
-                  <div className="text-xs font-black text-rose-700">{selectedSheet.previousRemaining.toLocaleString()} EGP</div>
-                </div>
-                <div className="border border-solid border-[#4F81BD] rounded-xl px-5 py-2 bg-slate-50 text-center min-w-[140px]">
-                  <div className="text-[9px] font-bold text-slate-500 mb-0.5">المسدد السابق</div>
-                  <div className="text-xs font-black text-slate-700">{selectedSheet.previousPaid.toLocaleString()} EGP</div>
-                </div>
-                <div className="border border-solid border-[#4F81BD] rounded-xl px-5 py-2 bg-slate-50 text-center min-w-[140px]">
-                  <div className="text-[9px] font-bold text-slate-500 mb-0.5">الاجمالي السابق</div>
-                  <div className="text-xs font-black text-slate-700">{selectedSheet.previousTotal.toLocaleString()} EGP</div>
-                </div>
+              {/* Left Side: Compact Vertical Previous Balances Table */}
+              <div className="text-left w-[240px] shrink-0 self-center">
+                <table className="w-full text-[10px] border-collapse border border-[#4F81BD]">
+                  <tbody>
+                    <tr className="border-b border-[#4F81BD]">
+                      <td className="py-1 px-2 font-bold text-slate-700 bg-slate-50 text-right border-e border-[#4F81BD]">الإجمالي السابق:</td>
+                      <td className="py-1 px-2 font-black text-slate-900 font-mono text-left">{selectedSheet.previousTotal.toLocaleString()} EGP</td>
+                    </tr>
+                    <tr className="border-b border-[#4F81BD]">
+                      <td className="py-1 px-2 font-bold text-slate-700 bg-slate-50 text-right border-e border-[#4F81BD]">المسدد السابق:</td>
+                      <td className="py-1 px-2 font-black text-slate-900 font-mono text-left">{selectedSheet.previousPaid.toLocaleString()} EGP</td>
+                    </tr>
+                    <tr className="bg-rose-50 text-rose-950">
+                      <td className="py-1 px-2 font-bold text-rose-900 bg-rose-50 text-right border-e border-[#4F81BD]">المتبقي السابق:</td>
+                      <td className="py-1 px-2 font-black text-rose-700 font-mono text-left">{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
