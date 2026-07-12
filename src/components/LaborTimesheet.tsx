@@ -612,16 +612,35 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
     setNewWorker('');
   };
 
-  const handleDeleteTimesheet = () => {
+  const handleDeleteTimesheet = async () => {
     if (!selectedSheet) return;
     if (
       window.confirm(
         `هل أنت متأكد من حذف كشف حضور العامل "${selectedSheet.workerName}" نهائياً من السيستم؟`
       )
     ) {
-      const updated = timesheets.filter((ts) => ts.id !== selectedSheetId);
-      onSave(updated);
-      setSelectedSheetId(updated[0]?.id || '');
+      try {
+        const res = await fetch('/api/labor-timesheets/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: selectedSheetId })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            const updated = timesheets.filter((ts) => ts.id !== selectedSheetId);
+            onSave(updated);
+            setSelectedSheetId(updated[0]?.id || '');
+          } else {
+            alert(`فشل حذف الكشف: ${data.error || 'خطأ غير معروف'}`);
+          }
+        } else {
+          alert('فشل الاتصال بالسيرفر لحذف الكشف.');
+        }
+      } catch (err) {
+        console.error('Error deleting labor timesheet:', err);
+        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف الكشف.');
+      }
     }
   };
 

@@ -485,12 +485,31 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
     onSave(updated);
   };
 
-  const handleDeleteContractDirect = () => {
+  const handleDeleteContractDirect = async () => {
     if (!selectedContractId) return;
     if (confirm('هل أنت متأكد من رغبتك في حذف هذا المستخلص بالكامل؟')) {
-      const updated = contracts.filter((c) => c.id !== selectedContractId);
-      onSave(updated);
-      setSelectedContractId(updated[0]?.id || '');
+      try {
+        const res = await fetch('/api/subcontractors/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: selectedContractId })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            const updated = contracts.filter((c) => c.id !== selectedContractId);
+            onSave(updated);
+            setSelectedContractId(updated[0]?.id || '');
+          } else {
+            alert(`فشل حذف المستخلص: ${data.error || 'خطأ غير معروف'}`);
+          }
+        } else {
+          alert('فشل الاتصال بالسيرفر لحذف المستخلص.');
+        }
+      } catch (err) {
+        console.error('Error deleting subcontractor contract:', err);
+        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المستخلص.');
+      }
     }
   };
 

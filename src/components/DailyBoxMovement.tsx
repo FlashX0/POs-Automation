@@ -40,6 +40,7 @@ interface DailyBoxMovementProps {
   onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
   engineers?: { id: string; name: string; project: string; initialBalance?: number }[];
   currentUser?: any;
+  onResetSuccess?: () => void;
 }
 
 export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
@@ -51,6 +52,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   onNotify = (type, title, message) => {},
   engineers = [],
   currentUser,
+  onResetSuccess,
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
@@ -365,8 +367,12 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
         const data = await res.json();
         if (data.success) {
           onNotify("success", "تم التصفير والبدء على مياه بيضاء", "تم تصفير وإعادة تعيين الحركات للمهندس بنجاح!");
-          const updated = boxDays.filter(d => d.engineer !== selectedEngineer);
-          onSave(updated);
+          if (onResetSuccess) {
+            onResetSuccess();
+          } else {
+            const updated = boxDays.filter(d => d.engineer !== selectedEngineer);
+            onSave(updated);
+          }
         } else {
           onNotify("error", "فشل التصفير", data.error || "حدث خطأ");
         }

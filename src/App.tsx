@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback, ChangeEvent, FormEvent, MouseEvent } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   FileText, 
@@ -624,6 +625,39 @@ export default function App() {
   const [archives, setArchives] = useState<any[]>([]);
 
   // --- Financial State Sync Wrappers ---
+  const supabaseChannelRef = useRef<any>(null);
+
+  const refetchFinancialData = async () => {
+    try {
+      const finRes = await fetch('/api/financial-data');
+      if (finRes.ok) {
+        const finData = await finRes.json();
+        if (finData.success) {
+          if (finData.pettyCashBoxDays) setPettyCashBoxDays(finData.pettyCashBoxDays);
+          if (finData.subcontractorContracts) setSubcontractorContracts(finData.subcontractorContracts);
+          if (finData.laborTimesheets) setLaborTimesheets(finData.laborTimesheets);
+          if (finData.costAnalysisEntries) setCostAnalysisEntries(finData.costAnalysisEntries);
+          if (finData.costAnalysisCategories) setCostAnalysisCategories(finData.costAnalysisCategories);
+          if (finData.pendingTransactions) setPendingTransactions(finData.pendingTransactions);
+          if (finData.archives) setArchives(finData.archives);
+          if (finData.engineers) setEngineers(finData.engineers);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not refetch financial data:", err);
+    }
+  };
+
+  const broadcastDbUpdate = () => {
+    if (supabaseChannelRef.current) {
+      supabaseChannelRef.current.send({
+        type: 'broadcast',
+        event: 'db-update',
+        payload: { sender: 'me', timestamp: Date.now() }
+      }).catch((e: any) => console.log('Broadcast send failed:', e));
+    }
+  };
+
   const syncFinancialsWithBackend = async (
     boxDaysData: any[],
     subContractsData: any[],
@@ -635,7 +669,7 @@ export default function App() {
     engineersData?: any[]
   ) => {
     try {
-      await fetch('/api/financial-data/update', {
+      const res = await fetch('/api/financial-data/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -646,9 +680,12 @@ export default function App() {
           costAnalysisCategories: costCats !== undefined ? costCats : costAnalysisCategories,
           pendingTransactions: pendingTxs !== undefined ? pendingTxs : pendingTransactions,
           archives: archivesData !== undefined ? archivesData : archives,
-          engineers: engineersData !== undefined ? engineersData : engineers
+          engineers: engineersData !== undefined ? engineersData : (engineersData === null ? [] : engineers)
         })
       });
+      if (res.ok) {
+        broadcastDbUpdate();
+      }
     } catch (err) {
       console.error("Failed to sync financial data with server:", err);
     }
@@ -1371,6 +1408,61 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [audioEnabled]);
+
+  // Supabase Realtime Sync setup
+  useEffect(() => {
+    let activeChannel: any = null;
+    const initSupabaseRealtime = async () => {
+      try {
+        const configRes = await fetch('/api/supabase-config');
+        if (!configRes.ok) return;
+        const config = await configRes.json();
+        const { supabaseUrl, supabaseAnonKey } = config;
+        
+        if (supabaseUrl && supabaseAnonKey) {
+          console.log('[Supabase Realtime] Initializing client-side Supabase connection...');
+          const supabase = createClient(supabaseUrl, supabaseAnonKey);
+          
+          // Setup subscription channel
+          const channel = supabase.channel('postgres-db-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'engineers' }, () => {
+              console.log('[Supabase Realtime] Engineers table changed. Refetching...');
+              refetchFinancialData();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'petty_cash_box_days' }, () => {
+              console.log('[Supabase Realtime] Box days table changed. Refetching...');
+              refetchFinancialData();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'subcontractor_contracts' }, () => {
+              console.log('[Supabase Realtime] Subcontractor contracts table changed. Refetching...');
+              refetchFinancialData();
+            })
+            .on('broadcast', { event: 'db-update' }, (payload: any) => {
+              console.log('[Supabase Realtime] Received broadcast update from other instance, refetching...');
+              refetchFinancialData();
+            });
+            
+          channel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              console.log('[Supabase Realtime] Subscribed to real-time events successfully.');
+              supabaseChannelRef.current = channel;
+              activeChannel = channel;
+            }
+          });
+        }
+      } catch (err) {
+        console.error('[Supabase Realtime] Failed to initialize client-side sync:', err);
+      }
+    };
+    
+    initSupabaseRealtime();
+    
+    return () => {
+      if (activeChannel) {
+        activeChannel.unsubscribe();
+      }
+    };
+  }, []);
 
   // Handle iframe sandbox inspection for print notices
   useEffect(() => {
@@ -7065,6 +7157,7 @@ export default function App() {
           onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
           engineers={engineers}
           currentUser={currentUser}
+          onResetSuccess={refetchFinancialData}
         />
       </main>
     )}

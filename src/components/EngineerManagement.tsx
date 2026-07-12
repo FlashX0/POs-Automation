@@ -253,10 +253,29 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
     setActiveTab('folders');
   };
 
-  const handleDelete = (id: string, engName: string) => {
+  const handleDelete = async (id: string, engName: string) => {
     if (window.confirm(`هل أنت متأكد من حذف المهندس "${engName}" وكل سجلاته؟`)) {
-      const updated = engineers.filter(eng => eng.id !== id);
-      onSave(updated);
+      try {
+        const res = await fetch('/api/engineers/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, name: engName })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            const updated = engineers.filter(eng => eng.id !== id);
+            onSave(updated);
+          } else {
+            alert(`فشل حذف المهندس: ${data.error || 'خطأ غير معروف'}`);
+          }
+        } else {
+          alert('فشل الاتصال بالسيرفر لحذف المهندس.');
+        }
+      } catch (err) {
+        console.error('Error deleting engineer:', err);
+        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المهندس.');
+      }
     }
   };
 

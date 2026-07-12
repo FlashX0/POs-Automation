@@ -5234,6 +5234,112 @@ app.delete("/api/comparisons/:id", async (req, res) => {
 });
 
 // --- Financial & Accounting Endpoints (Petty Cash, Subcontractors, Labor Timesheets, Cost Analysis) ---
+app.get("/api/supabase-config", (req, res) => {
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL || supabaseUrl || "",
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || supabaseAnonKey || ""
+  });
+});
+
+app.post("/api/engineers/delete", async (req, res) => {
+  try {
+    const { id, name } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    // 1. Delete engineer from engineers list
+    if (db.engineers) {
+      db.engineers = db.engineers.filter((eng: any) => eng.id !== id);
+    }
+    
+    // 2. Cascade delete: delete engineer's ledger
+    if (db.engineerLedgers) {
+      delete db.engineerLedgers[String(name)];
+    }
+    
+    // 3. Cascade delete: delete engineer's transactions in pettyCashBoxDays
+    if (db.pettyCashBoxDays) {
+      db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => d.engineer !== name);
+    }
+    
+    await saveDb(db);
+    
+    // Try to delete from Supabase Database if tables exist
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('petty_cash_box_days').delete().eq('engineer', name);
+        await supabase.from('engineers').delete().eq('id', id);
+      } catch (sbErr) {
+        console.warn("[Supabase Table Sync] Skip direct table delete because tables might not exist:", sbErr);
+      }
+    }
+    
+    res.json({ success: true, message: "تم حذف المهندس وكافة سجلاته وحركاته المالية بنجاح بالتبعية (Cascade Delete)" });
+  } catch (err: any) {
+    console.error("Delete engineer error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/subcontractors/delete", async (req, res) => {
+  try {
+    const { id } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (db.subcontractorContracts) {
+      db.subcontractorContracts = db.subcontractorContracts.filter((c: any) => c.id !== id);
+    }
+    
+    await saveDb(db);
+    
+    // Try to delete from Supabase Database if tables exist
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('subcontractor_contracts').delete().eq('id', id);
+      } catch (sbErr) {
+        console.warn("[Supabase Table Sync] Skip direct table delete because tables might not exist:", sbErr);
+      }
+    }
+    
+    res.json({ success: true, message: "تم حذف المستخلص بالكامل بنجاح" });
+  } catch (err: any) {
+    console.error("Delete subcontractor error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/labor-timesheets/delete", async (req, res) => {
+  try {
+    const { id } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (db.laborTimesheets) {
+      db.laborTimesheets = db.laborTimesheets.filter((ts: any) => ts.id !== id);
+    }
+    
+    await saveDb(db);
+    
+    // Try to delete from Supabase Database if tables exist
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('labor_timesheets').delete().eq('id', id);
+      } catch (sbErr) {
+        console.warn("[Supabase Table Sync] Skip direct table delete because tables might not exist:", sbErr);
+      }
+    }
+    
+    res.json({ success: true, message: "تم حذف الكشف بالكامل بنجاح" });
+  } catch (err: any) {
+    console.error("Delete labor timesheet error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get("/api/financial-data", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
@@ -5334,12 +5440,40 @@ app.post("/api/engineers/ledger/reset", async (req, res) => {
       if (db.pettyCashBoxDays) {
         db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => d.engineer !== engineerName);
       }
+      if (db.engineers) {
+        db.engineers = db.engineers.map((eng: any) => {
+          if (eng.name === engineerName) {
+            return { ...eng, initialBalance: 0 };
+          }
+          return eng;
+        });
+      }
     } else {
       db.engineerLedgers = {};
       db.pettyCashBoxDays = [];
+      if (db.engineers) {
+        db.engineers = db.engineers.map((eng: any) => ({ ...eng, initialBalance: 0 }));
+      }
     }
     
-    saveDb(db);
+    await saveDb(db);
+    
+    // Perform real update/delete in Supabase database tables if they exist
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        if (engineerName) {
+          await supabase.from('engineers').update({ initial_balance: 0, opening_balance: 0 }).eq('name', engineerName);
+          await supabase.from('petty_cash_box_days').delete().eq('engineer', engineerName);
+        } else {
+          await supabase.from('engineers').update({ initial_balance: 0, opening_balance: 0 });
+          await supabase.from('petty_cash_box_days').delete().neq('id', 'placeholder');
+        }
+      } catch (sbErr) {
+        console.warn("[Supabase Table Sync] Skip direct table update/delete because tables might not exist:", sbErr);
+      }
+    }
+    
     res.json({ success: true, message: "تم تصفير وإعادة تعيين حركة الحسابات بالكامل بنجاح" });
   } catch (err: any) {
     console.error("Reset engineer ledger error:", err);
