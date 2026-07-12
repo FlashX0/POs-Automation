@@ -1029,8 +1029,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           .landscape-print table {
             border-collapse: collapse !important;
             width: 100% !important;
-            margin-top: 10px !important;
-            margin-bottom: 10px !important;
+            margin-top: 5px !important;
+            margin-bottom: 5px !important;
           }
 
           .landscape-print table.no-print-border {
@@ -1053,27 +1053,28 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           .landscape-print td {
             text-align: center !important;
             vertical-align: middle !important;
-            padding: 4px 6px !important; /* Compact padding to fit layout in single page */
+            padding: 3px 5px !important; /* Compact padding to fit layout in single page */
+            font-size: 9px !important; /* Extremely compact font size to guarantee single page */
           }
 
           .landscape-print .overflow-visible {
-            margin-bottom: 10px !important;
+            margin-bottom: 5px !important;
           }
 
           .landscape-print-summary-card {
-            margin-top: 10px !important;
+            margin-top: 5px !important;
           }
 
           /* Style the dynamic border styles option selected in UI */
           ${printBorderThickness === 'sharp' ? `
             .landscape-print-outer-container {
               border: 2.5px solid #000000 !important;
-              padding: 12px !important;
+              padding: 10px !important;
               background-color: #ffffff !important;
             }
             .landscape-print-summary-card {
               border: 2px solid #000000 !important;
-              padding: 10px !important;
+              padding: 6px 10px !important;
             }
             .landscape-print table, 
             .landscape-print th, 
@@ -1093,12 +1094,12 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           ` : `
             .landscape-print-outer-container {
               border: 3px solid #4F81BD !important;
-              padding: 12px !important;
+              padding: 10px !important;
               background-color: #ffffff !important;
             }
             .landscape-print-summary-card {
               border: 2px solid #4F81BD !important;
-              padding: 10px !important;
+              padding: 6px 10px !important;
             }
             .landscape-print table, 
             .landscape-print th, 
@@ -1953,41 +1954,44 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           <div className="landscape-print-outer-container space-y-4 bg-white">
             
             {/* Real Official Header Banner matching user layout */}
-            <div className="border-b-2 border-solid border-[#4F81BD] pb-4 flex items-start justify-between">
+            <div className="border-b-2 border-solid border-[#4F81BD] pb-3 flex items-center justify-between">
               {/* Right Side: Title and Info */}
-              <div className="text-right space-y-3 flex-1">
-                <h2 className="text-xl font-black text-[#1F4E78] tracking-wide mb-2">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
+              <div className="text-right flex flex-col justify-between h-[65px] flex-1">
+                <div>
+                  <h2 className="text-[17px] font-black text-[#1F4E78] tracking-wide mb-1.5">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
+                </div>
                 
-                <div className="flex flex-col gap-2 text-xs font-bold text-slate-800">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[#1F4E78] font-black">العامل:</span>
-                    <span className="text-slate-950 font-black px-2.5 py-1 bg-slate-100 rounded border border-slate-200">{selectedSheet.workerName}</span>
+                <div className="flex flex-row items-center gap-4 text-[10px] font-bold text-slate-800">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#1F4E78] font-black">العامل</span>
+                    <span className="text-slate-950 font-black px-2.5 py-1 bg-slate-50 rounded border border-slate-200">{selectedSheet.workerName}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور:</span>
-                    <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-3 py-1 rounded border border-[#4F81BD]/20">{selectedSheet.startDate} ➔ {selectedSheet.endDate}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور</span>
+                    <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-2.5 py-1 rounded border border-[#4F81BD]/25">{selectedSheet.startDate} ➔ {selectedSheet.endDate}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Left Side: Compact Vertical Previous Balances Table */}
+              {/* Left Side: Compact Vertical Previous Balances Card */}
               <div className="text-left w-[240px] shrink-0 self-center" style={{ backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #e9ecef', padding: '6px 12px' }}>
-                <table className="w-full text-[10px] border-collapse no-print-border">
-                  <tbody>
-                    <tr className="border-b border-slate-200/60" style={{ borderBottom: '1px solid #e9ecef' }}>
-                      <td className="py-1 px-0 font-bold text-slate-700 text-right" style={{ textAlign: 'right' }}>الإجمالي السابق</td>
-                      <td className="py-1 px-0 font-black text-slate-900 font-mono text-left" style={{ textAlign: 'left' }}>{selectedSheet.previousTotal.toLocaleString()} EGP</td>
-                    </tr>
-                    <tr className="border-b border-slate-200/60" style={{ borderBottom: '1px solid #e9ecef' }}>
-                      <td className="py-1 px-0 font-bold text-slate-700 text-right" style={{ textAlign: 'right' }}>المسدد السابق</td>
-                      <td className="py-1 px-0 font-black text-slate-900 font-mono text-left" style={{ textAlign: 'left' }}>{selectedSheet.previousPaid.toLocaleString()} EGP</td>
-                    </tr>
-                    <tr className="text-rose-950">
-                      <td className="py-1 px-0 font-bold text-rose-800 text-right" style={{ textAlign: 'right' }}>المتبقي السابق</td>
-                      <td className="py-1 px-0 font-black text-rose-700 font-mono text-left" style={{ textAlign: 'left' }}>{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div className="text-[9px] text-slate-400 font-extrabold text-right mb-1 border-b border-slate-200/60 pb-0.5">
+                  📌 تذكرة بالرصيد المرحل من السابق
+                </div>
+                <div className="space-y-0.5 text-[10.5px] font-sans">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-600 text-right">الإجمالي السابق</span>
+                    <span className="font-black text-slate-900 font-mono text-left">{selectedSheet.previousTotal.toLocaleString()} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-600 text-right">المسدد السابق</span>
+                    <span className="font-black text-slate-900 font-mono text-left">{selectedSheet.previousPaid.toLocaleString()} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center border-t border-slate-200/40 pt-0.5 mt-0.5">
+                    <span className="font-bold text-rose-800 text-right">المتبقي السابق</span>
+                    <span className="font-black text-rose-700 font-mono text-left">{selectedSheet.previousRemaining.toLocaleString()} EGP</span>
+                  </div>
+                </div>
               </div>
             </div>
 
