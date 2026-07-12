@@ -5247,6 +5247,161 @@ app.post("/api/engineers/ledger/reset", async (req, res) => {
   }
 });
 
+app.post("/api/engineers/ledger/insert", async (req, res) => {
+  try {
+    const { 
+      engineerName, engineer_id,
+      date, 
+      inflow, amount_received,
+      outflow, amount_paid,
+      description, 
+      method, payment_method,
+      project, project_id,
+      attachment, attachmentName 
+    } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
+    if (!db.engineerLedgers) db.engineerLedgers = {};
+    
+    const finalEngineerName = engineerName || engineer_id;
+    const finalInflow = parseFloat(inflow !== undefined ? inflow : amount_received) || 0;
+    const finalOutflow = parseFloat(outflow !== undefined ? outflow : amount_paid) || 0;
+    const finalDescription = (description || "").trim();
+    const finalMethod = (method || payment_method || "نقدي").trim();
+    const finalProject = project || project_id || "";
+    
+    const newTx = {
+      id: `tx-${Date.now()}`,
+      inflow: finalInflow,
+      outflow: finalOutflow,
+      description: finalDescription,
+      method: finalMethod,
+      project: finalProject,
+      attachment: attachment || undefined,
+      attachmentName: attachmentName || undefined
+    };
+    
+    // Update db.pettyCashBoxDays
+    let dayObj = db.pettyCashBoxDays.find((d: any) => d.date === date && d.engineer === finalEngineerName);
+    if (dayObj) {
+      if (!dayObj.transactions) dayObj.transactions = [];
+      dayObj.transactions.push(newTx);
+    } else {
+      dayObj = {
+        date: date,
+        engineer: finalEngineerName,
+        transactions: [newTx]
+      };
+      db.pettyCashBoxDays.push(dayObj);
+    }
+    
+    // Update db.engineerLedgers[finalEngineerName]
+    if (!db.engineerLedgers[finalEngineerName]) {
+      db.engineerLedgers[finalEngineerName] = [];
+    }
+    let ledgerDayObj = db.engineerLedgers[finalEngineerName].find((d: any) => d.date === date);
+    if (ledgerDayObj) {
+      if (!ledgerDayObj.transactions) ledgerDayObj.transactions = [];
+      ledgerDayObj.transactions.push(newTx);
+    } else {
+      ledgerDayObj = {
+        date: date,
+        transactions: [newTx]
+      };
+      db.engineerLedgers[finalEngineerName].push(ledgerDayObj);
+    }
+    
+    saveDb(db);
+    res.json({ success: true, message: "تم تسجيل حركة الصندوق بنجاح في قاعدة البيانات", pettyCashBoxDays: db.pettyCashBoxDays });
+  } catch (err: any) {
+    console.error("Insert petty cash transaction error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
+  try {
+    const { engineerName, date, txId } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (db.pettyCashBoxDays) {
+      db.pettyCashBoxDays = db.pettyCashBoxDays.map((d: any) => {
+        if (d.date === date && d.engineer === engineerName) {
+          return {
+            ...d,
+            transactions: (d.transactions || []).filter((t: any) => t.id !== txId)
+          };
+        }
+        return d;
+      }).filter((d: any) => (d.transactions && d.transactions.length > 0) || d.startingBalanceOverride !== undefined);
+    }
+    
+    if (db.engineerLedgers && db.engineerLedgers[engineerName]) {
+      db.engineerLedgers[engineerName] = db.engineerLedgers[engineerName].map((d: any) => {
+        if (d.date === date) {
+          return {
+            ...d,
+            transactions: (d.transactions || []).filter((t: any) => t.id !== txId)
+          };
+        }
+        return d;
+      }).filter((d: any) => (d.transactions && d.transactions.length > 0) || d.startingBalanceOverride !== undefined);
+    }
+    
+    saveDb(db);
+    res.json({ success: true, message: "تم حذف الحركة بنجاح", pettyCashBoxDays: db.pettyCashBoxDays });
+  } catch (err: any) {
+    console.error("Delete petty cash transaction error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
+  try {
+    const { engineerName, date, startingBalanceOverride } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
+    if (!db.engineerLedgers) db.engineerLedgers = {};
+    
+    // Update pettyCashBoxDays
+    let dayObj = db.pettyCashBoxDays.find((d: any) => d.date === date && d.engineer === engineerName);
+    if (dayObj) {
+      dayObj.startingBalanceOverride = parseFloat(startingBalanceOverride);
+    } else {
+      db.pettyCashBoxDays.push({
+        date,
+        engineer: engineerName,
+        startingBalanceOverride: parseFloat(startingBalanceOverride),
+        transactions: []
+      });
+    }
+    
+    // Update engineerLedgers
+    if (!db.engineerLedgers[engineerName]) db.engineerLedgers[engineerName] = [];
+    let ledgerDayObj = db.engineerLedgers[engineerName].find((d: any) => d.date === date);
+    if (ledgerDayObj) {
+      ledgerDayObj.startingBalanceOverride = parseFloat(startingBalanceOverride);
+    } else {
+      db.engineerLedgers[engineerName].push({
+        date,
+        startingBalanceOverride: parseFloat(startingBalanceOverride),
+        transactions: []
+      });
+    }
+    
+    saveDb(db);
+    res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: db.pettyCashBoxDays });
+  } catch (err: any) {
+    console.error("Update starting balance error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /**
  * AI-POWERED MONTHLY FINANCIAL AGGREGATION & CATEGORIZATION
  */

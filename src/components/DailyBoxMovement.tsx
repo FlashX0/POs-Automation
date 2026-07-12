@@ -186,35 +186,35 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
       }
     }
 
-    const newTx: Transaction = {
-      id: `tx-${Date.now()}`,
-      inflow: parseFloat(inflow) || 0,
-      outflow: parseFloat(outflow) || 0,
-      description: description.trim(),
-      method: method.trim() || 'نقدي',
-      project: project,
-      attachment: finalAttachmentPath || undefined,
-      attachmentName: pendingAttachmentName || undefined
-    };
-
-    let updatedDays = [...boxDays];
-    const dayIdx = updatedDays.findIndex((d) => d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer));
-
-    if (dayIdx > -1) {
-      updatedDays[dayIdx] = {
-        ...updatedDays[dayIdx],
-        engineer: selectedEngineer,
-        transactions: [...updatedDays[dayIdx].transactions, newTx],
-      };
-    } else {
-      updatedDays.push({
-        date: selectedDate,
-        engineer: selectedEngineer,
-        transactions: [newTx],
+    try {
+      const res = await fetch('/api/engineers/ledger/insert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engineerName: selectedEngineer || 'عام',
+          date: selectedDate,
+          inflow: parseFloat(inflow) || 0,
+          outflow: parseFloat(outflow) || 0,
+          description: description.trim(),
+          method: method.trim() || 'نقدي',
+          project: project,
+          attachment: finalAttachmentPath || undefined,
+          attachmentName: pendingAttachmentName || undefined
+        })
       });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.pettyCashBoxDays) {
+          onSave(data.pettyCashBoxDays);
+          onNotify("success", "تم الحفظ", "تم تسجيل الحركة بنجاح في قاعدة البيانات!");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to insert transaction to DB:", err);
+      onNotify("error", "خطأ", "فشل في تسجيل الحركة في قاعدة البيانات");
     }
 
-    onSave(updatedDays);
     setInflow('');
     setOutflow('');
     setDescription('');
@@ -222,73 +222,94 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     setPendingAttachmentName('');
   };
 
-  const handleDeleteTransaction = (txId: string) => {
-    const updatedDays = boxDays.map((d) => {
-      if (d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer)) {
-        return {
-          ...d,
-          transactions: d.transactions.filter((t) => t.id !== txId),
-        };
+  const handleDeleteTransaction = async (txId: string) => {
+    try {
+      const res = await fetch('/api/engineers/ledger/delete-tx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engineerName: selectedEngineer || 'عام',
+          date: selectedDate,
+          txId: txId
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.pettyCashBoxDays) {
+          onSave(data.pettyCashBoxDays);
+          onNotify("success", "تم الحذف", "تم حذف الحركة بنجاح من قاعدة البيانات!");
+        }
       }
-      return d;
-    }).filter((d) => d.transactions.length > 0 || d.startingBalanceOverride !== undefined);
-
-    onSave(updatedDays);
+    } catch (err) {
+      console.error("Failed to delete transaction from DB:", err);
+      onNotify("error", "خطأ", "حدث خطأ أثناء محاولة حذف الحركة");
+    }
   };
 
-  const handleUpdateStartingBalance = () => {
+  const handleUpdateStartingBalance = async () => {
     const val = parseFloat(startingBalanceInput) || 0;
-    let updatedDays = [...boxDays];
-    const dayIdx = updatedDays.findIndex((d) => d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer));
-
-    if (dayIdx > -1) {
-      updatedDays[dayIdx] = {
-        ...updatedDays[dayIdx],
-        startingBalanceOverride: val,
-        engineer: selectedEngineer,
-      };
-    } else {
-      updatedDays.push({
-        date: selectedDate,
-        engineer: selectedEngineer,
-        transactions: [],
-        startingBalanceOverride: val,
+    try {
+      const res = await fetch('/api/engineers/ledger/update-starting-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engineerName: selectedEngineer || 'عام',
+          date: selectedDate,
+          startingBalanceOverride: val
+        })
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.pettyCashBoxDays) {
+          onSave(data.pettyCashBoxDays);
+          onNotify("success", "تم التحديث", "تم تحديث الرصيد الافتتاحي في قاعدة البيانات!");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to update starting balance in DB:", err);
+      onNotify("error", "خطأ", "فشل في تحديث الرصيد الافتتاحي");
     }
-
-    onSave(updatedDays);
     setEditingStartingBalance(false);
   };
 
   const [isSavingLedger, setIsSavingLedger] = useState(false);
 
-  const fetchEngineerLedger = async (engName: string) => {
-    if (!engName) return;
+  const syncAndLoadFromDb = async () => {
     try {
-      const res = await fetch(`/api/engineers/ledger?engineerName=${encodeURIComponent(engName)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.ledgerData) {
-          const otherEngineersBoxDays = boxDays.filter(d => d.engineer !== engName);
-          const updated = [...otherEngineersBoxDays, ...data.ledgerData];
-          
-          const currentEngDaysStr = JSON.stringify(boxDays.filter(d => d.engineer === engName));
-          const fetchedEngDaysStr = JSON.stringify(data.ledgerData);
-          if (currentEngDaysStr !== fetchedEngDaysStr) {
-            onSave(updated);
+      // Fetch latest global financial data
+      const finRes = await fetch('/api/financial-data');
+      if (finRes.ok) {
+        const finData = await finRes.json();
+        if (finData.success && finData.pettyCashBoxDays) {
+          onSave(finData.pettyCashBoxDays);
+        }
+      }
+
+      // Fetch specific engineer ledger to make sure they are in sync
+      if (selectedEngineer) {
+        const res = await fetch(`/api/engineers/ledger?engineerName=${encodeURIComponent(selectedEngineer)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.ledgerData) {
+            const otherEngineersBoxDays = boxDays.filter(d => d.engineer !== selectedEngineer);
+            const updated = [...otherEngineersBoxDays, ...data.ledgerData];
+            
+            const currentEngDaysStr = JSON.stringify(boxDays.filter(d => d.engineer === selectedEngineer));
+            const fetchedEngDaysStr = JSON.stringify(data.ledgerData);
+            if (currentEngDaysStr !== fetchedEngDaysStr) {
+              onSave(updated);
+            }
           }
         }
       }
     } catch (err) {
-      console.error("Failed to fetch engineer ledger:", err);
+      console.error("Failed to sync daily box movement with DB on change:", err);
     }
   };
 
   useEffect(() => {
-    if (selectedEngineer) {
-      fetchEngineerLedger(selectedEngineer);
-    }
-  }, [selectedEngineer]);
+    syncAndLoadFromDb();
+  }, [selectedEngineer, selectedDate]);
 
   const handleConfirmLedger = async () => {
     if (!selectedEngineer) {

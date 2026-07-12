@@ -1004,7 +1004,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             font-family: 'Arial', sans-serif !important;
           }
 
-          .landscape-print {
+          .landscape-print, .landscape-print-outer-container {
             display: block !important;
             visibility: visible !important;
             width: 100% !important;
@@ -1013,6 +1013,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             left: 0 !important;
             margin: 0 !important;
             padding: 0 !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
             page-break-before: avoid !important;
             break-before: avoid !important;
             background: #ffffff !important;
@@ -1028,24 +1030,34 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             border-collapse: collapse !important;
             width: 100% !important;
             margin-top: 10px !important;
+            margin-bottom: 10px !important;
           }
 
           .landscape-print th, 
           .landscape-print td {
             text-align: center !important;
             vertical-align: middle !important;
-            padding: 6px 4px !important;
+            padding: 4px 6px !important; /* Compact padding to fit layout in single page */
+          }
+
+          .landscape-print .overflow-visible {
+            margin-bottom: 10px !important;
+          }
+
+          .landscape-print-summary-card {
+            margin-top: 10px !important;
           }
 
           /* Style the dynamic border styles option selected in UI */
           ${printBorderThickness === 'sharp' ? `
             .landscape-print-outer-container {
               border: 2.5px solid #000000 !important;
-              padding: 20px !important;
+              padding: 12px !important;
               background-color: #ffffff !important;
             }
             .landscape-print-summary-card {
               border: 2px solid #000000 !important;
+              padding: 10px !important;
             }
             .landscape-print table, 
             .landscape-print th, 
@@ -1065,11 +1077,12 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           ` : `
             .landscape-print-outer-container {
               border: 3px solid #4F81BD !important;
-              padding: 20px !important;
+              padding: 12px !important;
               background-color: #ffffff !important;
             }
             .landscape-print-summary-card {
               border: 2px solid #4F81BD !important;
+              padding: 10px !important;
             }
             .landscape-print table, 
             .landscape-print th, 
