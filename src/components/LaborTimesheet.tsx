@@ -1196,9 +1196,20 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             color: #000000 !important;
           }
 
-          /* Enforce solid black grid lines on all tables and cells unconditionally during printing */
-          table, th, td {
+          /* Enforce solid black grid lines on all tables and cells unconditionally during printing with high specificity */
+          table, th, td,
+          .landscape-print table, 
+          .landscape-print th, 
+          .landscape-print td,
+          .landscape-print .landscape-print-attendance-table, 
+          .landscape-print .landscape-print-attendance-table th, 
+          .landscape-print .landscape-print-attendance-table td,
+          .print-sticky-note, 
+          .print-sticky-note table, 
+          .print-sticky-note th, 
+          .print-sticky-note td {
             border: 1.5px solid #000000 !important;
+            border-style: solid !important;
             border-collapse: collapse !important;
           }
 
@@ -2051,25 +2062,25 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             
             {/* Real Official Header Banner matching user layout */}
             <div className="border-b-2 border-solid border-[#4F81BD] pb-3 relative min-h-[115px]" dir="rtl" style={{ display: 'block', position: 'relative', minHeight: '115px', width: '100%' }}>
-              {/* Right Side: Title and Info (Clean Stacked Layout, pushed right by marginLeft) */}
-              <div className="text-right flex flex-col gap-2" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '280px', marginRight: '0px' }}>
-                <h2 className="text-[18px] font-black text-[#1F4E78] tracking-wide mb-1" style={{ whiteSpace: 'nowrap' }}>بيان حضور العمالة اليومية وتفصيل الأجور</h2>
+              {/* Centered Title and Info (Clean Stacked Layout, padded from both sides to prevent overlap) */}
+              <div className="text-center flex flex-col gap-2 items-center justify-center text-black" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '280px', marginRight: '280px', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                <h2 className="text-[18px] font-black text-[#1F4E78] tracking-wide mb-1 text-center" style={{ whiteSpace: 'nowrap', textAlign: 'center', color: '#000000' }}>بيان حضور العمالة اليومية وتفصيل الأجور</h2>
                 
-                <div className="flex flex-col gap-2 text-[11px] font-bold text-slate-800" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div className="flex items-center gap-2" style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
-                    <span className="text-[#1F4E78] font-black">العامل:</span>
-                    <span className="text-slate-950 font-black text-sm px-2.5 py-0.5 bg-slate-50 rounded border border-slate-200">{selectedSheet.workerName}</span>
+                <div className="flex flex-col gap-2 text-[11px] font-bold text-slate-800 items-center justify-center text-center" style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                  <div className="flex items-center gap-2 justify-center" style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap', justifyContent: 'center' }}>
+                    <span className="text-[#1F4E78] font-black" style={{ color: '#000000' }}>العامل:</span>
+                    <span className="text-slate-950 font-black text-sm px-2.5 py-0.5 bg-slate-50 rounded border border-slate-200" style={{ color: '#000000' }}>{selectedSheet.workerName}</span>
                   </div>
-                  <div className="flex items-center gap-2" style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
-                    <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور:</span>
-                    <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-2.5 py-0.5 rounded border border-[#4F81BD]/20">من {selectedSheet.startDate} إلى {selectedSheet.endDate}</span>
+                  <div className="flex items-center gap-2 justify-center" style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap', justifyContent: 'center' }}>
+                    <span className="text-[#1F4E78] font-black" style={{ color: '#000000' }}>الفترة الزمنية لشيت الحضور:</span>
+                    <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-2.5 py-0.5 rounded border border-[#4F81BD]/20" style={{ color: '#000000' }}>من {selectedSheet.startDate} إلى {selectedSheet.endDate}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Left Side: Compact Sticky Note Previous Balances Card (Absolute positioned to the far top left) */}
-              <div style={{ position: 'absolute', left: '0', top: '0', display: 'block', width: '260px' }}>
-                <div className="text-[9px] text-slate-500 font-black text-right mb-1">
+              {/* Right Side: Compact Sticky Note Previous Balances Card (Absolute positioned to the far top right) */}
+              <div style={{ position: 'absolute', right: '0', top: '0', display: 'block', width: '260px' }}>
+                <div className="text-[9px] text-slate-500 font-black text-right mb-1" style={{ color: '#000000' }}>
                   📌 الرصيد السابق
                 </div>
                 <div className="print-sticky-note" style={{ width: '260px', maxWidth: '260px', minWidth: '260px' }}>
