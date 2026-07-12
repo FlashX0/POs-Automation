@@ -1033,6 +1033,22 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             margin-bottom: 10px !important;
           }
 
+          .landscape-print table.no-print-border {
+            border: none !important;
+            border-style: none !important;
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+            width: 100% !important;
+          }
+
+          .landscape-print table.no-print-border tr,
+          .landscape-print table.no-print-border td {
+            border: none !important;
+            border-style: none !important;
+            background: transparent !important;
+            background-color: transparent !important;
+          }
+
           .landscape-print th, 
           .landscape-print td {
             text-align: center !important;
@@ -1955,20 +1971,20 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               </div>
 
               {/* Left Side: Compact Vertical Previous Balances Table */}
-              <div className="text-left w-[240px] shrink-0 self-center">
-                <table className="w-full text-[10px] border-collapse border border-[#4F81BD]">
+              <div className="text-left w-[240px] shrink-0 self-center" style={{ backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #e9ecef', padding: '6px 12px' }}>
+                <table className="w-full text-[10px] border-collapse no-print-border">
                   <tbody>
-                    <tr className="border-b border-[#4F81BD]">
-                      <td className="py-1 px-2 font-bold text-slate-700 bg-slate-50 text-right border-e border-[#4F81BD]">الإجمالي السابق:</td>
-                      <td className="py-1 px-2 font-black text-slate-900 font-mono text-left">{selectedSheet.previousTotal.toLocaleString()} EGP</td>
+                    <tr className="border-b border-slate-200/60" style={{ borderBottom: '1px solid #e9ecef' }}>
+                      <td className="py-1 px-0 font-bold text-slate-700 text-right" style={{ textAlign: 'right' }}>الإجمالي السابق</td>
+                      <td className="py-1 px-0 font-black text-slate-900 font-mono text-left" style={{ textAlign: 'left' }}>{selectedSheet.previousTotal.toLocaleString()} EGP</td>
                     </tr>
-                    <tr className="border-b border-[#4F81BD]">
-                      <td className="py-1 px-2 font-bold text-slate-700 bg-slate-50 text-right border-e border-[#4F81BD]">المسدد السابق:</td>
-                      <td className="py-1 px-2 font-black text-slate-900 font-mono text-left">{selectedSheet.previousPaid.toLocaleString()} EGP</td>
+                    <tr className="border-b border-slate-200/60" style={{ borderBottom: '1px solid #e9ecef' }}>
+                      <td className="py-1 px-0 font-bold text-slate-700 text-right" style={{ textAlign: 'right' }}>المسدد السابق</td>
+                      <td className="py-1 px-0 font-black text-slate-900 font-mono text-left" style={{ textAlign: 'left' }}>{selectedSheet.previousPaid.toLocaleString()} EGP</td>
                     </tr>
-                    <tr className="bg-rose-50 text-rose-950">
-                      <td className="py-1 px-2 font-bold text-rose-900 bg-rose-50 text-right border-e border-[#4F81BD]">المتبقي السابق:</td>
-                      <td className="py-1 px-2 font-black text-rose-700 font-mono text-left">{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
+                    <tr className="text-rose-950">
+                      <td className="py-1 px-0 font-bold text-rose-800 text-right" style={{ textAlign: 'right' }}>المتبقي السابق</td>
+                      <td className="py-1 px-0 font-black text-rose-700 font-mono text-left" style={{ textAlign: 'left' }}>{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
                     </tr>
                   </tbody>
                 </table>
