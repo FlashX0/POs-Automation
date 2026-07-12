@@ -974,88 +974,111 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             margin: ${printFixPageBreak ? '4mm 6mm 4mm 6mm' : '8mm 10mm 8mm 10mm'} !important;
           }
 
-          ${printFixPageBreak ? `
-            /* Clean page break fix styles to start printing from the very top */
-            html, body, #root, .main-container, main, .space-y-6 {
-              margin: 0 !important;
-              padding: 0 !important;
-              margin-top: 0 !important;
-              padding-top: 0 !important;
-              height: auto !important;
-              min-height: 0 !important;
-              overflow: visible !important;
-              display: block !important;
-              float: none !important;
-              position: static !important;
-            }
-            .landscape-print {
-              display: block !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              page-break-before: avoid !important;
-              break-before: avoid !important;
-              position: relative !important;
-              top: 0 !important;
-            }
-            .space-y-6 > * + * {
-              margin-top: 0 !important;
-            }
-            main {
-              padding: 0 !important;
-              margin: 0 !important;
-              max-width: 100% !important;
-              width: 100% !important;
-            }
-          ` : ''}
-
-          /* Eliminate all dashed borders in printing and replace with crisp solid borders */
-          table, th, td, div {
-            border-style: solid !important;
-            ${printBorderThickness === 'sharp' ? `
-              border-color: #000000 !important;
-              border-width: 1.5px !important;
-            ` : `
-              border-color: #4F81BD !important;
-              border-width: 1px !important;
-            `}
+          /* Explicit DOM clearance: hide all interactive controls, sidebars, page headers, etc. */
+          header, nav, footer, aside, .no-print, .print\:hidden, [class*="print:hidden"],
+          button, select, input, textarea, .bg-[#111827], .sidebar, .navbar,
+          .space-y-6 > div:not(.landscape-print) {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+            width: 0 !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
 
-          /* Explicitly enforce sharp financial style or standard crisp blue overrides */
+          /* Ensure layout parents start printing cleanly at the top of page 1 without pushdown */
+          html, body, #root, .main-container, main {
+            margin: 0 !important;
+            padding: 0 !important;
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            display: block !important;
+            float: none !important;
+            position: static !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            font-family: 'Arial', sans-serif !important;
+          }
+
+          .landscape-print {
+            display: block !important;
+            visibility: visible !important;
+            width: 100% !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            page-break-before: avoid !important;
+            break-before: avoid !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+          }
+
+          .landscape-print * {
+            visibility: visible !important;
+          }
+
+          /* Standardize text and numbers rendering and alignments inside tables */
+          .landscape-print table {
+            border-collapse: collapse !important;
+            width: 100% !important;
+            margin-top: 10px !important;
+          }
+
+          .landscape-print th, 
+          .landscape-print td {
+            text-align: center !important;
+            vertical-align: middle !important;
+            padding: 6px 4px !important;
+          }
+
+          /* Style the dynamic border styles option selected in UI */
           ${printBorderThickness === 'sharp' ? `
-            .landscape-print,
-            .landscape-print table,
+            .landscape-print-outer-container {
+              border: 2.5px solid #000000 !important;
+              padding: 20px !important;
+              background-color: #ffffff !important;
+            }
+            .landscape-print-summary-card {
+              border: 2px solid #000000 !important;
+            }
+            .landscape-print table, 
             .landscape-print th, 
-            .landscape-print td, 
-            .landscape-print tr, 
-            .landscape-print div,
-            .landscape-print [class*="bg-[#"], 
-            .landscape-print [class*="bg-slate-"], 
-            .landscape-print [class*="bg-indigo-"], 
-            .landscape-print [class*="bg-amber-"], 
-            .landscape-print [class*="bg-blue-"], 
-            .landscape-print [class*="bg-rose-"],
-            .landscape-print [class*="bg-emerald-"] {
+            .landscape-print td {
               border: 1.5px solid #000000 !important;
               border-color: #000000 !important;
               border-style: solid !important;
+              color: #000000 !important;
             }
-            .landscape-print table {
-              border: 2px solid #000000 !important;
-              border-collapse: collapse !important;
+            /* Neutral print backgrounds */
+            .landscape-print thead tr {
+              background-color: #f2f2f2 !important;
+            }
+            .landscape-print tr, .landscape-print td {
+              background-color: #ffffff !important;
             }
           ` : `
-            /* Extra custom overrides for the print table borders */
-            .border-dashed {
+            .landscape-print-outer-container {
+              border: 3px solid #4F81BD !important;
+              padding: 20px !important;
+              background-color: #ffffff !important;
+            }
+            .landscape-print-summary-card {
+              border: 2px solid #4F81BD !important;
+            }
+            .landscape-print table, 
+            .landscape-print th, 
+            .landscape-print td {
+              border: 1px solid #4F81BD !important;
               border-style: solid !important;
             }
-            .border-e-2 {
-              border-inline-end-width: 1.5px !important;
-            }
-            .border-b-2 {
-              border-bottom-width: 1.5px !important;
-            }
-            .border-t-2 {
-              border-top-width: 1.5px !important;
+            .landscape-print th {
+              background-color: #D9E1F2 !important;
             }
           `}
         }
@@ -1898,47 +1921,36 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
       {/* Landscape print-only layout matching image_282f9b.png */}
       {selectedSheet && computedSums && (
         <div className="hidden print:block w-full text-black font-sans landscape-print animate-in fade-in duration-300" dir="rtl" style={{ fontFamily: 'Arial' }}>
-          <div className="border-4 border-solid border-[#4F81BD] p-6 bg-white space-y-4">
+          <div className="landscape-print-outer-container space-y-4 bg-white">
             
-            {/* Header Banner */}
-            <div className="flex justify-between items-center pb-4 border-b-2 border-solid border-[#4F81BD]">
+            {/* Real Official Header Banner matching user layout */}
+            <div className="border-b-2 border-solid border-[#4F81BD] pb-4 flex flex-col items-center text-center space-y-3">
+              <h2 className="text-2xl font-black text-[#1F4E78] tracking-wide">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
+              
+              <div className="flex flex-wrap items-center justify-center gap-8 text-sm font-bold text-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-[#1F4E78] font-black">العامل:</span>
+                  <span className="text-slate-950 font-black px-2.5 py-1 bg-slate-100 rounded border border-slate-200">{selectedSheet.workerName}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور:</span>
+                  <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-3 py-1 rounded border border-[#4F81BD]/20">{selectedSheet.startDate} ➔ {selectedSheet.endDate}</span>
+                </div>
+              </div>
+
               {/* Balances Block */}
-              <div className="flex gap-4">
-                <div className="border-2 border-solid border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
-                  <div className="text-[10px] font-bold text-slate-500">المتبقي السابق</div>
+              <div className="flex justify-center gap-4 pt-1">
+                <div className="border border-solid border-[#4F81BD] rounded-xl px-5 py-2 bg-slate-50 text-center min-w-[140px]">
+                  <div className="text-[9px] font-bold text-slate-500 mb-0.5">المتبقي السابق</div>
                   <div className="text-xs font-black text-rose-700">{selectedSheet.previousRemaining.toLocaleString()} EGP</div>
                 </div>
-                <div className="border-2 border-solid border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
-                  <div className="text-[10px] font-bold text-slate-500">المسدد السابق</div>
+                <div className="border border-solid border-[#4F81BD] rounded-xl px-5 py-2 bg-slate-50 text-center min-w-[140px]">
+                  <div className="text-[9px] font-bold text-slate-500 mb-0.5">المسدد السابق</div>
                   <div className="text-xs font-black text-slate-700">{selectedSheet.previousPaid.toLocaleString()} EGP</div>
                 </div>
-                <div className="border-2 border-solid border-[#4F81BD] rounded-xl px-4 py-2 bg-slate-50 text-center">
-                  <div className="text-[10px] font-bold text-slate-500">الاجمالي السابق</div>
+                <div className="border border-solid border-[#4F81BD] rounded-xl px-5 py-2 bg-slate-50 text-center min-w-[140px]">
+                  <div className="text-[9px] font-bold text-slate-500 mb-0.5">الاجمالي السابق</div>
                   <div className="text-xs font-black text-slate-700">{selectedSheet.previousTotal.toLocaleString()} EGP</div>
-                </div>
-              </div>
-
-              {/* Title Block */}
-              <div className="text-center">
-                <h2 className="text-xl font-black text-[#1F4E78]">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
-                <div className="flex items-center justify-center gap-1.5 mt-2 select-none">
-                  <span className="text-[#1F4E78] text-base md:text-lg font-black">العامل:</span>
-                  <input
-                    type="text"
-                    value={selectedSheet.workerName}
-                    onChange={(e) => handleMetaFieldChange('workerName', e.target.value)}
-                    className="bg-[#1F4E78]/5 border-b border-[#4F81BD]/50 hover:border-[#4F81BD] focus:border-[#1F4E78] focus:ring-0 text-base md:text-lg font-black text-[#1F4E78] text-right px-2 py-0.5 outline-none transition-all w-48 no-print rounded-md"
-                    placeholder="شاهر"
-                  />
-                  <span className="hidden print:inline text-base md:text-lg font-black text-[#1F4E78]">{selectedSheet.workerName}</span>
-                </div>
-              </div>
-
-              {/* Date Block */}
-              <div className="flex items-center gap-3 border-2 border-solid border-[#4F81BD] rounded-2xl px-5 py-3 bg-[#F2F6FA]">
-                <div className="text-center">
-                  <span className="text-xs font-black text-[#1F4E78] block mb-1">الفترة الزمنية لشيت الحضور</span>
-                  <span className="text-base font-black text-slate-900 tracking-wider font-mono">{selectedSheet.startDate} ➔ {selectedSheet.endDate}</span>
                 </div>
               </div>
             </div>
@@ -2074,30 +2086,30 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             </div>
 
             {/* New Clean Excel-like Summary Table Directly Under the Main Table */}
-            <div className="mt-4 border-2 border-solid border-[#4F81BD] rounded-xl p-4 bg-white max-w-md mr-auto break-inside-avoid">
-              <table className="w-full text-right border-collapse text-[10px] font-sans">
+            <div className="landscape-print-summary-card mt-4 p-4 bg-white max-w-md mr-auto break-inside-avoid rounded-xl">
+              <table className="w-full border-collapse text-[11px] font-sans">
                 <tbody>
-                  <tr className="border-b border-[#4F81BD] bg-[#F2F6FA]">
-                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">إجمالي أسبوعي</td>
-                    <td className="py-2 px-3 font-black text-slate-950 font-mono text-left border border-[#4F81BD]">
+                  <tr className="border-b bg-[#F2F6FA]">
+                    <td className="py-2 px-4 font-black text-[#1F4E78]">إجمالي أسبوعي</td>
+                    <td className="py-2 px-4 font-black text-slate-950 font-mono">
                       {computedSums.weeklyTotal.toLocaleString()} EGP
                     </td>
                   </tr>
-                  <tr className="border-b border-[#4F81BD] bg-white">
-                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">الإجمالي</td>
-                    <td className="py-2 px-3 font-black text-slate-950 font-mono text-left border border-[#4F81BD]">
+                  <tr className="border-b bg-white">
+                    <td className="py-2 px-4 font-black text-[#1F4E78]">الإجمالي</td>
+                    <td className="py-2 px-4 font-black text-slate-950 font-mono">
                       {computedSums.overallTotal.toLocaleString()} EGP
                     </td>
                   </tr>
-                  <tr className="border-b border-[#4F81BD] bg-[#FFF2CC]">
-                    <td className="py-2 px-3 font-extrabold text-[#1F4E78] border border-[#4F81BD]">المسدد</td>
-                    <td className="py-2 px-3 font-black text-rose-700 font-mono text-left border border-[#4F81BD]">
+                  <tr className="border-b bg-[#FFF2CC]">
+                    <td className="py-2 px-4 font-black text-[#1F4E78]">المسدد</td>
+                    <td className="py-2 px-4 font-black text-rose-700 font-mono">
                       {selectedSheet.currentPaid.toLocaleString()} EGP
                     </td>
                   </tr>
                   <tr className="bg-[#E2EFDA] text-[#375623]">
-                    <td className="py-2 px-3 font-black border border-[#4F81BD]">المتبقي</td>
-                    <td className="py-2 px-3 font-black font-mono text-sm text-left border border-[#4F81BD]">
+                    <td className="py-2 px-4 font-black">المتبقي</td>
+                    <td className="py-2 px-4 font-black font-mono text-sm">
                       {computedSums.remainingBalance.toLocaleString()} EGP
                     </td>
                   </tr>

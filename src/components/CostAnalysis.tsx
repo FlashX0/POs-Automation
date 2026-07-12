@@ -277,6 +277,21 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
     }
   };
 
+  // Generate dynamic months list for the select dropdown (last 24 months)
+  const availableMonthsForAnalysis = useMemo(() => {
+    const months = [];
+    const currentDate = new Date();
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const monthStrVal = String(d.getMonth() + 1).padStart(2, '0');
+      const value = `${year}-${monthStrVal}`;
+      const label = d.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long' });
+      months.push({ value, label });
+    }
+    return months;
+  }, []);
+
   // Extract unique months (YYYY-MM) from entries for filter
   const uniqueMonths = useMemo(() => {
     const set = new Set<string>();
@@ -750,14 +765,14 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           </div>
 
           <div className="flex flex-wrap items-end gap-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800/80 w-full lg:w-auto shrink-0">
-            <div className="min-w-[150px]">
-              <label className="text-[10px] text-slate-400 font-bold block mb-1">المهندس المسؤول:</label>
+            <div className="min-w-[160px]">
+              <label className="text-[10px] text-slate-400 font-bold block mb-1">اختر المهندس:</label>
               <select
                 value={targetEngineer}
                 onChange={(e) => setTargetEngineer(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
               >
-                <option value="">-- اختر مهندس --</option>
+                <option value="">-- اختر المهندس --</option>
                 {engineers.map((eng) => (
                   <option key={eng.id} value={eng.name}>
                     {eng.name}
@@ -766,23 +781,28 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
               </select>
             </div>
 
-            <div>
-              <label className="text-[10px] text-slate-400 font-bold block mb-1">الشهر المستهدف:</label>
-              <input
-                type="month"
+            <div className="min-w-[160px]">
+              <label className="text-[10px] text-slate-400 font-bold block mb-1">اختر الشهر والسنة:</label>
+              <select
                 value={targetMonth}
                 onChange={(e) => setTargetMonth(e.target.value)}
-                className="bg-slate-950 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
-              />
+                className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 cursor-pointer font-bold"
+              >
+                {availableMonthsForAnalysis.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <button
               onClick={handleEngineerAiAggregate}
               disabled={isEngineerAggregating}
-              className="px-4 py-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="px-5 py-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>{isEngineerAggregating ? "جاري تجميع وتحليل البيانات..." : "بدء التحليل والأرشفة الـ AI 🤖"}</span>
+              <span>{isEngineerAggregating ? "جاري تجميع وتحليل البيانات..." : "تحليل المصروفات 🤖"}</span>
             </button>
           </div>
         </div>
