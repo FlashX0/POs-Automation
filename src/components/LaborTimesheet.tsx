@@ -1057,15 +1057,15 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             font-size: 9px !important; /* Extremely compact font size to guarantee single page */
           }
 
-          /* Custom Sticky Notes for printing */
+          /* Custom Sticky Notes / Accounting Squares for printing */
           .print-sticky-note {
-            width: 260px !important;
-            max-width: 260px !important;
-            min-width: 260px !important;
-            background-color: #f8f9fa !important; /* soft light neutral background */
-            border: 1px solid #ced4da !important; /* soft thin border */
-            border-radius: 6px !important;
-            padding: 6px 12px !important;
+            width: 190px !important;
+            max-width: 190px !important;
+            min-width: 190px !important;
+            background-color: #ffffff !important;
+            border: 2px solid #000000 !important;
+            border-radius: 0px !important;
+            padding: 0px !important;
             box-sizing: border-box !important;
             display: block !important;
           }
@@ -1075,51 +1075,52 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             border-collapse: collapse !important;
             margin: 0 !important;
             border: none !important;
-            border-style: none !important;
           }
 
           .print-sticky-note tr {
-            background-color: transparent !important;
+            background-color: #ffffff !important;
             border: none !important;
-            border-style: none !important;
           }
 
           .print-sticky-note td {
-            padding: 4px 0 !important;
-            background: transparent !important;
-            background-color: transparent !important;
-            border: none !important;
-            border-style: none !important;
+            padding: 5px 6px !important;
+            background: #ffffff !important;
+            border: 1.5px solid #000000 !important;
             vertical-align: middle !important;
-            font-size: 10.5px !important;
-            line-height: 1.4 !important;
+            font-size: 11px !important;
+            line-height: 1.2 !important;
           }
 
           .print-sticky-note td.label {
-            text-align: right !important;
+            text-align: center !important;
             font-weight: bold !important;
-            color: #4b5563 !important; /* soft dark gray */
+            color: #000000 !important;
+            background-color: #f8f9fa !important;
+            width: 45% !important;
           }
 
           .print-sticky-note td.value {
-            text-align: left !important;
+            text-align: center !important;
             font-weight: 900 !important;
             font-family: monospace !important;
-            color: #0f172a !important; /* deep slate */
+            color: #000000 !important;
+            width: 55% !important;
           }
 
           .print-sticky-note td.value-rose {
-            text-align: left !important;
+            text-align: center !important;
             font-weight: 900 !important;
             font-family: monospace !important;
-            color: #be123c !important; /* rose-700 */
+            color: #be123c !important;
+            width: 55% !important;
           }
 
           .print-sticky-note td.value-emerald {
-            text-align: left !important;
+            text-align: center !important;
             font-weight: 900 !important;
             font-family: monospace !important;
-            color: #047857 !important; /* emerald-700 */
+            color: #047857 !important;
+            width: 55% !important;
           }
 
           .landscape-print .overflow-visible {
@@ -2038,26 +2039,28 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               </div>
 
               {/* Left Side: Compact Sticky Note Previous Balances Card (Absolute positioned to the top left) */}
-              <div className="print-sticky-note" style={{ position: 'absolute', left: 0, top: 0 }}>
-                <div className="text-[9px] text-slate-400 font-extrabold text-right mb-1 border-b border-slate-200/60 pb-1">
-                  📌 تذكرة بالرصيد المرحل من السابق
+              <div style={{ position: 'absolute', left: 0, top: 0, display: 'block' }}>
+                <div className="text-[9px] text-slate-500 font-black text-right mb-1">
+                  📌 الرصيد السابق
                 </div>
-                <table>
-                  <tbody>
-                    <tr>
-                      <td className="label">الإجمالي السابق</td>
-                      <td className="value">{selectedSheet.previousTotal.toLocaleString()} EGP</td>
-                    </tr>
-                    <tr>
-                      <td className="label">المسدد السابق</td>
-                      <td className="value">{selectedSheet.previousPaid.toLocaleString()} EGP</td>
-                    </tr>
-                    <tr style={{ borderTop: '1px solid #e5e7eb' }}>
-                      <td className="label" style={{ color: '#991b1b', paddingTop: '4px' }}>المتبقي السابق</td>
-                      <td className="value-rose" style={{ paddingTop: '4px' }}>{selectedSheet.previousRemaining.toLocaleString()} EGP</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div className="print-sticky-note">
+                  <table>
+                    <tbody>
+                      <tr>
+                        <td className="value">{selectedSheet.previousTotal.toLocaleString()}</td>
+                        <td className="label">الإجمالي السابق</td>
+                      </tr>
+                      <tr>
+                        <td className="value">{selectedSheet.previousPaid.toLocaleString()}</td>
+                        <td className="label">المسدد السابق</td>
+                      </tr>
+                      <tr>
+                        <td className="value-rose">{selectedSheet.previousRemaining.toLocaleString()}</td>
+                        <td className="label" style={{ color: '#991b1b' }}>المتبقي السابق</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
@@ -2192,30 +2195,34 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             </div>
 
             {/* New Clean Sticky-note Summary Card (Symmetrical with Top Left, aligned to the right/اليمين) */}
-            <div className="break-inside-avoid print-sticky-note mt-3" style={{ marginRight: '0', marginLeft: 'auto', display: 'block' }}>
-              <div className="text-[9px] text-slate-400 font-extrabold text-right mb-1 border-b border-slate-200/60 pb-1">
-                📌 ملخص الرصيد الحالي والشيت
+            <div className="w-full flex justify-start mt-4 break-inside-avoid">
+              <div style={{ display: 'block' }}>
+                <div className="text-[9px] text-slate-500 font-black text-right mb-1">
+                  📌 ملخص الرصيد الحالي والشيت
+                </div>
+                <div className="print-sticky-note">
+                  <table>
+                    <tbody>
+                      <tr>
+                        <td className="value">{computedSums.weeklyTotal.toLocaleString()}</td>
+                        <td className="label">إجمالي أسبوعي</td>
+                      </tr>
+                      <tr>
+                        <td className="value">{computedSums.overallTotal.toLocaleString()}</td>
+                        <td className="label">الإجمالي</td>
+                      </tr>
+                      <tr>
+                        <td className="value-rose">{selectedSheet.currentPaid.toLocaleString()}</td>
+                        <td className="label">المسدد</td>
+                      </tr>
+                      <tr>
+                        <td className="value-emerald">{computedSums.remainingBalance.toLocaleString()}</td>
+                        <td className="label" style={{ color: '#047857' }}>المتبقي</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <table>
-                <tbody>
-                  <tr>
-                    <td className="label">إجمالي أسبوعي</td>
-                    <td className="value">{computedSums.weeklyTotal.toLocaleString()} EGP</td>
-                  </tr>
-                  <tr>
-                    <td className="label">الإجمالي</td>
-                    <td className="value">{computedSums.overallTotal.toLocaleString()} EGP</td>
-                  </tr>
-                  <tr>
-                    <td className="label">المسدد</td>
-                    <td className="value-rose">{selectedSheet.currentPaid.toLocaleString()} EGP</td>
-                  </tr>
-                  <tr style={{ borderTop: '1px solid #e5e7eb' }}>
-                    <td className="label" style={{ color: '#047857', paddingTop: '4px' }}>المتبقي</td>
-                    <td className="value-emerald" style={{ paddingTop: '4px' }}>{computedSums.remainingBalance.toLocaleString()} EGP</td>
-                  </tr>
-                </tbody>
-              </table>
             </div>
 
           </div>
