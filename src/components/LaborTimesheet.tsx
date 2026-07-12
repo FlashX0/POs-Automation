@@ -1076,9 +1076,9 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               border: 2px solid #000000 !important;
               padding: 6px 10px !important;
             }
-            .landscape-print table, 
-            .landscape-print th, 
-            .landscape-print td {
+            .landscape-print .landscape-print-attendance-table, 
+            .landscape-print .landscape-print-attendance-table th, 
+            .landscape-print .landscape-print-attendance-table td {
               border: 1.5px solid #000000 !important;
               border-color: #000000 !important;
               border-style: solid !important;
@@ -1088,7 +1088,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             .landscape-print thead tr {
               background-color: #f2f2f2 !important;
             }
-            .landscape-print tr, .landscape-print td {
+            .landscape-print .landscape-print-attendance-table tr, 
+            .landscape-print .landscape-print-attendance-table td {
               background-color: #ffffff !important;
             }
           ` : `
@@ -1101,13 +1102,13 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               border: 2px solid #4F81BD !important;
               padding: 6px 10px !important;
             }
-            .landscape-print table, 
-            .landscape-print th, 
-            .landscape-print td {
+            .landscape-print .landscape-print-attendance-table, 
+            .landscape-print .landscape-print-attendance-table th, 
+            .landscape-print .landscape-print-attendance-table td {
               border: 1px solid #4F81BD !important;
               border-style: solid !important;
             }
-            .landscape-print th {
+            .landscape-print .landscape-print-attendance-table th {
               background-color: #D9E1F2 !important;
             }
           `}
@@ -1954,31 +1955,29 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           <div className="landscape-print-outer-container space-y-4 bg-white">
             
             {/* Real Official Header Banner matching user layout */}
-            <div className="border-b-2 border-solid border-[#4F81BD] pb-3 flex items-center justify-between">
-              {/* Right Side: Title and Info */}
-              <div className="text-right flex flex-col justify-between h-[65px] flex-1">
-                <div>
-                  <h2 className="text-[17px] font-black text-[#1F4E78] tracking-wide mb-1.5">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
-                </div>
+            <div className="border-b-2 border-solid border-[#4F81BD] pb-3 flex items-start justify-between gap-4">
+              {/* Right Side: Title and Info (Clean Stacked Layout) */}
+              <div className="text-right flex flex-col gap-1 flex-1 min-w-0">
+                <h2 className="text-[17px] font-black text-[#1F4E78] tracking-wide mb-1">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
                 
-                <div className="flex flex-row items-center gap-4 text-[10px] font-bold text-slate-800">
+                <div className="flex flex-col gap-1 text-[10.5px] font-bold text-slate-800">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[#1F4E78] font-black">العامل</span>
-                    <span className="text-slate-950 font-black px-2.5 py-1 bg-slate-50 rounded border border-slate-200">{selectedSheet.workerName}</span>
+                    <span className="text-slate-950 font-black text-xs px-2 py-0.5 bg-slate-50 rounded border border-slate-200">{selectedSheet.workerName}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور</span>
-                    <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-2.5 py-1 rounded border border-[#4F81BD]/25">{selectedSheet.startDate} ➔ {selectedSheet.endDate}</span>
+                    <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-2 py-0.5 rounded border border-[#4F81BD]/20">من {selectedSheet.startDate} إلى {selectedSheet.endDate}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Left Side: Compact Vertical Previous Balances Card */}
-              <div className="text-left w-[240px] shrink-0 self-center" style={{ backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #e9ecef', padding: '6px 12px' }}>
+              {/* Left Side: Compact Sticky Note Previous Balances Card */}
+              <div className="text-left w-[240px] shrink-0 self-start" style={{ backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #ced4da', padding: '6px 12px' }}>
                 <div className="text-[9px] text-slate-400 font-extrabold text-right mb-1 border-b border-slate-200/60 pb-0.5">
                   📌 تذكرة بالرصيد المرحل من السابق
                 </div>
-                <div className="space-y-0.5 text-[10.5px] font-sans">
+                <div className="space-y-1 text-[10.5px] font-sans">
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-slate-600 text-right">الإجمالي السابق</span>
                     <span className="font-black text-slate-900 font-mono text-left">{selectedSheet.previousTotal.toLocaleString()} EGP</span>
@@ -1997,7 +1996,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
 
             {/* Dynamic Columns Attendance Table with blue solid borders */}
             <div className="overflow-visible">
-              <table className="w-full text-center border-2 border-solid border-[#4F81BD] border-collapse text-[10px] font-sans">
+              <table className="landscape-print-attendance-table w-full text-center border-2 border-solid border-[#4F81BD] border-collapse text-[10px] font-sans">
                 <thead>
                   {/* Nested Header Row 1 */}
                   <tr className="border-b-2 border-solid border-[#4F81BD] text-[#1F4E78] bg-[#D9E1F2] font-black">
@@ -2125,36 +2124,29 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               </table>
             </div>
 
-            {/* New Clean Excel-like Summary Table Directly Under the Main Table */}
-            <div className="landscape-print-summary-card mt-4 p-4 bg-white max-w-md mr-auto break-inside-avoid rounded-xl">
-              <table className="w-full border-collapse text-[11px] font-sans">
-                <tbody>
-                  <tr className="border-b bg-[#F2F6FA]">
-                    <td className="py-2 px-4 font-black text-[#1F4E78]">إجمالي أسبوعي</td>
-                    <td className="py-2 px-4 font-black text-slate-950 font-mono">
-                      {computedSums.weeklyTotal.toLocaleString()} EGP
-                    </td>
-                  </tr>
-                  <tr className="border-b bg-white">
-                    <td className="py-2 px-4 font-black text-[#1F4E78]">الإجمالي</td>
-                    <td className="py-2 px-4 font-black text-slate-950 font-mono">
-                      {computedSums.overallTotal.toLocaleString()} EGP
-                    </td>
-                  </tr>
-                  <tr className="border-b bg-[#FFF2CC]">
-                    <td className="py-2 px-4 font-black text-[#1F4E78]">المسدد</td>
-                    <td className="py-2 px-4 font-black text-rose-700 font-mono">
-                      {selectedSheet.currentPaid.toLocaleString()} EGP
-                    </td>
-                  </tr>
-                  <tr className="bg-[#E2EFDA] text-[#375623]">
-                    <td className="py-2 px-4 font-black">المتبقي</td>
-                    <td className="py-2 px-4 font-black font-mono text-sm">
-                      {computedSums.remainingBalance.toLocaleString()} EGP
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            {/* New Clean Sticky-note Summary Card (Symmetrical with Top Left) */}
+            <div className="break-inside-avoid mr-auto mt-2 w-[240px]" style={{ backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #ced4da', padding: '6px 12px' }}>
+              <div className="text-[9px] text-slate-400 font-extrabold text-right mb-1 border-b border-slate-200/60 pb-0.5">
+                📌 ملخص الرصيد الحالي والشيت
+              </div>
+              <div className="space-y-1 text-[10.5px] font-sans">
+                <div className="flex justify-between items-center pb-0.5 border-b border-slate-200/40" style={{ borderBottom: '1px solid #e9ecef' }}>
+                  <span className="font-bold text-slate-600 text-right">إجمالي أسبوعي</span>
+                  <span className="font-black text-slate-900 font-mono text-left">{computedSums.weeklyTotal.toLocaleString()} EGP</span>
+                </div>
+                <div className="flex justify-between items-center pb-0.5 border-b border-slate-200/40" style={{ borderBottom: '1px solid #e9ecef' }}>
+                  <span className="font-bold text-slate-600 text-right">الإجمالي</span>
+                  <span className="font-black text-slate-900 font-mono text-left">{computedSums.overallTotal.toLocaleString()} EGP</span>
+                </div>
+                <div className="flex justify-between items-center pb-0.5 border-b border-slate-200/40" style={{ borderBottom: '1px solid #e9ecef' }}>
+                  <span className="font-bold text-slate-600 text-right">المسدد</span>
+                  <span className="font-black text-rose-700 font-mono text-left">{selectedSheet.currentPaid.toLocaleString()} EGP</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-slate-200/40 pt-0.5 mt-0.5">
+                  <span className="font-bold text-emerald-800 text-right">المتبقي</span>
+                  <span className="font-black text-emerald-700 font-mono text-left text-[11px]">{computedSums.remainingBalance.toLocaleString()} EGP</span>
+                </div>
+              </div>
             </div>
 
           </div>
