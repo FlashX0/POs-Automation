@@ -1049,17 +1049,27 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
             background-color: transparent !important;
           }
 
-          .landscape-print .landscape-print-attendance-table th, 
+          .landscape-print .landscape-print-attendance-table th {
+            text-align: center !important;
+            vertical-align: middle !important;
+            padding: 4px 6px !important; /* Compact padding to fit layout in single page */
+            font-size: 11px !important; /* Enlarged by one step */
+            font-weight: bold !important;
+          }
+
           .landscape-print .landscape-print-attendance-table td {
             text-align: center !important;
             vertical-align: middle !important;
-            padding: 3px 5px !important; /* Compact padding to fit layout in single page */
-            font-size: 9px !important; /* Extremely compact font size to guarantee single page */
+            padding: 4px 6px !important; /* Compact padding to fit layout in single page */
+            font-size: 12px !important; /* Enlarged by one step to be super clear */
+            font-weight: 600 !important;
           }
 
           /* Custom Sticky Notes / Accounting Squares for printing */
           .print-sticky-note {
-            min-width: 170px !important;
+            width: 250px !important;
+            max-width: 250px !important;
+            min-width: 250px !important;
             display: inline-block !important;
             background-color: #ffffff !important;
             border: 2.2px solid #000000 !important;
@@ -1090,35 +1100,39 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           }
 
           .print-sticky-note td.label {
-            text-align: center !important;
+            text-align: right !important; /* Aligned to the right */
             font-weight: bold !important;
             color: #000000 !important;
             background-color: #f2f2f2 !important; /* Soft gray for accountant look */
             white-space: nowrap !important; /* Do not wrap text */
+            width: 50% !important;
           }
 
           .print-sticky-note td.value {
-            text-align: center !important;
+            text-align: left !important; /* Aligned to the left */
             font-weight: 900 !important;
             font-family: monospace !important;
             color: #000000 !important;
             white-space: nowrap !important; /* Let column grow dynamically with number length */
+            width: 50% !important;
           }
 
           .print-sticky-note td.value-rose {
-            text-align: center !important;
+            text-align: left !important; /* Aligned to the left */
             font-weight: 900 !important;
             font-family: monospace !important;
             color: #be123c !important;
             white-space: nowrap !important;
+            width: 50% !important;
           }
 
           .print-sticky-note td.value-emerald {
-            text-align: center !important;
+            text-align: left !important; /* Aligned to the left */
             font-weight: 900 !important;
             font-family: monospace !important;
             color: #047857 !important;
             white-space: nowrap !important;
+            width: 50% !important;
           }
 
           .landscape-print .overflow-visible {
@@ -2019,30 +2033,30 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
           <div className="landscape-print-outer-container space-y-4 bg-white">
             
             {/* Real Official Header Banner matching user layout */}
-            <div className="border-b-2 border-solid border-[#4F81BD] pb-3 relative min-h-[90px]" style={{ display: 'block', position: 'relative' }}>
-              {/* Right Side: Title and Info (Clean Stacked Layout, padded from left to prevent overlap) */}
-              <div className="text-right flex flex-col gap-1.5" style={{ paddingLeft: '280px' }}>
+            <div className="border-b-2 border-solid border-[#4F81BD] pb-3 flex justify-between items-start gap-4" dir="rtl" style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              {/* Right Side: Title and Info (Clean Stacked Layout) */}
+              <div className="text-right flex flex-col gap-1.5 flex-1" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <h2 className="text-[18px] font-black text-[#1F4E78] tracking-wide mb-1">بيان حضور العمالة اليومية وتفصيل الأجور</h2>
                 
-                <div className="flex flex-col gap-1.5 text-[10.5px] font-bold text-slate-800">
-                  <div className="flex items-center gap-1.5">
+                <div className="flex flex-col gap-1.5 text-[10.5px] font-bold text-slate-800" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div className="flex items-center gap-1.5" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span className="text-[#1F4E78] font-black">العامل:</span>
                     <span className="text-slate-950 font-black text-sm px-2.5 py-0.5 bg-slate-50 rounded border border-slate-200">{selectedSheet.workerName}</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span className="text-[#1F4E78] font-black">الفترة الزمنية لشيت الحضور:</span>
                     <span className="text-slate-950 font-black tracking-wider font-mono bg-[#F2F6FA] px-2.5 py-0.5 rounded border border-[#4F81BD]/20">من {selectedSheet.startDate} إلى {selectedSheet.endDate}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Left Side: Compact Sticky Note Previous Balances Card (Absolute positioned to the top left) */}
-              <div style={{ position: 'absolute', left: 0, top: 0, display: 'block' }}>
+              {/* Left Side: Compact Sticky Note Previous Balances Card (Naturally aligned to the left/الشمال in RTL row) */}
+              <div className="shrink-0" style={{ width: '250px', display: 'block' }}>
                 <div className="text-[9px] text-slate-500 font-black text-right mb-1">
                   📌 الرصيد السابق
                 </div>
-                <div className="print-sticky-note">
-                  <table>
+                <div className="print-sticky-note" style={{ width: '250px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <tbody>
                       <tr>
                         <td className="label">الإجمالي السابق</td>
@@ -2174,17 +2188,17 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                     
                     {computedSums.projects.map((p) => (
                       <td key={`print-tot-daily-${p}`} className="py-3 px-1 border-e-2 border-solid border-[#4F81BD]">
-                        {(computedSums.projectSums[p]?.totalDailyVal || 0).toLocaleString()} EGP
+                        {(computedSums.projectSums[p]?.totalDailyVal || 0).toLocaleString()}
                       </td>
                     ))}
                     {computedSums.projects.map((p) => (
                       <td key={`print-tot-ot-${p}`} className="py-3 px-1 border-e-2 border-solid border-[#4F81BD]">
-                        {(computedSums.projectSums[p]?.totalOvertimeVal || 0).toLocaleString()} EGP
+                        {(computedSums.projectSums[p]?.totalOvertimeVal || 0).toLocaleString()}
                       </td>
                     ))}
                     {computedSums.projects.map((p, idx) => (
                       <td key={`print-tot-sohra-${p}`} className={`py-3 px-1 ${idx === computedSums.projects.length - 1 ? '' : 'border-e-2 border-solid border-[#4F81BD]'}`}>
-                        {(computedSums.projectSums[p]?.totalSohraVal || 0).toLocaleString()} EGP
+                        {(computedSums.projectSums[p]?.totalSohraVal || 0).toLocaleString()}
                       </td>
                     ))}
                   </tr>
@@ -2192,14 +2206,14 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               </table>
             </div>
 
-            {/* New Clean Sticky-note Summary Card (Symmetrical with Top Left, aligned to the right/اليمين) */}
-            <div className="w-full flex justify-start mt-4 break-inside-avoid">
-              <div style={{ display: 'block' }}>
+            {/* New Clean Sticky-note Summary Card (Symmetrical, aligned to the right/اليمين) */}
+            <div className="w-full flex justify-start mt-4 break-inside-avoid" dir="rtl" style={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <div style={{ display: 'block', width: '250px' }}>
                 <div className="text-[9px] text-slate-500 font-black text-right mb-1">
                   📌 ملخص الرصيد الحالي والشيت
                 </div>
-                <div className="print-sticky-note">
-                  <table>
+                <div className="print-sticky-note" style={{ width: '250px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <tbody>
                       <tr>
                         <td className="label">إجمالي أسبوعي</td>
