@@ -147,35 +147,51 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [boxDays, selectedEngineer]);
 
-  // Find index of selected date
-  const selectedDayIndex = useMemo(() => {
-    return sortedDays.findIndex((d) => d.date === selectedDate);
-  }, [sortedDays, selectedDate]);
-
   const defaultInitialBalance = useMemo(() => {
     const engObj = engineers?.find(e => e.name === selectedEngineer);
     return engObj?.initialBalance !== undefined ? engObj.initialBalance : -177656;
   }, [engineers, selectedEngineer]);
 
+  // Unified helper to compute starting/ending balances for all days
+  const computedDaysWithBalances = useMemo(() => {
+    let runningBalance = defaultInitialBalance;
+    return sortedDays.map((day) => {
+      let startingBalance = runningBalance;
+      if (day.startingBalanceOverride !== undefined && day.startingBalanceOverride !== null && !isNaN(day.startingBalanceOverride)) {
+        startingBalance = day.startingBalanceOverride;
+      }
+      const dayInflow = day.transactions?.reduce((acc: number, t: any) => acc + (parseFloat(t.inflow) || 0), 0) || 0;
+      const dayOutflow = day.transactions?.reduce((acc: number, t: any) => acc + (parseFloat(t.outflow) || 0), 0) || 0;
+      const endingBalance = startingBalance + dayInflow - dayOutflow;
+      runningBalance = endingBalance;
+      return {
+        ...day,
+        computedStartingBalance: startingBalance,
+        computedEndingBalance: endingBalance
+      };
+    });
+  }, [sortedDays, defaultInitialBalance]);
+
+  // Find index of selected date
+  const selectedDayIndex = useMemo(() => {
+    return sortedDays.findIndex((d) => d.date === selectedDate);
+  }, [sortedDays, selectedDate]);
+
   // Calculate starting balance of the selected date
   const computedStartingBalance = useMemo(() => {
+    const matchedDay = computedDaysWithBalances.find(d => d.date === selectedDate);
+    if (matchedDay) {
+      return matchedDay.computedStartingBalance;
+    }
     if (sortedDays.length === 0) {
       return defaultInitialBalance;
     }
-    const firstDay = sortedDays[0];
-    let balance = firstDay.startingBalanceOverride !== undefined ? firstDay.startingBalanceOverride : defaultInitialBalance;
-    
-    for (const d of sortedDays) {
-      if (d.date < selectedDate) {
-        const dayInflow = d.transactions.reduce((acc, t) => acc + t.inflow, 0);
-        const dayOutflow = d.transactions.reduce((acc, t) => acc + t.outflow, 0);
-        balance = balance + dayInflow - dayOutflow;
-      } else {
-        break;
-      }
+    const daysBefore = computedDaysWithBalances.filter(d => d.date < selectedDate);
+    if (daysBefore.length > 0) {
+      return daysBefore[daysBefore.length - 1].computedEndingBalance;
     }
-    return balance;
-  }, [sortedDays, selectedDate, defaultInitialBalance]);
+    return defaultInitialBalance;
+  }, [computedDaysWithBalances, selectedDate, defaultInitialBalance]);
 
   // Current day data
   const currentDay = useMemo(() => {
@@ -448,21 +464,9 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     let prevEndingBalanceRowIdx: number | null = null;
     
     // Stacking all logged days to match the format of image_282819.png
-    sortedDays.forEach((day, dayIdx) => {
+    computedDaysWithBalances.forEach((day, dayIdx) => {
       // Calculate starting balance for this day
-      let startingBal = 0;
-      if (dayIdx === 0) {
-        startingBal = day.startingBalanceOverride !== undefined ? day.startingBalanceOverride : defaultInitialBalance;
-      } else {
-        let tempBal = sortedDays[0].startingBalanceOverride !== undefined ? sortedDays[0].startingBalanceOverride : defaultInitialBalance;
-        for (let i = 0; i < dayIdx; i++) {
-          const d = sortedDays[i];
-          const inflows = d.transactions.reduce((acc, t) => acc + t.inflow, 0);
-          const outflows = d.transactions.reduce((acc, t) => acc + t.outflow, 0);
-          tempBal = tempBal + inflows - outflows;
-        }
-        startingBal = tempBal;
-      }
+      const startingBal = day.computedStartingBalance;
       
       const dayTransactions = day.transactions;
       
@@ -1175,21 +1179,9 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           </div>
 
           <div className="space-y-8">
-            {sortedDays.map((day, dayIdx) => {
+            {computedDaysWithBalances.map((day, dayIdx) => {
               // Calculate day starting balance
-              let startingBal = 0;
-              if (dayIdx === 0) {
-                startingBal = day.startingBalanceOverride !== undefined ? day.startingBalanceOverride : defaultInitialBalance;
-              } else {
-                let tempBal = sortedDays[0].startingBalanceOverride !== undefined ? sortedDays[0].startingBalanceOverride : defaultInitialBalance;
-                for (let i = 0; i < dayIdx; i++) {
-                  const d = sortedDays[i];
-                  const inflows = d.transactions.reduce((acc, t) => acc + t.inflow, 0);
-                  const outflows = d.transactions.reduce((acc, t) => acc + t.outflow, 0);
-                  tempBal = tempBal + inflows - outflows;
-                }
-                startingBal = tempBal;
-              }
+              const startingBal = day.computedStartingBalance;
 
               const dayTransactions = day.transactions;
               const totalInflow = dayTransactions.reduce((acc, t) => acc + t.inflow, 0);

@@ -1082,6 +1082,19 @@ function sanitizeDeletedRecords(db: any) {
   if (db.engineers) {
     db.engineers = db.engineers.filter((eng: any) => !db.deletedEngineerIds.includes(eng.id));
   }
+
+  // Auto-sync pettyCashBoxDays with engineerLedgers
+  db.pettyCashBoxDays = db.pettyCashBoxDays || [];
+  db.engineerLedgers = {};
+  for (const day of db.pettyCashBoxDays) {
+    const engineer = day.engineer || "عام";
+    if (!db.engineerLedgers[engineer]) {
+      db.engineerLedgers[engineer] = [];
+    }
+    const { engineer: _, ...dayWithoutEngineer } = day;
+    db.engineerLedgers[engineer].push(dayWithoutEngineer);
+  }
+
   return db;
 }
 
@@ -1437,14 +1450,16 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
 
   const merged = JSON.parse(JSON.stringify(persistedState));
   
-  function mergeObjectArray(key: string, collectionName: string) {
+  function mergeObjectArray(key: string | ((item: any) => string), collectionName: string) {
     const origList = originalDb[collectionName] || [];
     const currList = currentDb[collectionName] || [];
     const persList = persistedState[collectionName] || [];
 
-    const origMap = new Map(origList.map((item: any) => [item[key], item]));
-    const currMap = new Map(currList.map((item: any) => [item[key], item]));
-    const persMap = new Map(persList.map((item: any) => [item[key], item]));
+    const getKey = typeof key === "function" ? key : (item: any) => item[key];
+
+    const origMap = new Map(origList.map((item: any) => [getKey(item), item]));
+    const currMap = new Map(currList.map((item: any) => [getKey(item), item]));
+    const persMap = new Map(persList.map((item: any) => [getKey(item), item]));
 
     const added: any[] = [];
     const updated: any[] = [];
@@ -1465,7 +1480,7 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
     }
 
     for (const item of updated) {
-      const id = item[key];
+      const id = getKey(item);
       const persItem = persMap.get(id);
       const origItem = origMap.get(id);
       if (persItem && JSON.stringify(persItem) !== JSON.stringify(origItem)) {
@@ -1483,16 +1498,16 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
     const resultList = [...persList];
     
     for (const item of updated) {
-      const id = item[key];
-      const idx = resultList.findIndex((x: any) => x[key] === id);
+      const id = getKey(item);
+      const idx = resultList.findIndex((x: any) => getKey(x) === id);
       if (idx !== -1) {
         resultList[idx] = item;
       }
     }
-    const filteredList = resultList.filter((x: any) => !deleted.has(x[key]));
+    const filteredList = resultList.filter((x: any) => !deleted.has(getKey(x)));
     
     for (const item of added) {
-      if (!filteredList.some((x: any) => x[key] === item[key])) {
+      if (!filteredList.some((x: any) => getKey(x) === getKey(item))) {
         filteredList.push(item);
       }
     }
@@ -1527,7 +1542,11 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
     { name: "subcontractorContracts", key: "id" },
     { name: "laborTimesheets", key: "id" },
     { name: "costAnalysisEntries", key: "id" },
-    { name: "engineersLedger", key: "id" }
+    { name: "engineersLedger", key: "id" },
+    { name: "engineers", key: "id" },
+    { name: "pendingTransactions", key: "id" },
+    { name: "archives", key: "id" },
+    { name: "pettyCashBoxDays", key: (item: any) => `${item.engineer || "عام"}_${item.date}` }
   ];
 
   for (const col of objectCollections) {
@@ -1536,7 +1555,7 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
     }
   }
 
-  const primitiveCollections = ["projects", "suppliers", "deletedEngineerIds", "deletedSubcontractorIds", "deletedLaborTimesheetIds", "deletedCostAnalysisIds"];
+  const primitiveCollections = ["projects", "suppliers", "deletedEngineerIds", "deletedSubcontractorIds", "deletedLaborTimesheetIds", "deletedCostAnalysisIds", "costAnalysisCategories"];
   for (const col of primitiveCollections) {
     if (originalDb[col] || currentDb[col] || persistedState[col]) {
       mergePrimitiveArray(col);
