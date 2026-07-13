@@ -1573,19 +1573,30 @@ async function saveDb(data: any) {
     }
 
     let mergedData = data;
+    const baseVer = data.version;
+    const hasHistory = dbVersionHistory.has(baseVer);
+
     if (persistedState.version > data.version) {
-      try {
-        structuredLog("update", "INFO", `Concurrent write detected (persisted: ${persistedState.version}, request: ${data.version}). Attempting automatic non-conflicting merge...`);
-        mergedData = mergeDbChanges(data, persistedState);
-        structuredLog("update", "SUCCESS", "Automatic merge succeeded. No conflicts on the same document.");
-      } catch (mergeErr: any) {
-        structuredLog("update", "WARN", {
-          message: "Optimistic locking conflict: Stale write rejected.",
-          currentPersistedVersion: persistedState.version,
-          requestVersion: data.version,
-          error: mergeErr.message
-        });
-        throw new Error(`Optimistic locking conflict: database has been modified by another process on the same document. Please refresh and try again. (${mergeErr.message})`);
+      if (hasHistory) {
+        try {
+          structuredLog("update", "INFO", `Concurrent write detected (persisted: ${persistedState.version}, request: ${data.version}). Attempting automatic non-conflicting merge...`);
+          mergedData = mergeDbChanges(data, persistedState);
+          structuredLog("update", "SUCCESS", "Automatic merge succeeded. No conflicts on the same document.");
+        } catch (mergeErr: any) {
+          structuredLog("update", "WARN", {
+            message: "Optimistic locking conflict on concurrent write.",
+            currentPersistedVersion: persistedState.version,
+            requestVersion: data.version,
+            error: mergeErr.message
+          });
+          throw new Error(`Optimistic locking conflict: database has been modified by another process on the same document. Please refresh and try again. (${mergeErr.message})`);
+        }
+      } else {
+        // If we don't have history (e.g. server restart, or version is extremely stale),
+        // we should NOT reject the write. We just accept the write (using data directly)
+        // to prevent false conflicts and ensure data is updated properly.
+        structuredLog("update", "INFO", `No history found for version ${data.version} (persisted is ${persistedState.version}). Accepting write directly to prevent false conflicts.`);
+        mergedData = data;
       }
     }
 
