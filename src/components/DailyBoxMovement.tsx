@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye, ChevronDown, Settings } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
+import { calculateLedgerBalances, calculateInflow, calculateOutflow } from '../utils/ledgerUtils';
 
 interface Transaction {
   id: string;
@@ -154,22 +155,23 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
   // Unified helper to compute starting/ending balances for all days
   const computedDaysWithBalances = useMemo(() => {
-    let runningBalance = defaultInitialBalance;
-    return sortedDays.map((day) => {
-      let startingBalance = runningBalance;
-      if (day.startingBalanceOverride !== undefined && day.startingBalanceOverride !== null && !isNaN(day.startingBalanceOverride)) {
-        startingBalance = day.startingBalanceOverride;
-      }
-      const dayInflow = day.transactions?.reduce((acc: number, t: any) => acc + (parseFloat(t.inflow) || 0), 0) || 0;
-      const dayOutflow = day.transactions?.reduce((acc: number, t: any) => acc + (parseFloat(t.outflow) || 0), 0) || 0;
-      const endingBalance = startingBalance + dayInflow - dayOutflow;
-      runningBalance = endingBalance;
-      return {
-        ...day,
-        computedStartingBalance: startingBalance,
-        computedEndingBalance: endingBalance
-      };
-    });
+    const formattedDays = sortedDays.map(d => ({
+      date: d.date,
+      engineer: d.engineer,
+      startingBalanceOverride: d.startingBalanceOverride,
+      transactions: (d.transactions || []).map(t => ({
+        id: t.id,
+        inflow: Number(t.inflow) || 0,
+        outflow: Number(t.outflow) || 0,
+        description: t.description,
+        method: t.method,
+        project: t.project,
+        status: (t.status === 'approved' ? 'approved' : 'unapproved') as 'approved' | 'unapproved',
+        attachment: t.attachment,
+        attachmentName: t.attachmentName
+      }))
+    }));
+    return calculateLedgerBalances(formattedDays, defaultInitialBalance);
   }, [sortedDays, defaultInitialBalance]);
 
   // Find index of selected date
@@ -205,11 +207,11 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const transactions = currentDay.transactions;
 
   const totalInflow = useMemo(() => {
-    return transactions.reduce((acc, t) => acc + t.inflow, 0);
+    return calculateInflow(transactions as any);
   }, [transactions]);
 
   const totalOutflow = useMemo(() => {
-    return transactions.reduce((acc, t) => acc + t.outflow, 0);
+    return calculateOutflow(transactions as any);
   }, [transactions]);
 
   const endingBalance = useMemo(() => {
@@ -1184,9 +1186,9 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               const startingBal = day.computedStartingBalance;
 
               const dayTransactions = day.transactions;
-              const totalInflow = dayTransactions.reduce((acc, t) => acc + t.inflow, 0);
-              const totalOutflow = dayTransactions.reduce((acc, t) => acc + t.outflow, 0);
-              const dayEndingBal = startingBal + totalInflow - totalOutflow;
+              const totalInflow = day.totalInflow;
+              const totalOutflow = day.totalOutflow;
+              const dayEndingBal = day.computedEndingBalance;
 
               const dateParts = day.date.split('-');
               const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;

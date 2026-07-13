@@ -1083,8 +1083,74 @@ function sanitizeDeletedRecords(db: any) {
     db.engineers = db.engineers.filter((eng: any) => !db.deletedEngineerIds.includes(eng.id));
   }
 
-  // Auto-sync pettyCashBoxDays with engineerLedgers
+  // Ensure arrays/objects exist
   db.pettyCashBoxDays = db.pettyCashBoxDays || [];
+  db.engineerLedgers = db.engineerLedgers || {};
+
+  const nowStr = new Date().toISOString();
+
+  // Ensure updatedAt is present on all existing items
+  db.pettyCashBoxDays.forEach((day: any) => {
+    if (!day.updatedAt) day.updatedAt = nowStr;
+    if (day.transactions && Array.isArray(day.transactions)) {
+      day.transactions.forEach((tx: any) => {
+        if (!tx.updatedAt) tx.updatedAt = nowStr;
+      });
+    }
+  });
+
+  for (const [engName, days] of Object.entries(db.engineerLedgers)) {
+    if (Array.isArray(days)) {
+      days.forEach((day: any) => {
+        if (!day.updatedAt) day.updatedAt = nowStr;
+        if (day.transactions && Array.isArray(day.transactions)) {
+          day.transactions.forEach((tx: any) => {
+            if (!tx.updatedAt) tx.updatedAt = nowStr;
+          });
+        }
+      });
+    }
+  }
+
+  // 1. Bi-directional sync: Sync startingBalanceOverride, transactions, and updatedAt from engineerLedgers to pettyCashBoxDays
+  for (const [engineerName, ledgerDays] of Object.entries(db.engineerLedgers)) {
+    if (Array.isArray(ledgerDays)) {
+      for (const ledgerDay of ledgerDays) {
+        if (!ledgerDay || !ledgerDay.date) continue;
+        let pDay = db.pettyCashBoxDays.find((d: any) => d.date === ledgerDay.date && (d.engineer || "عام") === engineerName);
+        if (pDay) {
+          // Sync startingBalanceOverride
+          if (ledgerDay.startingBalanceOverride !== undefined && ledgerDay.startingBalanceOverride !== null) {
+            pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
+          }
+          if (pDay.startingBalanceOverride !== undefined && pDay.startingBalanceOverride !== null) {
+            ledgerDay.startingBalanceOverride = pDay.startingBalanceOverride;
+          }
+          // Sync updatedAt
+          const pDayTime = pDay.updatedAt ? new Date(pDay.updatedAt).getTime() : 0;
+          const ledgerDayTime = ledgerDay.updatedAt ? new Date(ledgerDay.updatedAt).getTime() : 0;
+          if (ledgerDayTime > pDayTime) {
+            pDay.updatedAt = ledgerDay.updatedAt;
+            pDay.transactions = ledgerDay.transactions || [];
+          } else {
+            ledgerDay.updatedAt = pDay.updatedAt;
+            ledgerDay.transactions = pDay.transactions || [];
+          }
+        } else {
+          // Add missing day to pettyCashBoxDays
+          db.pettyCashBoxDays.push({
+            date: ledgerDay.date,
+            engineer: engineerName,
+            startingBalanceOverride: ledgerDay.startingBalanceOverride,
+            transactions: ledgerDay.transactions || [],
+            updatedAt: ledgerDay.updatedAt || nowStr
+          });
+        }
+      }
+    }
+  }
+
+  // 2. Re-create engineerLedgers from pettyCashBoxDays to ensure perfect synchronization
   db.engineerLedgers = {};
   for (const day of db.pettyCashBoxDays) {
     const engineer = day.engineer || "عام";
@@ -1479,25 +1545,85 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
       }
     }
 
+    // Helper to merge two conflicting items based on updatedAt and preserve values
+    function mergeTwoItems(itemA: any, itemB: any) {
+      if (!itemA) return itemB;
+      if (!itemB) return itemA;
+
+      const dateA = itemA.updatedAt ? new Date(itemA.updatedAt).getTime() : 0;
+      const dateB = itemB.updatedAt ? new Date(itemB.updatedAt).getTime() : 0;
+
+      const newerItem = dateB >= dateA ? itemB : itemA;
+      const olderItem = dateB >= dateA ? itemA : itemB;
+
+      const merged = { ...newerItem };
+
+      // Ensure startingBalanceOverride is preserved from either
+      if (olderItem.startingBalanceOverride !== undefined && olderItem.startingBalanceOverride !== null) {
+        if (merged.startingBalanceOverride === undefined || merged.startingBalanceOverride === null) {
+          merged.startingBalanceOverride = olderItem.startingBalanceOverride;
+        }
+      }
+
+      // Merge transactions arrays securely
+      if (Array.isArray(olderItem.transactions) || Array.isArray(newerItem.transactions)) {
+        const txsA = Array.isArray(olderItem.transactions) ? olderItem.transactions : [];
+        const txsB = Array.isArray(newerItem.transactions) ? newerItem.transactions : [];
+
+        const txMap = new Map();
+        for (const t of txsA) {
+          if (t && t.id) {
+            txMap.set(t.id, t);
+          }
+        }
+        for (const t of txsB) {
+          if (t && t.id) {
+            const existing = txMap.get(t.id);
+            if (existing) {
+              const tDateExist = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+              const tDateNew = t.updatedAt ? new Date(t.updatedAt).getTime() : 0;
+              txMap.set(t.id, tDateNew >= tDateExist ? t : existing);
+            } else {
+              txMap.set(t.id, t);
+            }
+          }
+        }
+        merged.transactions = Array.from(txMap.values());
+      }
+
+      const maxTime = Math.max(dateA, dateB, Date.now());
+      merged.updatedAt = new Date(maxTime).toISOString();
+
+      return merged;
+    }
+
+    const mergedUpdated: any[] = [];
     for (const item of updated) {
       const id = getKey(item);
       const persItem = persMap.get(id);
       const origItem = origMap.get(id);
       if (persItem && JSON.stringify(persItem) !== JSON.stringify(origItem)) {
-        throw new Error(`Conflict detected: document with ID ${id} in collection ${collectionName} was modified by another request.`);
+        // Conflict detected! Automatically merge using mergeTwoItems
+        const resolved = mergeTwoItems(persItem, item);
+        mergedUpdated.push(resolved);
+      } else {
+        mergedUpdated.push(item);
       }
     }
+
     for (const id of deleted) {
       const persItem = persMap.get(id);
       const origItem = origMap.get(id);
       if (persItem && JSON.stringify(persItem) !== JSON.stringify(origItem)) {
-        throw new Error(`Conflict detected: document with ID ${id} in collection ${collectionName} was modified by another request and cannot be deleted.`);
+        // Soft-merge: instead of failing, we ignore deletion and keep the updated persisted version
+        console.warn(`[DB_SYSTEM] Deletion conflict for ID ${id} in ${collectionName}. Persisted item is newer, keeping it.`);
+        deleted.delete(id);
       }
     }
 
     const resultList = [...persList];
     
-    for (const item of updated) {
+    for (const item of mergedUpdated) {
       const id = getKey(item);
       const idx = resultList.findIndex((x: any) => getKey(x) === id);
       if (idx !== -1) {
@@ -1728,6 +1854,7 @@ async function saveDb(data: any) {
     }
 
     lastMongoSyncTime = Date.now() + 15000;
+    return sanitizedData;
   });
 }
 
@@ -6043,8 +6170,20 @@ app.post("/api/financial-data/update", async (req, res) => {
       db.engineers = engineers.filter((eng: any) => !db.deletedEngineerIds.includes(eng.id));
     }
     
-    await saveDb(db);
-    res.json({ success: true, message: "تم حفظ البيانات المالية المحاسبية بنجاح" });
+    const updatedDb = await saveDb(db);
+    res.json({ 
+      success: true, 
+      message: "تم حفظ البيانات المالية المحاسبية بنجاح",
+      pettyCashBoxDays: updatedDb.pettyCashBoxDays || [],
+      subcontractorContracts: updatedDb.subcontractorContracts || [],
+      laborTimesheets: updatedDb.laborTimesheets || [],
+      costAnalysisEntries: updatedDb.costAnalysisEntries || [],
+      costAnalysisCategories: updatedDb.costAnalysisCategories || [],
+      pendingTransactions: updatedDb.pendingTransactions || [],
+      archives: updatedDb.archives || [],
+      engineers: updatedDb.engineers || [],
+      version: updatedDb.version
+    });
   } catch (err: any) {
     console.error("Save financial data error:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -6068,6 +6207,14 @@ app.get("/api/engineers/ledger", async (req, res) => {
 app.post("/api/engineers/ledger", async (req, res) => {
   try {
     const { engineerName, ledgerData } = req.body;
+    
+    if (!engineerName) {
+      return res.status(400).json({ success: false, error: "الرجاء اختيار اسم المهندس" });
+    }
+    if (!Array.isArray(ledgerData)) {
+      return res.status(400).json({ success: false, error: "بيانات العهدة غير صالحة" });
+    }
+
     await fetchAndSyncDbFromMongo();
     const db = getDb();
     if (!db.engineerLedgers) db.engineerLedgers = {};
@@ -6087,8 +6234,13 @@ app.post("/api/engineers/ledger", async (req, res) => {
       });
     }
     
-    await saveDb(db);
-    res.json({ success: true, message: "تم ترحيل واعتماد العهدة للمهندس بنجاح" });
+    const updatedDb = await saveDb(db);
+    res.json({ 
+      success: true, 
+      message: "تم ترحيل واعتماد العهدة للمهندس بنجاح",
+      ledgerData: updatedDb.engineerLedgers[String(engineerName)] || [],
+      pettyCashBoxDays: updatedDb.pettyCashBoxDays || []
+    });
   } catch (err: any) {
     console.error("Save engineer ledger error:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -6320,22 +6472,37 @@ app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
 app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
   try {
     const { engineerName, date, startingBalanceOverride } = req.body;
+    
+    if (!engineerName) {
+      return res.status(400).json({ success: false, error: "الرجاء اختيار اسم المهندس" });
+    }
+    if (!date) {
+      return res.status(400).json({ success: false, error: "الرجاء تحديد التاريخ" });
+    }
+    if (startingBalanceOverride === undefined || startingBalanceOverride === null || isNaN(parseFloat(startingBalanceOverride))) {
+      return res.status(400).json({ success: false, error: "الرجاء تحديد قيمة رصيد أول اليوم صالحة" });
+    }
+
     await fetchAndSyncDbFromMongo();
     const db = getDb();
     
     if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
     if (!db.engineerLedgers) db.engineerLedgers = {};
     
+    const nowStr = new Date().toISOString();
+
     // Update pettyCashBoxDays
     let dayObj = db.pettyCashBoxDays.find((d: any) => d.date === date && d.engineer === engineerName);
     if (dayObj) {
       dayObj.startingBalanceOverride = parseFloat(startingBalanceOverride);
+      dayObj.updatedAt = nowStr;
     } else {
       db.pettyCashBoxDays.push({
         date,
         engineer: engineerName,
         startingBalanceOverride: parseFloat(startingBalanceOverride),
-        transactions: []
+        transactions: [],
+        updatedAt: nowStr
       });
     }
     
@@ -6344,16 +6511,18 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
     let ledgerDayObj = db.engineerLedgers[engineerName].find((d: any) => d.date === date);
     if (ledgerDayObj) {
       ledgerDayObj.startingBalanceOverride = parseFloat(startingBalanceOverride);
+      ledgerDayObj.updatedAt = nowStr;
     } else {
       db.engineerLedgers[engineerName].push({
         date,
         startingBalanceOverride: parseFloat(startingBalanceOverride),
-        transactions: []
+        transactions: [],
+        updatedAt: nowStr
       });
     }
     
-    await saveDb(db);
-    res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: db.pettyCashBoxDays });
+    const updatedDb = await saveDb(db);
+    res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: updatedDb.pettyCashBoxDays || [] });
   } catch (err: any) {
     console.error("Update starting balance error:", err);
     res.status(500).json({ success: false, error: err.message });
