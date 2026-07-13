@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye, ChevronDown, Settings } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 
 interface Transaction {
@@ -81,6 +81,23 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const [printStyle, setPrintStyle] = useState<'solid' | 'modern' | 'minimal'>('solid');
   const [pendingAttachmentPath, setPendingAttachmentPath] = useState<string>('');
   const [pendingAttachmentName, setPendingAttachmentName] = useState<string>('');
+
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const aiFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   // Form states
   const [inflow, setInflow] = useState<string>('');
@@ -923,49 +940,98 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               </select>
             </div>
 
-            <label className={`bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md ${isProcessingAI ? 'opacity-60 pointer-events-none' : ''}`}>
-              <Upload className={`w-4 h-4 text-emerald-400 ${isProcessingAI ? 'animate-spin' : ''}`} />
-              <span>{isProcessingAI ? 'جاري تحليل الصورة 🤖...' : 'تحليل تصفية بالذكاء الاصطناعي 🤖'}</span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleScreenshotUpload}
-                className="hidden"
-                disabled={isProcessingAI}
-              />
-            </label>
-
-            <button
-              onClick={handleExportExcel}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"
-            >
-              <Download className="w-4 h-4" />
-              <span>تصدير إلى Excel (بالمعادلات) 📥</span>
-            </button>
-            <button
-              onClick={handleConfirmLedger}
-              disabled={isSavingLedger}
-              className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"
-            >
-              <CheckCircle className="w-4 h-4 text-amber-200" />
-              <span>{isSavingLedger ? "جاري الحفظ..." : "تأكيد واعتماد ترحيل العهدة 💾"}</span>
-            </button>
-            {currentUser?.role === 'admin' && (
+            <div className="relative no-print" ref={dropdownRef}>
               <button
-                onClick={handleResetLedger}
-                className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md"
               >
-                <Trash2 className="w-4 h-4 text-rose-200" />
-                <span>تصفير وإعادة تعيين 🔄</span>
+                <Settings className="w-4 h-4 text-slate-400" />
+                <span>إجراءات العهدة الحالية</span>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
-            )}
-            <button
-              onClick={() => window.print()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md no-print"
-            >
-              <Printer className="w-4 h-4" />
-              <span>طباعة الكشف اليومي 🖨️</span>
-            </button>
+
+              {isDropdownOpen && (
+                <div className="absolute left-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 py-1 divide-y divide-slate-800 animate-in fade-in duration-200" dir="rtl">
+                  {/* Group 1: Primary Actions */}
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setIsDropdownOpen(false);
+                        window.print();
+                      }}
+                      className="w-full text-right px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-all flex items-center gap-2.5"
+                    >
+                      <Printer className="w-4 h-4 text-indigo-400" />
+                      <span>طباعة الكشف اليومي 🖨️</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        setIsDropdownOpen(false);
+                        aiFileInputRef.current?.click();
+                      }}
+                      className="w-full text-right px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-all flex items-center gap-2.5"
+                      disabled={isProcessingAI}
+                    >
+                      <Upload className={`w-4 h-4 text-emerald-400 ${isProcessingAI ? 'animate-spin' : ''}`} />
+                      <span>{isProcessingAI ? 'جاري تحليل الصورة 🤖...' : 'تحليل تصفية بالذكاء الاصطناعي 🤖'}</span>
+                    </button>
+                  </div>
+
+                  {/* Group 2: Data & Export */}
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setIsDropdownOpen(false);
+                        handleExportExcel();
+                      }}
+                      className="w-full text-right px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-all flex items-center gap-2.5"
+                    >
+                      <Download className="w-4 h-4 text-emerald-400" />
+                      <span>تصدير إلى Excel (بالمعادلات) 📊</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsDropdownOpen(false);
+                        handleConfirmLedger();
+                      }}
+                      disabled={isSavingLedger}
+                      className="w-full text-right px-4 py-2 text-xs text-amber-500 hover:bg-slate-800 hover:text-amber-400 transition-all flex items-center gap-2.5 font-semibold"
+                    >
+                      <CheckCircle className="w-4 h-4 text-amber-500" />
+                      <span>{isSavingLedger ? "جاري الحفظ..." : "تأكيد واعتماد ترحيل العهدة ✅"}</span>
+                    </button>
+                  </div>
+
+                  {/* Group 3: Danger Zone */}
+                  {currentUser?.role === 'admin' && (
+                    <div className="py-1 bg-red-950/20">
+                      <button
+                        onClick={() => {
+                          setIsDropdownOpen(false);
+                          handleResetLedger();
+                        }}
+                        className="w-full text-right px-4 py-2 text-xs text-red-400 hover:bg-red-950/40 hover:text-red-300 transition-all flex items-center gap-2.5 font-bold"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <span>تصفير وإعادة تعيين 🗑️</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Hidden input to handle the AI file selection */}
+            <input
+              type="file"
+              ref={aiFileInputRef}
+              accept="image/*"
+              onChange={handleScreenshotUpload}
+              className="hidden"
+              disabled={isProcessingAI}
+            />
           </div>
         </div>
       </div>

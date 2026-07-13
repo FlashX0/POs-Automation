@@ -543,7 +543,7 @@ async function seedAllRequiredUsers() {
     const db = getDb();
     const changed = ensureLocalUsersSeeded(db);
     if (changed) {
-      saveDb(db);
+      await saveDb(db);
       console.log("[Seeder] Local users successfully verified & seeded.");
     }
 
@@ -667,7 +667,7 @@ async function seedAllRequiredUsers() {
         });
 
         if (localDb.users.length !== initialLength || originalCount !== localDb.users.length) {
-          saveDb(localDb);
+          await saveDb(localDb);
         }
 
         // Also purge from MongoDB
@@ -813,7 +813,7 @@ mongoose.connection.once("open", async () => {
         status: 'pending',
         role: 'user'
       }));
-      saveDb(db);
+      await saveDb(db);
     }
 
     // 2. MongoDB
@@ -868,7 +868,7 @@ mongoose.connection.once("open", async () => {
     }
 
     if (changed) {
-      saveDb(db);
+      await saveDb(db);
       console.log("Successfully mapped existing documents and seeded approved standard projects list.");
     }
   } catch (err) {
@@ -1007,6 +1007,28 @@ function ensureLocalUsersSeeded(db: any): boolean {
   });
 
   return changed;
+}
+
+function sanitizeDeletedRecords(db: any) {
+  if (!db || typeof db !== "object") return db;
+  db.deletedEngineerIds = db.deletedEngineerIds || [];
+  db.deletedSubcontractorIds = db.deletedSubcontractorIds || [];
+  db.deletedLaborTimesheetIds = db.deletedLaborTimesheetIds || [];
+  db.deletedCostAnalysisIds = db.deletedCostAnalysisIds || [];
+
+  if (db.subcontractorContracts) {
+    db.subcontractorContracts = db.subcontractorContracts.filter((c: any) => !db.deletedSubcontractorIds.includes(c.id));
+  }
+  if (db.laborTimesheets) {
+    db.laborTimesheets = db.laborTimesheets.filter((ts: any) => !db.deletedLaborTimesheetIds.includes(ts.id));
+  }
+  if (db.costAnalysisEntries) {
+    db.costAnalysisEntries = db.costAnalysisEntries.filter((item: any) => !db.deletedCostAnalysisIds.includes(item.id));
+  }
+  if (db.engineers) {
+    db.engineers = db.engineers.filter((eng: any) => !db.deletedEngineerIds.includes(eng.id));
+  }
+  return db;
 }
 
 function getDb() {
@@ -1364,7 +1386,7 @@ async function fetchAndSyncDbFromMongo() {
         const text = await data.text();
         const parsed = JSON.parse(text);
         if (parsed && typeof parsed === "object") {
-          memoryDb = parsed;
+          memoryDb = sanitizeDeletedRecords(parsed);
           try {
             fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
           } catch {}
@@ -1385,7 +1407,7 @@ async function fetchAndSyncDbFromMongo() {
     try {
       const dbDoc = await AppState.findOne({ key: "global_state" });
       if (dbDoc && dbDoc.data) {
-        memoryDb = dbDoc.data;
+        memoryDb = sanitizeDeletedRecords(dbDoc.data);
         try {
           fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
         } catch {}
@@ -1491,7 +1513,7 @@ async function moveProjectStorageFolder(oldProjName: string, newProjName: string
               });
             }
             if (changed) {
-              saveDb(db);
+              await saveDb(db);
             }
           }
         }
@@ -1564,7 +1586,7 @@ async function moveVendorStorageFolder(oldVendorName: string, newVendorName: str
               });
             }
             if (changed) {
-              saveDb(db);
+              await saveDb(db);
             }
           }
         }
@@ -1598,7 +1620,7 @@ app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
 
 // Express helper to add custom server-sent notification
-function triggerNotification(type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) {
+async function triggerNotification(type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) {
   const db = getDb();
   const rawDate = new Date();
   const notification = {
@@ -1611,12 +1633,12 @@ function triggerNotification(type: 'info' | 'success' | 'warning' | 'error', tit
   };
   
   db.notifications = [notification, ...(db.notifications || [])].slice(0, 15);
-  saveDb(db);
+  await saveDb(db);
   return notification;
 }
 
 // REST API HELPER: Check for documents with due dates within the next 48 hours and add warnings
-function checkForUpcomingDueDates() {
+async function checkForUpcomingDueDates() {
   try {
     const db = getDb();
     const now = new Date();
@@ -1659,7 +1681,7 @@ function checkForUpcomingDueDates() {
     });
 
     if (notificationsAdded) {
-      saveDb(db);
+      await saveDb(db);
     }
   } catch (err) {
     console.error("Error checking upcoming due dates:", err);
@@ -2323,7 +2345,7 @@ async function uploadToSupabaseStorage(
 app.get("/api/documents", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
-    checkForUpcomingDueDates();
+    await checkForUpcomingDueDates();
     const db = getDb();
     res.json({
       documents: db.documents || [],
@@ -2350,7 +2372,7 @@ app.post("/api/projects/add", async (req, res) => {
     const projects = db.projects || [];
     if (!projects.some((p: string) => p.toLowerCase() === cleanName.toLowerCase())) {
       db.projects = [...projects, cleanName];
-      saveDb(db);
+      await saveDb(db);
 
       // Add to MongoDB Atlas as well if connected
       if (mongoose.connection.readyState === 1) {
@@ -2401,7 +2423,7 @@ app.post("/api/projects/rename", async (req, res) => {
       });
     }
     
-    saveDb(db);
+    await saveDb(db);
     
     // Rename folders in Supabase Storage and update URLs automatically
     await moveProjectStorageFolder(cleanOld, cleanNew);
@@ -2492,7 +2514,7 @@ app.post("/api/suppliers/add", async (req, res) => {
     const suppliers = db.suppliers || [];
     if (!suppliers.some((s: string) => s.toLowerCase() === cleanName.toLowerCase())) {
       db.suppliers = [...suppliers, cleanName];
-      saveDb(db);
+      await saveDb(db);
     }
     res.json({ success: true, suppliers: db.suppliers });
   } catch (error: any) {
@@ -2536,7 +2558,7 @@ app.post("/api/suppliers/rename", async (req, res) => {
       });
     }
     
-    saveDb(db);
+    await saveDb(db);
     
     // Rename folders in Supabase Storage and update URLs automatically
     await moveVendorStorageFolder(cleanOld, cleanNew);
@@ -2630,7 +2652,7 @@ app.post("/api/units/rename", async (req, res) => {
       });
     }
     
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, updatedCount });
   } catch (error: any) {
     console.error("Rename unit error:", error);
@@ -2799,7 +2821,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
         } catch (e) {}
       }
       db.allowed_devices = db.allowed_devices.filter((d: any) => d.device_fingerprint !== fingerprint);
-      saveDb(db);
+      await saveDb(db);
 
       return {
         device_fingerprint: fingerprint,
@@ -2896,7 +2918,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
       role: 'user',
       createdAt: new Date().toISOString()
     });
-    saveDb(db2);
+    await saveDb(db2);
   } else {
     // Existing device: Sync resolved status, role, IP address, and Device Info to all active databases
     
@@ -2949,7 +2971,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
           ip_address: ipAddress,
           device_info: deviceInfo
         };
-        saveDb(db3);
+        await saveDb(db3);
       }
     } else {
       db3.allowed_devices.push({
@@ -2960,7 +2982,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
         device_info: deviceInfo,
         createdAt: new Date().toISOString()
       });
-      saveDb(db3);
+      await saveDb(db3);
     }
   }
 
@@ -3035,7 +3057,7 @@ app.post("/api/auth/login", async (req, res) => {
         if (matchedUser) {
           console.log(`[Auth] Matching user by email to sync ID to Supabase UID: ${authUid}`);
           matchedUser.id = authUid;
-          saveDb(db);
+          await saveDb(db);
         }
       }
 
@@ -3055,7 +3077,7 @@ app.post("/api/auth/login", async (req, res) => {
               createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
             };
             db.users.push(matchedUser);
-            saveDb(db);
+            await saveDb(db);
           }
         } catch (mongoErr) {
           console.warn("[Login] MongoDB lookup by UID failed:", mongoErr);
@@ -3076,7 +3098,7 @@ app.post("/api/auth/login", async (req, res) => {
           createdAt: new Date().toISOString()
         };
         db.users.push(matchedUser);
-        saveDb(db);
+        await saveDb(db);
         console.log(`[Auth] Auto-created database entry for authenticated user: ${lowerEmail}`);
       }
     } else {
@@ -3100,7 +3122,7 @@ app.post("/api/auth/login", async (req, res) => {
             };
             // Sync to local db
             db.users.push(matchedUser);
-            saveDb(db);
+            await saveDb(db);
           }
         } catch (err) {
           console.warn("[Login] MongoDB check failed:", err);
@@ -3155,7 +3177,7 @@ app.post("/api/auth/login", async (req, res) => {
             db.users[idx].role = updatedRole;
             db.users[idx].allowed_departments = updatedDeps;
             db.users[idx].name = updatedName;
-            saveDb(db);
+            await saveDb(db);
           }
         }
       } catch (sbSyncErr) {
@@ -3217,7 +3239,7 @@ app.post("/api/auth/verify-session", async (req, res) => {
           };
           // Sync to local
           db.users.push(matchedUser);
-          saveDb(db);
+          await saveDb(db);
         }
       } catch (err) {
         console.warn("[Session verification] MongoDB check failed:", err);
@@ -3261,7 +3283,7 @@ app.post("/api/auth/verify-session", async (req, res) => {
             db.users[idx].role = updatedRole;
             db.users[idx].allowed_departments = updatedDeps;
             db.users[idx].name = updatedName;
-            saveDb(db);
+            await saveDb(db);
           }
         }
       } catch (sbSyncErr) {
@@ -3352,7 +3374,7 @@ app.get("/api/admin/users", async (req, res) => {
               }
             }
           });
-          saveDb(db);
+          await saveDb(db);
         }
       } catch (sbErr: any) {
         console.warn("[Users Fetch] Supabase DB fetch failed:", sbErr.message);
@@ -3593,7 +3615,7 @@ app.post("/api/admin/users/create", async (req, res) => {
     };
 
     db.users.push(newUser);
-    saveDb(db);
+    await saveDb(db);
 
     // 4. Save to MongoDB Atlas
     if (mongoose.connection.readyState === 1) {
@@ -3775,7 +3797,7 @@ app.post("/api/admin/users/update", async (req, res) => {
       if (status) db.users[userIndex].status = status;
       if (hashedPassword) db.users[userIndex].password = hashedPassword;
       if (allowed_departments) db.users[userIndex].allowed_departments = allowed_departments;
-      saveDb(db);
+      await saveDb(db);
     }
 
     // 3. Update in MongoDB
@@ -3930,7 +3952,7 @@ app.post("/api/admin/verify-password", (req, res) => {
   }
 });
 
-app.post("/api/admin/change-password", (req, res) => {
+app.post("/api/admin/change-password", async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
     if (!newPassword || newPassword.trim().length < 4) {
@@ -3942,7 +3964,7 @@ app.post("/api/admin/change-password", (req, res) => {
       return res.status(400).json({ success: false, error: "كلمة المرور القديمة غير صحيحة" });
     }
     currentDb.adminPassword = newPassword.trim();
-    saveDb(currentDb);
+    await saveDb(currentDb);
     return res.json({ success: true });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -4229,7 +4251,7 @@ app.post("/api/admin/devices/update", async (req, res) => {
         dev.nickname = valNickname;
         dev.device_name = valNickname;
       }
-      saveDb(db);
+      await saveDb(db);
       updated = true;
     } else {
       db.allowed_devices.push({
@@ -4240,7 +4262,7 @@ app.post("/api/admin/devices/update", async (req, res) => {
         device_name: valNickname || '',
         createdAt: new Date().toISOString()
       });
-      saveDb(db);
+      await saveDb(db);
       updated = true;
     }
 
@@ -4329,7 +4351,7 @@ app.post("/api/admin/devices/logout-all", async (req, res) => {
           role: 'user'
         };
       });
-      saveDb(db);
+      await saveDb(db);
     }
 
     // 2. MongoDB
@@ -4397,7 +4419,7 @@ app.post("/api/device/request-reconnect", async (req, res) => {
         createdAt: new Date().toISOString()
       });
     }
-    saveDb(db);
+    await saveDb(db);
 
     // 3. Update in Supabase
     if (supabaseClient && !isSupabaseDevicesDisabled) {
@@ -4618,7 +4640,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     }
     
     db.documents = [newDoc, ...(db.documents || [])];
-    saveDb(db);
+    await saveDb(db);
     
     if (extractionFailed) {
       triggerNotification(
@@ -4708,7 +4730,7 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     if (docIdx !== -1) {
       db.documents[docIdx].classifiedPath = publicUrl;
       db.documents[docIdx].status = "processed";
-      saveDb(db);
+      await saveDb(db);
     } else {
       console.warn(`Could not find document with ID ${documentId} to update its classifiedPath.`);
     }
@@ -4734,7 +4756,7 @@ app.post("/api/upload/confirm", async (req, res) => {
 
     if (action === "proceed") {
       db.documents = [proposedDocument, ...(db.documents || [])];
-      saveDb(db);
+      await saveDb(db);
 
       triggerNotification(
         "success",
@@ -4767,7 +4789,7 @@ app.post("/api/upload/confirm", async (req, res) => {
         summary: (existingDoc.summary || "تم دمج البنود تلقائياً") + ` (تم دمج بنود ملف ${proposedDocument.originalFilename})`
       };
 
-      saveDb(db);
+      await saveDb(db);
 
       triggerNotification(
         "success",
@@ -5028,7 +5050,7 @@ app.post("/api/documents/update", async (req, res) => {
     }));
 
     db.documents = updatedDocs;
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, documents: updatedDocs });
   } catch (error: any) {
     console.error("Update documents database error:", error);
@@ -5227,7 +5249,7 @@ app.post("/api/comparisons", express.json(), async (req, res) => {
       db.quotation_comparisons.push(newComparison);
     }
 
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, comparison: newComparison });
   } catch (error: any) {
     console.error("Save comparison error:", error);
@@ -5507,7 +5529,7 @@ app.post("/api/engineers/ledger", async (req, res) => {
       });
     }
     
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, message: "تم ترحيل واعتماد العهدة للمهندس بنجاح" });
   } catch (err: any) {
     console.error("Save engineer ledger error:", err);
@@ -5841,7 +5863,7 @@ Output the results strictly as a JSON object matching the requested schema.`;
 
     // Save back to db
     db.costAnalysisEntries = [...formattedAiEntries, ...manualEntries];
-    saveDb(db);
+    await saveDb(db);
 
     res.json({
       success: true,
@@ -5984,7 +6006,7 @@ Output the results strictly as a JSON object matching the requested schema.`;
 
     // Append new entries
     db.costAnalysisEntries = [...formattedAiEntries, ...db.costAnalysisEntries];
-    saveDb(db);
+    await saveDb(db);
 
     // Now, generate the clean white-background printing-standard Excel workbook
     const wb = XLSX.utils.book_new();
@@ -6292,7 +6314,7 @@ ${JSON.stringify(projectsList, null, 2)}
       }
     }
 
-    saveDb(db);
+    await saveDb(db);
 
     triggerNotification(
       "success",
