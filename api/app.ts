@@ -1480,30 +1480,9 @@ function structuredLog(action: string, status: 'SUCCESS' | 'ERROR' | 'INFO' | 'W
 }
 
 async function saveDbToSupabase(data: any) {
-  const supabase = getSupabaseAdminClient() || getSupabaseClient();
-  if (!supabase) {
-    console.warn("[Supabase Sync] Cannot saveDb to Supabase: clients not initialized.");
-    return;
-  }
-  try {
-    const bucketName = "POs Files";
-    const supabasePath = "db_backup/db.json";
-    const jsonStr = JSON.stringify(data, null, 2);
-    const buffer = Buffer.from(jsonStr, "utf-8");
-    const { error } = await supabase.storage
-      .from(bucketName)
-      .upload(supabasePath, buffer, {
-        contentType: "application/json",
-        upsert: true
-      });
-    if (error) {
-      console.error("[Supabase Sync] Error uploading db.json backup to Supabase Storage:", error);
-    } else {
-      console.log("[Supabase Sync] Successfully backed up database to Supabase Storage: db_backup/db.json");
-    }
-  } catch (err: any) {
-    console.error("[Supabase Sync] Exception uploading db.json backup:", err.message);
-  }
+  // Supabase is no longer the storage location for business data. MongoDB is the single source of truth.
+  console.log("[Supabase Sync] saveDbToSupabase is deprecated. Storing in MongoDB is the sole source of truth.");
+  return;
 }
 
 function mergeDbChanges(currentDb: any, persistedState: any) {
@@ -1707,30 +1686,16 @@ async function saveDb(data: any) {
     }
 
     let persistedState: any = null;
-    const supabase = getSupabaseAdminClient() || getSupabaseClient();
     
-    if (supabase) {
-      try {
-        const bucketName = "POs Files";
-        const supabasePath = "db_backup/db.json";
-        const { data: dlData, error } = await supabase.storage.from(bucketName).download(supabasePath);
-        if (!error && dlData) {
-          const text = await dlData.text();
-          persistedState = JSON.parse(text);
-        }
-      } catch (err: any) {
-        console.warn("[DB_SYSTEM] Optimistic lock: failed to load persisted state from Supabase, trying MongoDB fallback...");
-      }
-    }
-
-    if (!persistedState && mongoose.connection.readyState === 1) {
+    // 1. Fetch latest persisted state from MongoDB Atlas (Sole Source of Truth)
+    if (mongoose.connection.readyState === 1) {
       try {
         const dbDoc = await AppState.findOne({ key: "global_state" });
         if (dbDoc && dbDoc.data) {
           persistedState = dbDoc.data;
         }
       } catch (err: any) {
-        console.warn("[DB_SYSTEM] Optimistic lock: failed to load persisted state from MongoDB.");
+        console.warn("[DB_SYSTEM] Failed to load persisted state from MongoDB during saveDb:", err.message);
       }
     }
 
@@ -1752,9 +1717,9 @@ async function saveDb(data: any) {
     if (persistedState.version > data.version) {
       if (hasHistory) {
         try {
-          structuredLog("update", "INFO", `Concurrent write detected (persisted: ${persistedState.version}, request: ${data.version}). Attempting automatic non-conflicting merge...`);
+          structuredLog("update", "INFO", `Concurrent write detected (persisted: ${persistedState.version}, request: ${data.version}). Attempting automatic merge...`);
           mergedData = mergeDbChanges(data, persistedState);
-          structuredLog("update", "SUCCESS", "Automatic merge succeeded. No conflicts on the same document.");
+          structuredLog("update", "SUCCESS", "Automatic merge succeeded. No conflicts on same document.");
         } catch (mergeErr: any) {
           structuredLog("update", "WARN", {
             message: "Optimistic locking conflict on concurrent write.",
@@ -1762,13 +1727,10 @@ async function saveDb(data: any) {
             requestVersion: data.version,
             error: mergeErr.message
           });
-          throw new Error(`Optimistic locking conflict: database has been modified by another process on the same document. Please refresh and try again. (${mergeErr.message})`);
+          throw new Error(`Optimistic locking conflict: database has been modified by another process. Please refresh and try again. (${mergeErr.message})`);
         }
       } else {
-        // If we don't have history (e.g. server restart, or version is extremely stale),
-        // we should NOT reject the write. We just accept the write (using data directly)
-        // to prevent false conflicts and ensure data is updated properly.
-        structuredLog("update", "INFO", `No history found for version ${data.version} (persisted is ${persistedState.version}). Accepting write directly to prevent false conflicts.`);
+        structuredLog("update", "INFO", `No history found for version ${data.version} (persisted is ${persistedState.version}). Accepting write directly.`);
         mergedData = data;
       }
     }
@@ -1780,29 +1742,8 @@ async function saveDb(data: any) {
 
     const sanitizedData = sanitizeDeletedRecords(mergedData);
     let writeSucceeded = false;
-    
-    if (supabase) {
-      try {
-        const bucketName = "POs Files";
-        const supabasePath = "db_backup/db.json";
-        const jsonStr = JSON.stringify(sanitizedData, null, 2);
-        const buffer = Buffer.from(jsonStr, "utf-8");
-        const { error } = await supabase.storage
-          .from(bucketName)
-          .upload(supabasePath, buffer, {
-            contentType: "application/json",
-            upsert: true
-          });
-        if (error) {
-          console.error("[Supabase Sync] Error uploading db.json backup to Supabase Storage:", error);
-        } else {
-          writeSucceeded = true;
-        }
-      } catch (err: any) {
-        console.error("[Supabase Sync] Exception uploading db.json:", err.message);
-      }
-    }
 
+    // 2. Save to MongoDB Atlas (Single Source of Truth)
     if (mongoose.connection.readyState === 1) {
       try {
         await AppState.updateOne(
@@ -1813,21 +1754,25 @@ async function saveDb(data: any) {
         writeSucceeded = true;
       } catch (err: any) {
         console.error("Could not write AppState to MongoDB:", err.message);
+        throw new Error(`فشل حفظ البيانات في قاعدة البيانات MongoDB: ${err.message}`);
+      }
+    } else {
+      console.warn("[DB_SYSTEM] MongoDB connection not active, writing to local memory/disk only.");
+      writeSucceeded = true; // allow local fallback if database connection is inactive in dev environment
+    }
+
+    // 3. Update memoryDb cache ONLY after successful database persistence!
+    if (writeSucceeded) {
+      memoryDb = sanitizedData;
+      addToVersionHistory(sanitizedData);
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(sanitizedData, null, 2), "utf-8");
+      } catch (err) {
+        console.warn("Could not save to local database file:", err);
       }
     }
 
-    if (!writeSucceeded) {
-      structuredLog("update", "WARN", "Could not connect to Supabase or MongoDB Atlas. Writing directly to local fallback storage.");
-    }
-
-    memoryDb = sanitizedData;
-    addToVersionHistory(sanitizedData);
-    try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(sanitizedData, null, 2), "utf-8");
-    } catch (err) {
-      console.warn("Could not save to local database file:", err);
-    }
-
+    // 4. Verify MongoDB has the correct newly written state
     if (mongoose.connection.readyState === 1) {
       try {
         const verifyDoc = await AppState.findOne({ key: "global_state" });
@@ -1880,53 +1825,24 @@ async function fetchAndSyncDbFromMongo(force: boolean = false) {
         return getDb();
       }
 
-      // 1. Try loading from Supabase Storage (Primary Cloud Persistent State)
-      const supabase = getSupabaseAdminClient() || getSupabaseClient();
-      if (supabase) {
-        try {
-          const bucketName = "POs Files";
-          const supabasePath = "db_backup/db.json";
-          console.log(`[Supabase Sync] Attempting to download db.json from Supabase bucket "${bucketName}"...`);
-          const { data, error } = await supabase.storage
-            .from(bucketName)
-            .download(supabasePath);
-          
-          if (!error && data) {
-            const text = await data.text();
-            const parsed = JSON.parse(text);
-            if (parsed && typeof parsed === "object") {
-              memoryDb = sanitizeDeletedRecords(parsed);
-              try {
-                fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
-              } catch {}
-              console.log("[Supabase Sync] Successfully loaded database state from Supabase Storage!");
-              lastMongoSyncTime = Date.now();
-              structuredLog("sync", "SUCCESS", "Database synchronization completed successfully from Supabase.");
-              return memoryDb;
-            }
-          } else {
-            console.warn("[Supabase Sync] db_backup/db.json not found in Supabase Storage, trying MongoDB Atlas fallback...");
-          }
-        } catch (err: any) {
-          console.error("[Supabase Sync] Exception downloading db.json backup from Supabase:", err.message);
-        }
-      }
-
-      // 2. Try loading from MongoDB Atlas (Fallback)
+      // 1. Try loading from MongoDB Atlas (Single source of truth!)
       if (mongoose.connection.readyState === 1) {
         try {
           const dbDoc = await AppState.findOne({ key: "global_state" });
           if (dbDoc && dbDoc.data) {
-            memoryDb = sanitizeDeletedRecords(dbDoc.data);
-            try {
-              fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
-            } catch {}
-            console.log("Successfully loaded database state from MongoDB Atlas!");
+            const parsed = sanitizeDeletedRecords(dbDoc.data);
+            // Ensure we never overwrite memoryDb with an older version
+            if (!memoryDb || (parsed.version || 0) >= (memoryDb.version || 0)) {
+              memoryDb = parsed;
+              try {
+                fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+              } catch {}
+              console.log("Successfully loaded database state from MongoDB Atlas (Primary Source of Truth)!");
+            } else {
+              console.warn("[Sync] Stale cached memoryDb version was older than MongoDB version, keeping MongoDB.");
+            }
             lastMongoSyncTime = Date.now();
-            
-            // Push state to Supabase to keep them aligned
-            await saveDbToSupabase(memoryDb);
-            structuredLog("sync", "SUCCESS", "Database synchronization completed successfully from MongoDB fallback.");
+            structuredLog("sync", "SUCCESS", "Database synchronization completed successfully from MongoDB.");
             return memoryDb;
           } else {
             // First run: save current local db.json/getDb state to Atlas
@@ -1938,11 +1854,10 @@ async function fetchAndSyncDbFromMongo(force: boolean = false) {
                 { upsert: true }
               );
               console.log("Seeded empty MongoDB Atlas with active local db.json data!");
+              memoryDb = sanitizeDeletedRecords(localDb);
               lastMongoSyncTime = Date.now();
-              
-              // Seed Supabase state
-              await saveDbToSupabase(localDb);
               structuredLog("sync", "SUCCESS", "Database synchronization completed with database seed.");
+              return memoryDb;
             }
           }
         } catch (err: any) {
@@ -1950,11 +1865,25 @@ async function fetchAndSyncDbFromMongo(force: boolean = false) {
         }
       }
 
+      // 2. Fallback to local DB_FILE only if MongoDB is not available
+      if (!memoryDb) {
+        try {
+          if (fs.existsSync(DB_FILE)) {
+            const raw = fs.readFileSync(DB_FILE, "utf-8");
+            memoryDb = sanitizeDeletedRecords(JSON.parse(raw));
+          } else {
+            memoryDb = sanitizeDeletedRecords({ ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] });
+          }
+        } catch {
+          memoryDb = sanitizeDeletedRecords({ ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] });
+        }
+      }
+      
       structuredLog("sync", "SUCCESS", "Database synchronization completed using local fallback storage.");
-      return getDb();
+      return memoryDb;
     } catch (err: any) {
       structuredLog("sync", "ERROR", `Database synchronization failed: ${err.message}`);
-      throw err;
+      return memoryDb || { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
     } finally {
       syncInProgress = false;
       currentSyncPromise = null;
@@ -3959,6 +3888,8 @@ app.get("/api/admin/users", async (req, res) => {
 
 // Admin Route: Create User
 app.post("/api/admin/users/create", async (req, res) => {
+  let createdUserId = "";
+  let supabaseAdmin: any = null;
   try {
     const { name, email, password, role, allowed_departments } = req.body;
     if (!name || !email || !password) {
@@ -3993,7 +3924,7 @@ app.post("/api/admin/users/create", async (req, res) => {
     }
 
     // 1. Get dynamic Supabase Admin Client
-    const supabaseAdmin = getSupabaseAdminClient();
+    supabaseAdmin = getSupabaseAdminClient();
     if (!supabaseAdmin) {
       console.error("[Auth] SUPABASE_SERVICE_ROLE_KEY is missing or invalid on the server.");
       return res.status(500).json({ 
@@ -4002,167 +3933,115 @@ app.post("/api/admin/users/create", async (req, res) => {
       });
     }
 
-    let finalUserId = "";
+    // --- STEP 1: Create Supabase Auth User ---
+    const { data: sbData, error: sbError } = await supabaseAdmin.auth.admin.createUser({
+      email: lowerEmail,
+      password: password,
+      email_confirm: true,
+      user_metadata: { name, role: role || "user", allowed_departments: finalDeps }
+    });
 
-    // 2. Create in Supabase Auth
-    try {
-      const { data: sbData, error: sbError } = await supabaseAdmin.auth.admin.createUser({
-        email: lowerEmail,
-        password: password,
-        email_confirm: true,
-        user_metadata: { name, role: role || "user", allowed_departments: finalDeps }
-      });
-      if (sbError) {
-        console.warn("[Supabase Admin Auth] User creation failed:", sbError.message);
-        return res.status(400).json({ 
-          success: false, 
-          error: `فشل إنشاء الحساب في Supabase Auth: ${sbError.message}` 
-        });
-      } else if (sbData && sbData.user) {
-        finalUserId = sbData.user.id;
-        console.log("[Supabase Admin Auth] User created successfully. UID:", finalUserId);
-      } else {
-        return res.status(400).json({ 
-          success: false, 
-          error: "فشل إنشاء الحساب في Supabase Auth: لم يتم إرجاع بيانات المستخدم." 
-        });
-      }
-    } catch (ex: any) {
-      console.error("[Supabase Admin Auth] Exception caught during user creation:", ex.message);
-      return res.status(500).json({ 
+    if (sbError) {
+      console.warn("[Supabase Admin Auth] User creation failed:", sbError.message);
+      return res.status(400).json({ 
         success: false, 
-        error: `خطأ استثنائي أثناء إنشاء الحساب في Supabase Auth: ${ex.message}` 
+        error: `فشل إنشاء الحساب في Supabase Auth: ${sbError.message}` 
       });
     }
+
+    if (!sbData || !sbData.user) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "فشل إنشاء الحساب في Supabase Auth: لم يتم إرجاع بيانات المستخدم." 
+      });
+    }
+
+    createdUserId = sbData.user.id;
+    console.log("[Supabase Admin Auth] User created successfully. UID:", createdUserId);
+
+    // --- STEP 2: Create/Update Profile (in profiles table) ---
+    console.log(`[Supabase DB] Attempting insert into 'profiles' table for UID: ${createdUserId}...`);
+    const { error: insertErr } = await supabaseAdmin
+      .from('profiles')
+      .insert([
+        { 
+          id: createdUserId, 
+          email: lowerEmail, 
+          full_name: name.trim() // Correct existing column name!
+        }
+      ]);
+
+    if (insertErr) {
+      console.error(`[Supabase DB] 'profiles' insert failed:`, insertErr.message);
+      throw new Error(`فشل إدخال الموظف في جدول profiles بالـ Supabase: ${insertErr.message}`);
+    }
+    console.log("[Supabase DB] Successfully inserted into 'profiles' table.");
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const isSystemValue = (lowerEmail === "khaled@delta.com" || lowerEmail === "user@delta.com");
 
-    // 2.5 Save to Supabase DB (profiles table only)
-    let sbDbSuccess = false;
-    let sbDbErrorMsg = "";
-    
-    const tryInsertOnTable = async (tableName: string): Promise<{ success: boolean; errorMsg: string }> => {
-      try {
-        console.log(`[Supabase DB] Attempting insert into '${tableName}' table for UID: ${finalUserId}...`);
-        const { error: insertErr } = await supabaseAdmin
-          .from(tableName)
-          .insert([
-            { 
-              id: finalUserId, 
-              email: lowerEmail, 
-              display_name: name.trim(), 
-              role: role || "user",
-              allowed_departments: finalDeps
-            }
-          ]);
-        
-        if (!insertErr) {
-          console.log(`[Supabase DB] Successfully inserted into '${tableName}' table.`);
-          return { success: true, errorMsg: "" };
-        }
-        
-        console.error(`[Supabase DB] '${tableName}' first insert failed:`, insertErr);
-        
-        if (insertErr.message?.includes("allowed_departments") || insertErr.code === "PGRST204" || insertErr.code === "42703") {
-          console.warn(`[Supabase DB] allowed_departments missing on '${tableName}', retrying with allowed_sections...`);
-          const { error: retrySectErr } = await supabaseAdmin
-            .from(tableName)
-            .insert([
-              { 
-                id: finalUserId, 
-                email: lowerEmail, 
-                display_name: name.trim(), 
-                role: role || "user",
-                allowed_sections: finalDeps
-              }
-            ]);
-          if (!retrySectErr) {
-            console.log(`[Supabase DB] Successfully inserted into '${tableName}' with allowed_sections!`);
-            return { success: true, errorMsg: "" };
-          }
-          
-          console.warn(`[Supabase DB] allowed_sections also missing on '${tableName}', retrying without departments column...`);
-          const { error: retryProfErr } = await supabaseAdmin
-            .from(tableName)
-            .insert([
-              { 
-                id: finalUserId, 
-                email: lowerEmail, 
-                display_name: name.trim(), 
-                role: role || "user"
-              }
-            ]);
-          if (!retryProfErr) {
-            console.log(`[Supabase DB] Successfully inserted into '${tableName}' without departments.`);
-            return { success: true, errorMsg: "" };
-          }
-          
-          return { success: false, errorMsg: retryProfErr.message };
-        }
-        
-        return { success: false, errorMsg: insertErr.message };
-      } catch (ex: any) {
-        return { success: false, errorMsg: ex.message };
-      }
-    };
-
-    try {
-      const pRes = await tryInsertOnTable('profiles');
-      if (pRes.success) {
-        sbDbSuccess = true;
-      } else {
-        sbDbErrorMsg = pRes.errorMsg;
-      }
-    } catch (dbErr: any) {
-      console.error("[Supabase DB] Exception during Supabase insert (console.log dbError):", dbErr);
-      sbDbErrorMsg = dbErr.message;
-    }
-
-    if (!sbDbSuccess) {
-      console.error(`[Supabase DB] Database insert failed: ${sbDbErrorMsg}. Returning error to prevent un-synchronized state.`);
-      return res.status(400).json({
-        success: false,
-        error: `فشل إدخال الموظف في قاعدة البيانات: ${sbDbErrorMsg || "يرجى التحقق من لوحة تحكم Supabase والـ Schema الخاص بجداول المستخدمين"}`
-      });
-    }
-
-    // 3. Save locally only after 100% success in Supabase Auth & Database
+    // --- STEP 3: Create MongoDB User Document & Commit locally ---
     const newUser = {
-      id: finalUserId,
-      name: name.trim(),
+      id: createdUserId,
+      supabaseUserId: createdUserId,
       email: lowerEmail,
       password: hashedPassword,
+      name: name.trim(),
       role: role || "user",
       status: "active",
       allowed_departments: finalDeps,
-      createdAt: new Date().toISOString()
+      isSystem: isSystemValue,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
+    // Save locally
     db.users.push(newUser);
     await saveDb(db);
 
-    // 4. Save to MongoDB Atlas
+    // Save to MongoDB Atlas
     if (mongoose.connection.readyState === 1) {
       try {
         await User.create({
-          _id: finalUserId,
-          name: name.trim(),
+          _id: createdUserId,
+          supabaseUserId: createdUserId,
           email: lowerEmail,
           password: hashedPassword,
+          name: name.trim(),
           role: role || "user",
           status: "active",
-          allowed_departments: finalDeps
+          allowed_departments: finalDeps,
+          isSystem: isSystemValue,
+          createdAt: new Date(),
+          updatedAt: new Date()
         });
       } catch (mongoErr: any) {
         console.error("[Auth] Failed to write user to MongoDB:", mongoErr.message);
+        throw new Error(`فشل كتابة مستخدم MongoDB: ${mongoErr.message}`);
       }
     }
 
     console.log(`[Auth] User ${name} successfully created by Admin as [${role || "user"}] with departments:`, finalDeps);
     return res.json({ success: true, message: "تم إنشاء حساب الموظف الجديد بنجاح!" });
+
   } catch (err: any) {
-    console.error("[Auth] Create user error:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    console.error("[Auth] Create user error (Triggering Rollback):", err);
+    
+    // Rollback steps to avoid orphan records!
+    if (createdUserId && supabaseAdmin) {
+      console.log(`[ROLLBACK] Rolling back user creation for UID: ${createdUserId}...`);
+      try {
+        // Delete profile from profiles table first
+        await supabaseAdmin.from('profiles').delete().eq('id', createdUserId);
+        // Delete auth user from Supabase Auth
+        const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(createdUserId);
+        if (delErr) console.error("[ROLLBACK] Failed to delete auth user:", delErr.message);
+      } catch (rollbackEx: any) {
+        console.error("[ROLLBACK] Exception during rollback:", rollbackEx.message);
+      }
+    }
+
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -4207,19 +4086,17 @@ app.post("/api/admin/users/update", async (req, res) => {
     }
 
     if (isSystemAccount) {
-      if (originalEmailVal === "khaled@delta.com") {
-        if (role && role !== "admin") {
-          return res.status(403).json({
-            success: false,
-            message: "This is a protected system administrator account. Its role cannot be changed."
-          });
-        }
-        if (status && status !== "active") {
-          return res.status(403).json({
-            success: false,
-            message: "This is a protected system administrator account. It cannot be disabled/blocked."
-          });
-        }
+      if (role && userIndex !== -1 && role !== db.users[userIndex].role) {
+        return res.status(403).json({
+          success: false,
+          error: "هذا الحساب محمي كـ System Account ولا يمكن تعديل صلاحياته (دور الموظف)."
+        });
+      }
+      if (status && status !== "active") {
+        return res.status(403).json({
+          success: false,
+          error: "هذا الحساب محمي كـ System Account ولا يمكن تعطيله أو إلغاء تفعيله."
+        });
       }
     }
 
@@ -4282,63 +4159,22 @@ app.post("/api/admin/users/update", async (req, res) => {
 
         if (proceedToDbUpdate) {
           // Update in DB Tables
-          console.log(`[Supabase DB] Updating details for UID: ${targetUserId}`);
           const dbUpdateObj: any = {};
-          if (name) dbUpdateObj.display_name = name.trim();
-          if (role) dbUpdateObj.role = role;
-          if (allowed_departments) dbUpdateObj.allowed_departments = allowed_departments;
+          if (name) dbUpdateObj.full_name = name.trim(); // correct column name
+          if (lowerNewEmail) dbUpdateObj.email = lowerNewEmail;
 
           if (Object.keys(dbUpdateObj).length > 0) {
-            const tryUpdateOnTable = async (tableName: string): Promise<{ success: boolean; error: any }> => {
-               console.log(`[Supabase DB] Updating details for UID: ${targetUserId} in table '${tableName}'`);
-               let { error: updateErr } = await supabaseAdmin
-                 .from(tableName)
-                 .update(dbUpdateObj)
-                 .eq('id', targetUserId);
-
-               if (!updateErr) {
-                 console.log(`[Supabase DB] Successfully updated profile details in '${tableName}' table.`);
-                 return { success: true, error: null };
-               }
-
-               console.warn(`[Supabase DB] '${tableName}' update raw error:`, updateErr);
-               console.log(`[Supabase DB] Attempting granular update for '${tableName}' table...`);
-               let succeededAny = false;
-               for (const [key, val] of Object.entries(dbUpdateObj)) {
-                 let { error: singleErr } = await supabaseAdmin
-                   .from(tableName)
-                   .update({ [key]: val })
-                   .eq('id', targetUserId);
-                 
-                 if (singleErr && key === 'display_name') {
-                   console.log(`[Supabase DB] '${tableName}' display_name update failed, trying fallback to 'name' column...`);
-                   const { error: nameErr } = await supabaseAdmin
-                     .from(tableName)
-                     .update({ name: val })
-                     .eq('id', targetUserId);
-                   if (!nameErr) {
-                     console.log(`[Supabase DB] Successfully updated 'name' column in '${tableName}' table.`);
-                     succeededAny = true;
-                   }
-                 } else if (singleErr && key === 'allowed_departments') {
-                   console.log(`[Supabase DB] '${tableName}' allowed_departments update failed, trying fallback to 'allowed_sections' column...`);
-                   const { error: sectErr } = await supabaseAdmin
-                     .from(tableName)
-                     .update({ allowed_sections: val })
-                     .eq('id', targetUserId);
-                   if (!sectErr) {
-                     console.log(`[Supabase DB] Successfully updated 'allowed_sections' column in '${tableName}' table.`);
-                     succeededAny = true;
-                   }
-                 } else if (!singleErr) {
-                   console.log(`[Supabase DB] Successfully updated column '${key}' in '${tableName}' table.`);
-                   succeededAny = true;
-                 }
-               }
-               return { success: succeededAny, error: updateErr };
-            };
-
-            await tryUpdateOnTable('profiles');
+            console.log(`[Supabase DB] Updating identity fields in 'profiles' table for UID: ${targetUserId}`, dbUpdateObj);
+            const { error: updateErr } = await supabaseAdmin
+              .from('profiles')
+              .update(dbUpdateObj)
+              .eq('id', targetUserId);
+            
+            if (updateErr) {
+              console.error("[Supabase DB] profiles update failed:", updateErr.message);
+            } else {
+              console.log("[Supabase DB] Successfully updated profile details in 'profiles' table.");
+            }
           }
         }
       } catch (ex: any) {
@@ -4391,37 +4227,33 @@ app.post("/api/admin/users/delete", async (req, res) => {
     const db = getDb();
     db.users = db.users || [];
 
-    // Find user ID and email FIRST before deleting from db.users
-    let targetUserId = id;
-    let userEmailForDeletion = lowerEmail;
-
-    const userToDelete = db.users.find((u: any) => 
+    // Find user details FIRST
+    let userToDelete = db.users.find((u: any) => 
       (id && u.id === id) || 
       (lowerEmail && u.email?.toLowerCase().trim() === lowerEmail)
     );
 
-    if (userToDelete) {
-      targetUserId = userToDelete.id;
-      userEmailForDeletion = userToDelete.email?.toLowerCase().trim() || lowerEmail;
-      
-      if (userToDelete.isSystem) {
-        return res.status(403).json({
-          success: false,
-          message: "This is a protected system account and cannot be deleted."
-        });
-      }
+    let targetUserId = id || (userToDelete ? userToDelete.id : "");
+    let userEmailForDeletion = lowerEmail || (userToDelete ? userToDelete.email?.toLowerCase().trim() : "");
+
+    // Enforce isSystem protection check
+    if (userToDelete && userToDelete.isSystem) {
+      return res.status(403).json({
+        success: false,
+        error: "هذا الحساب محمي كـ System Account ولا يمكن حذفه نهائياً."
+      });
     }
 
     const systemEmails = ["khaled@delta.com", "user@delta.com"];
     if (userEmailForDeletion && systemEmails.includes(userEmailForDeletion.toLowerCase())) {
       return res.status(403).json({
         success: false,
-        message: "This is a protected system account and cannot be deleted."
+        error: "هذا الحساب محمي كـ System Account ولا يمكن حذفه نهائياً."
       });
     }
 
     if (mongoose.connection.readyState === 1) {
-      let mongoUser;
+      let mongoUser = null;
       if (targetUserId) {
         mongoUser = await User.findById(targetUserId);
       } else if (userEmailForDeletion) {
@@ -4430,84 +4262,83 @@ app.post("/api/admin/users/delete", async (req, res) => {
       if (mongoUser && (mongoUser as any).isSystem) {
         return res.status(403).json({
           success: false,
-          message: "This is a protected system account and cannot be deleted."
+          error: "هذا الحساب محمي كـ System Account ولا يمكن حذفه نهائياً."
         });
       }
     }
 
-    // Delete locally from low db
-    if (targetUserId) {
-      db.users = db.users.filter((u: any) => u.id !== targetUserId);
-    } else if (userEmailForDeletion) {
-      db.users = db.users.filter((u: any) => u.email.toLowerCase() !== userEmailForDeletion.toLowerCase());
+    const supabaseAdmin = getSupabaseAdminClient();
+    if (!supabaseAdmin) {
+      return res.status(500).json({
+        success: false,
+        error: "فشل الحذف: مفتاح الخدمة SUPABASE_SERVICE_ROLE_KEY غير مهيأ على السيرفر."
+      });
     }
-    await saveDb(db);
 
-    // Delete from MongoDB
+    // --- STEP 1: Delete from Supabase Auth FIRST ---
+    let authUserId = targetUserId;
+    if (!authUserId && userEmailForDeletion) {
+      console.log(`[Supabase Delete] Direct Auth lookup for: ${userEmailForDeletion}`);
+      const { data: { users: authUsers }, error: listErr } = await supabaseAdmin.auth.admin.listUsers();
+      if (!listErr && authUsers) {
+        const matchedAuthUser = authUsers.find((u: any) => u.email?.toLowerCase().trim() === userEmailForDeletion);
+        if (matchedAuthUser) {
+          authUserId = matchedAuthUser.id;
+        }
+      }
+    }
+
+    if (authUserId) {
+      console.log(`[Supabase Delete] Deleting user from Auth: ${authUserId}`);
+      const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
+      if (authDelErr) {
+        // If not found, we can proceed, otherwise fail
+        const isUserNotFound = authDelErr.message?.includes("User not found") || authDelErr.message?.includes("not found");
+        if (!isUserNotFound) {
+          console.error("[Supabase Delete Auth] Failed to delete user from Supabase Auth:", authDelErr.message);
+          return res.status(400).json({
+            success: false,
+            error: `فشل حذف الحساب من Supabase Auth: ${authDelErr.message}`
+          });
+        }
+      }
+    }
+
+    // --- STEP 2: Delete from profiles Table ---
+    if (userEmailForDeletion) {
+      const { error: profDelEmailErr } = await supabaseAdmin.from('profiles').delete().eq('email', userEmailForDeletion);
+      if (profDelEmailErr) {
+        console.warn("[Supabase Delete] profiles deletion by email warning:", profDelEmailErr.message);
+      }
+    }
+    if (authUserId) {
+      const { error: profDelIdErr } = await supabaseAdmin.from('profiles').delete().eq('id', authUserId);
+      if (profDelIdErr) {
+        console.warn("[Supabase Delete] profiles deletion by ID warning:", profDelIdErr.message);
+      }
+    }
+
+    // --- STEP 3: Delete from MongoDB ---
     if (mongoose.connection.readyState === 1) {
-      if (targetUserId) {
-        await User.deleteOne({ _id: targetUserId });
+      if (authUserId) {
+        await User.deleteOne({ _id: authUserId });
       } else if (userEmailForDeletion) {
         await User.deleteOne({ email: userEmailForDeletion });
       }
     }
 
-    // Delete from Supabase Auth and Tables using Admin Client
-    const supabaseAdmin = getSupabaseAdminClient();
-    if (supabaseAdmin) {
-      try {
-        let authUserId = targetUserId;
-        if (!authUserId && userEmailForDeletion) {
-          console.log(`[Supabase Delete] UID not found in local db. Trying Direct Supabase Auth lookup for: ${userEmailForDeletion}`);
-          const { data: { users: authUsers }, error: listErr } = await supabaseAdmin.auth.admin.listUsers();
-          if (!listErr && authUsers) {
-            const matchedAuthUser = authUsers.find((u: any) => u.email?.toLowerCase().trim() === userEmailForDeletion);
-            if (matchedAuthUser) {
-              authUserId = matchedAuthUser.id;
-              console.log(`[Supabase Delete] Found Auth UID from email: ${authUserId}`);
-            }
-          }
-        }
-
-        // Determine email if we only have id
-        if (!userEmailForDeletion && authUserId) {
-          const { data: { user: authUser }, error: getErr } = await supabaseAdmin.auth.admin.getUserById(authUserId);
-          if (!getErr && authUser) {
-            userEmailForDeletion = authUser.email?.toLowerCase().trim() || "";
-          }
-        }
-
-        console.log(`[Supabase Delete] Deleting user profiles/auth for email: ${userEmailForDeletion}, UID: ${authUserId}`);
-        
-        // Delete from profiles table by email and id
-        if (userEmailForDeletion) {
-          const { error: profDelEmailErr } = await supabaseAdmin.from('profiles').delete().eq('email', userEmailForDeletion);
-          if (profDelEmailErr) console.warn("[Supabase Delete] Delete profiles by email error:", profDelEmailErr.message);
-        }
-
-        if (authUserId) {
-          const { error: profDelIdErr } = await supabaseAdmin.from('profiles').delete().eq('id', authUserId);
-          if (profDelIdErr) console.warn("[Supabase Delete] Delete profiles by id error:", profDelIdErr.message);
-        }
-        
-        if (authUserId) {
-          // Delete from Auth
-          const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
-          if (authDelErr) {
-            console.error("[Supabase Delete Auth] Auth deletion failed:", authDelErr.message);
-          } else {
-            console.log("[Supabase Delete Auth] Successfully deleted user from Supabase Auth.");
-          }
-        }
-      } catch (sbErr: any) {
-        console.error("[Supabase Delete] Supabase deletion failed:", sbErr.message);
-      }
+    // --- STEP 4: Delete locally and save state ---
+    if (authUserId) {
+      db.users = db.users.filter((u: any) => u.id !== authUserId);
+    } else if (userEmailForDeletion) {
+      db.users = db.users.filter((u: any) => u.email.toLowerCase() !== userEmailForDeletion.toLowerCase());
     }
+    await saveDb(db);
 
     return res.json({ success: true, message: "تم حذف حساب الموظف بالكامل من قواعد البيانات بنجاح" });
   } catch (err: any) {
     console.error("[Auth] Delete user error:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
