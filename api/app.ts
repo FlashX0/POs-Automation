@@ -334,21 +334,22 @@ try {
 }
 
 // 1. الاتصال بقاعدة البيانات السحابية مباشرة باستخدام رابط الاتصال الموفر من البيئة المحيطة
-const MONGODB_URI = (process.env.MONGODB_URI || "mongodb+srv://narutoluffy201_db_user:016135@cluster0.zlje0ku.mongodb.net/?appName=Cluster0").trim();
-if (MONGODB_URI) {
-  mongoose.connect(MONGODB_URI, {
-    serverSelectionTimeoutMS: 5000, // حد أقصى للاتصال 5 ثوانٍ لمنع تعليق المشروع في حالة عدم إضافة الـ IP الصحيح لقائمة السماح
-    socketTimeoutMS: 10000,
-  })
-    .then(() => console.log("Connected to MongoDB Atlas successfully!"))
-    .catch((err) => {
-      console.warn("⚠️ لم نتمكن من الاتصال بـ MongoDB Atlas (قد يكون سبب ذلك عدم إضافة عنوان IP إلى قائمة المسموح بهم):");
-      console.warn(err.message);
-      console.warn("📌 لا تقلق! الخدمة مبرمجة لتعمل تلقائياً وبكفاءة كاملة على التخزين المحلي الآمن (local db.json /tmp).");
-    });
-} else {
-  console.warn("⚠️ لم يتم توفير MONGODB_URI في المتغيرات البيئية، سيتم استخدام التخزين المحلي الآمن.");
+const MONGODB_URI = process.env.MONGODB_URI?.trim();
+
+if (!MONGODB_URI) {
+  throw new Error("MONGODB_URI environment variable is not configured.");
 }
+
+mongoose.connect(MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000, // حد أقصى للاتصال 5 ثوانٍ لمنع تعليق المشروع في حالة عدم إضافة الـ IP الصحيح لقائمة السماح
+  socketTimeoutMS: 10000,
+})
+  .then(() => console.log("Connected to MongoDB Atlas successfully!"))
+  .catch((err) => {
+    console.warn("⚠️ لم نتمكن من الاتصال بـ MongoDB Atlas (قد يكون سبب ذلك عدم إضافة عنوان IP إلى قائمة المسموح بهم):");
+    console.warn(err.message);
+    console.warn("📌 لا تقلق! الخدمة مبرمجة لتعمل تلقائياً وبكفاءة كاملة على التخزين المحلي الآمن (local db.json /tmp).");
+  });
 
 // 2. إنشاء الـ Schema والـ Model بدلاً من ملف db.json القديم
 const projectSchema = new mongoose.Schema({
