@@ -9,6 +9,9 @@ import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import bcrypt from "bcryptjs";
 import * as XLSX from "xlsx";
+import { AsyncLocalStorage } from "async_hooks";
+
+export const requestStore = new AsyncLocalStorage<{ method: string }>();
 
 // Load environment variables
 dotenv.config();
@@ -325,6 +328,12 @@ const ORIGINAL_DB_FILE = path.join(process.cwd(), "data", "db.json");
 const app = express();
 const PORT = 3000;
 
+app.use((req, res, next) => {
+  requestStore.run({ method: req.method }, () => {
+    next();
+  });
+});
+
 // التأكد من تهيئة المجلدات حتى لا تضرب الـ Routes المسؤولة عن معالجة الفواتير
 try {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -421,6 +430,18 @@ const defaultDb = {
 };
 
 let memoryDb: any = null;
+
+const dbVersionHistory = new Map<number, any>();
+
+function addToVersionHistory(db: any) {
+  if (db && typeof db === "object" && typeof db.version === "number") {
+    dbVersionHistory.set(db.version, JSON.parse(JSON.stringify(db)));
+    if (dbVersionHistory.size > 50) {
+      const keys = Array.from(dbVersionHistory.keys()).sort((a, b) => a - b);
+      dbVersionHistory.delete(keys[0]);
+    }
+  }
+}
 
 function mapProjectNameToStandard(name: any): string {
   if (!name || typeof name !== "string") return "عام";
@@ -1047,11 +1068,13 @@ function initializeDbVersion(db: any) {
     if (!db.lastModified) {
       db.lastModified = new Date().toISOString();
     }
+    addToVersionHistory(db);
   }
   return db;
 }
 
 function getDb() {
+  let dbResult;
   if (memoryDb) {
     const usersChanged = ensureLocalUsersSeeded(memoryDb);
     if (usersChanged) {
@@ -1060,51 +1083,53 @@ function getDb() {
       } catch (e) {}
     }
     cleanDatabaseDiagnosticsInternal(memoryDb);
-    return initializeDbVersion(memoryDb);
-  }
-  try {
-    const raw = fs.readFileSync(DB_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-    let changed = false;
-    if (!parsed.projects) {
-      parsed.projects = [...defaultProjects];
-      changed = true;
-    } else {
-      for (const p of defaultProjects) {
-        if (!parsed.projects.includes(p)) {
-          parsed.projects.push(p);
-          changed = true;
+    dbResult = initializeDbVersion(memoryDb);
+  } else {
+    try {
+      const raw = fs.readFileSync(DB_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      let changed = false;
+      if (!parsed.projects) {
+        parsed.projects = [...defaultProjects];
+        changed = true;
+      } else {
+        for (const p of defaultProjects) {
+          if (!parsed.projects.includes(p)) {
+            parsed.projects.push(p);
+            changed = true;
+          }
         }
       }
-    }
-    if (!parsed.suppliers) {
-      parsed.suppliers = [...defaultSuppliers];
-      changed = true;
-    }
+      if (!parsed.suppliers) {
+        parsed.suppliers = [...defaultSuppliers];
+        changed = true;
+      }
 
-    const usersChanged = ensureLocalUsersSeeded(parsed);
-    if (usersChanged) {
-      changed = true;
-    }
+      const usersChanged = ensureLocalUsersSeeded(parsed);
+      if (usersChanged) {
+        changed = true;
+      }
 
-    if (changed) {
+      if (changed) {
+        try {
+          fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), "utf-8");
+        } catch (e) {}
+      }
+      memoryDb = parsed;
+      cleanDatabaseDiagnosticsInternal(memoryDb);
+      dbResult = initializeDbVersion(parsed);
+    } catch (err) {
+      const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
+      ensureLocalUsersSeeded(fallback);
+      memoryDb = fallback;
       try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), "utf-8");
+        fs.writeFileSync(DB_FILE, JSON.stringify(fallback, null, 2), "utf-8");
       } catch (e) {}
+      cleanDatabaseDiagnosticsInternal(memoryDb);
+      dbResult = initializeDbVersion(fallback);
     }
-    memoryDb = parsed;
-    cleanDatabaseDiagnosticsInternal(memoryDb);
-    return initializeDbVersion(parsed);
-  } catch (err) {
-    const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
-    ensureLocalUsersSeeded(fallback);
-    memoryDb = fallback;
-    try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(fallback, null, 2), "utf-8");
-    } catch (e) {}
-    cleanDatabaseDiagnosticsInternal(memoryDb);
-    return initializeDbVersion(fallback);
   }
+  return JSON.parse(JSON.stringify(dbResult));
 }
 
 function convertEasternToWesternNumerals(str: any): string {
@@ -1374,20 +1399,143 @@ async function saveDbToSupabase(data: any) {
   }
 }
 
+function mergeDbChanges(currentDb: any, persistedState: any) {
+  const baseVer = currentDb.version || 1;
+  const originalDb = dbVersionHistory.get(baseVer) || currentDb;
+  
+  if (originalDb.version === persistedState.version) {
+    return currentDb;
+  }
+
+  const merged = JSON.parse(JSON.stringify(persistedState));
+  
+  function mergeObjectArray(key: string, collectionName: string) {
+    const origList = originalDb[collectionName] || [];
+    const currList = currentDb[collectionName] || [];
+    const persList = persistedState[collectionName] || [];
+
+    const origMap = new Map(origList.map((item: any) => [item[key], item]));
+    const currMap = new Map(currList.map((item: any) => [item[key], item]));
+    const persMap = new Map(persList.map((item: any) => [item[key], item]));
+
+    const added: any[] = [];
+    const updated: any[] = [];
+    const deleted = new Set<any>();
+
+    for (const [id, currItem] of currMap.entries()) {
+      const origItem = origMap.get(id);
+      if (!origItem) {
+        added.push(currItem);
+      } else if (JSON.stringify(origItem) !== JSON.stringify(currItem)) {
+        updated.push(currItem);
+      }
+    }
+    for (const id of origMap.keys()) {
+      if (!currMap.has(id)) {
+        deleted.add(id);
+      }
+    }
+
+    for (const item of updated) {
+      const id = item[key];
+      const persItem = persMap.get(id);
+      const origItem = origMap.get(id);
+      if (persItem && JSON.stringify(persItem) !== JSON.stringify(origItem)) {
+        throw new Error(`Conflict detected: document with ID ${id} in collection ${collectionName} was modified by another request.`);
+      }
+    }
+    for (const id of deleted) {
+      const persItem = persMap.get(id);
+      const origItem = origMap.get(id);
+      if (persItem && JSON.stringify(persItem) !== JSON.stringify(origItem)) {
+        throw new Error(`Conflict detected: document with ID ${id} in collection ${collectionName} was modified by another request and cannot be deleted.`);
+      }
+    }
+
+    const resultList = [...persList];
+    
+    for (const item of updated) {
+      const id = item[key];
+      const idx = resultList.findIndex((x: any) => x[key] === id);
+      if (idx !== -1) {
+        resultList[idx] = item;
+      }
+    }
+    const filteredList = resultList.filter((x: any) => !deleted.has(x[key]));
+    
+    for (const item of added) {
+      if (!filteredList.some((x: any) => x[key] === item[key])) {
+        filteredList.push(item);
+      }
+    }
+
+    merged[collectionName] = filteredList;
+  }
+
+  function mergePrimitiveArray(collectionName: string) {
+    const origList: string[] = originalDb[collectionName] || [];
+    const currList: string[] = currentDb[collectionName] || [];
+    const persList: string[] = persistedState[collectionName] || [];
+
+    const origSet = new Set(origList);
+
+    const added = currList.filter(x => !origSet.has(x));
+    const deleted = origList.filter(x => !origSet.has(x));
+
+    const resultList = persList.filter(x => !deleted.includes(x));
+    for (const item of added) {
+      if (!resultList.includes(item)) {
+        resultList.push(item);
+      }
+    }
+    merged[collectionName] = resultList;
+  }
+
+  const objectCollections = [
+    { name: "documents", key: "id" },
+    { name: "users", key: "id" },
+    { name: "allowedDevices", key: "id" },
+    { name: "notifications", key: "id" },
+    { name: "subcontractorContracts", key: "id" },
+    { name: "laborTimesheets", key: "id" },
+    { name: "costAnalysisEntries", key: "id" },
+    { name: "engineersLedger", key: "id" }
+  ];
+
+  for (const col of objectCollections) {
+    if (originalDb[col.name] || currentDb[col.name] || persistedState[col.name]) {
+      mergeObjectArray(col.key, col.name);
+    }
+  }
+
+  const primitiveCollections = ["projects", "suppliers", "deletedEngineerIds", "deletedSubcontractorIds", "deletedLaborTimesheetIds", "deletedCostAnalysisIds"];
+  for (const col of primitiveCollections) {
+    if (originalDb[col] || currentDb[col] || persistedState[col]) {
+      mergePrimitiveArray(col);
+    }
+  }
+
+  if (JSON.stringify(originalDb.telegramConfig) !== JSON.stringify(currentDb.telegramConfig)) {
+    if (JSON.stringify(originalDb.telegramConfig) !== JSON.stringify(persistedState.telegramConfig)) {
+      throw new Error("Conflict detected: Telegram configuration was modified by another request.");
+    }
+    merged.telegramConfig = currentDb.telegramConfig;
+  }
+
+  return merged;
+}
+
 async function saveDb(data: any) {
   return dbWriteQueue.enqueue(async () => {
     structuredLog("update", "INFO", "Initiating atomic database write transaction...");
     
-    // Ensure brands are sanitized
     if (data && data.documents) {
       data.documents = sanitizeAndExtractBrands(data.documents);
     }
 
-    // 1. Load latest state from the single source of truth (Supabase Storage / MongoDB) to perform Optimistic Locking check
     let persistedState: any = null;
     const supabase = getSupabaseAdminClient() || getSupabaseClient();
     
-    // Let's try downloading from Supabase Storage
     if (supabase) {
       try {
         const bucketName = "POs Files";
@@ -1402,7 +1550,6 @@ async function saveDb(data: any) {
       }
     }
 
-    // If Supabase check failed, try MongoDB
     if (!persistedState && mongoose.connection.readyState === 1) {
       try {
         const dbDoc = await AppState.findOne({ key: "global_state" });
@@ -1414,39 +1561,47 @@ async function saveDb(data: any) {
       }
     }
 
-    // Default version to 1 if not defined
+    if (!persistedState) {
+      persistedState = memoryDb || { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
+    }
+
+    if (persistedState.version === undefined) {
+      persistedState.version = 1;
+    }
     if (data.version === undefined) {
       data.version = 1;
     }
 
-    // Optimistic locking comparison
-    if (persistedState && persistedState.version !== undefined) {
-      if (persistedState.version > data.version) {
+    let mergedData = data;
+    if (persistedState.version > data.version) {
+      try {
+        structuredLog("update", "INFO", `Concurrent write detected (persisted: ${persistedState.version}, request: ${data.version}). Attempting automatic non-conflicting merge...`);
+        mergedData = mergeDbChanges(data, persistedState);
+        structuredLog("update", "SUCCESS", "Automatic merge succeeded. No conflicts on the same document.");
+      } catch (mergeErr: any) {
         structuredLog("update", "WARN", {
           message: "Optimistic locking conflict: Stale write rejected.",
           currentPersistedVersion: persistedState.version,
-          requestVersion: data.version
+          requestVersion: data.version,
+          error: mergeErr.message
         });
-        throw new Error(`Optimistic locking conflict: database has been modified by another process (current version: ${persistedState.version}, requested version: ${data.version}). Please refresh and try again.`);
+        throw new Error(`Optimistic locking conflict: database has been modified by another process on the same document. Please refresh and try again. (${mergeErr.message})`);
       }
     }
 
-    // Increment version, set updated/modified timestamps
-    const oldVersion = data.version;
-    const newVersion = (persistedState?.version || oldVersion) + 1;
-    data.version = newVersion;
-    data.updatedAt = new Date().toISOString();
-    data.lastModified = new Date().toISOString();
+    const newVersion = (persistedState?.version || 1) + 1;
+    mergedData.version = newVersion;
+    mergedData.updatedAt = new Date().toISOString();
+    mergedData.lastModified = new Date().toISOString();
 
-    // 2. Persist directly to MongoDB/Supabase first (Single source of truth)
+    const sanitizedData = sanitizeDeletedRecords(mergedData);
     let writeSucceeded = false;
     
-    // Save to Supabase Storage
     if (supabase) {
       try {
         const bucketName = "POs Files";
         const supabasePath = "db_backup/db.json";
-        const jsonStr = JSON.stringify(data, null, 2);
+        const jsonStr = JSON.stringify(sanitizedData, null, 2);
         const buffer = Buffer.from(jsonStr, "utf-8");
         const { error } = await supabase.storage
           .from(bucketName)
@@ -1464,12 +1619,11 @@ async function saveDb(data: any) {
       }
     }
 
-    // Save to MongoDB Atlas
     if (mongoose.connection.readyState === 1) {
       try {
         await AppState.updateOne(
           { key: "global_state" },
-          { data: data },
+          { data: sanitizedData },
           { upsert: true }
         );
         writeSucceeded = true;
@@ -1478,26 +1632,22 @@ async function saveDb(data: any) {
       }
     }
 
-    // Fallback if both cloud endpoints failed (e.g. offline) - we still allow local file write
     if (!writeSucceeded) {
       structuredLog("update", "WARN", "Could not connect to Supabase or MongoDB Atlas. Writing directly to local fallback storage.");
     }
 
-    // 3. Update memoryDb cache and local file storage AFTER cloud write succeeded
-    memoryDb = data;
+    memoryDb = sanitizedData;
+    addToVersionHistory(sanitizedData);
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+      fs.writeFileSync(DB_FILE, JSON.stringify(sanitizedData, null, 2), "utf-8");
     } catch (err) {
       console.warn("Could not save to local database file:", err);
     }
 
-    // 4. INTEGRITY VERIFICATION (STEP 7)
-    // After every successful write, verify MongoDB/Supabase contains the expected version.
     if (mongoose.connection.readyState === 1) {
       try {
         const verifyDoc = await AppState.findOne({ key: "global_state" });
         if (!verifyDoc || !verifyDoc.data || verifyDoc.data.version !== newVersion) {
-          // Verification failed! Log error, reload cache, return failure
           structuredLog("update", "ERROR", {
             message: "Integrity verification failed! MongoDB does not contain expected version.",
             expectedVersion: newVersion,
@@ -1506,6 +1656,7 @@ async function saveDb(data: any) {
           
           if (verifyDoc && verifyDoc.data) {
             memoryDb = sanitizeDeletedRecords(verifyDoc.data);
+            addToVersionHistory(memoryDb);
             fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
           }
           throw new Error(`Database integrity verification failed: version mismatch. Expected ${newVersion}, got ${verifyDoc?.data?.version}`);
@@ -1518,12 +1669,15 @@ async function saveDb(data: any) {
       }
     }
 
-    // Prevent subsequent reads from Atlas or Supabase for the next 15 seconds to let this write fully propagate
     lastMongoSyncTime = Date.now() + 15000;
   });
 }
 
-async function fetchAndSyncDbFromMongo() {
+async function fetchAndSyncDbFromMongo(force: boolean = false) {
+  const store = requestStore.getStore();
+  const isWriteRequest = store && store.method !== "GET";
+  const shouldForce = force || isWriteRequest;
+
   if (syncInProgress) {
     if (currentSyncPromise) {
       structuredLog("sync", "INFO", "Sync already in progress. Sharing active sync execution.");
@@ -1537,8 +1691,7 @@ async function fetchAndSyncDbFromMongo() {
     try {
       structuredLog("sync", "INFO", "Database synchronization started.");
 
-      // If we synced successfully recently (or wrote to it recently), use local memory cache to avoid unnecessary slow queries
-      if (Date.now() - lastMongoSyncTime < 15000 && memoryDb) {
+      if (!shouldForce && Date.now() - lastMongoSyncTime < 15000 && memoryDb) {
         return getDb();
       }
 
