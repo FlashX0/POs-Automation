@@ -391,6 +391,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: "user" }, // admin or user
   status: { type: String, default: "active" }, // active, blocked, etc.
   allowed_departments: { type: [String], default: [] },
+  isSystem: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 const User = mongoose.model("User", userSchema);
@@ -589,7 +590,8 @@ async function seedAllRequiredUsers() {
             email: adminEmail,
             password: hashedAdmin,
             role: "admin",
-            status: "active"
+            status: "active",
+            isSystem: true
           });
           console.log("[Seeder] Seeded Admin (Khaled) to MongoDB Atlas.");
         } else {
@@ -598,9 +600,13 @@ async function seedAllRequiredUsers() {
             mongoAdminExists.role = "admin";
             mongoChanged = true;
           }
+          if (!(mongoAdminExists as any).isSystem) {
+            (mongoAdminExists as any).isSystem = true;
+            mongoChanged = true;
+          }
           if (mongoChanged) {
             await mongoAdminExists.save();
-            console.log("[Seeder] Updated Admin (Khaled) role to 'admin' in MongoDB Atlas.");
+            console.log("[Seeder] Updated Admin (Khaled) role & isSystem to 'admin' in MongoDB Atlas.");
           }
         }
         
@@ -611,9 +617,16 @@ async function seedAllRequiredUsers() {
             email: userEmail,
             password: hashedUser,
             role: "user",
-            status: "active"
+            status: "active",
+            isSystem: true
           });
           console.log("[Seeder] Seeded standard user to MongoDB Atlas.");
+        } else {
+          if (!(mongoUserExists as any).isSystem) {
+            (mongoUserExists as any).isSystem = true;
+            await mongoUserExists.save();
+            console.log("[Seeder] Updated standard user isSystem in MongoDB Atlas.");
+          }
         }
       } catch (mongoErr: any) {
         console.error("[Seeder] MongoDB user collection seed failed:", mongoErr.message);
@@ -988,6 +1001,7 @@ function ensureLocalUsersSeeded(db: any): boolean {
       password: bcrypt.hashSync("016135", 10),
       role: "admin",
       status: "active",
+      isSystem: true,
       createdAt: new Date().toISOString()
     });
     changed = true;
@@ -1000,10 +1014,14 @@ function ensureLocalUsersSeeded(db: any): boolean {
       adminUser.role = "admin";
       changed = true;
     }
+    if (!adminUser.isSystem) {
+      adminUser.isSystem = true;
+      changed = true;
+    }
   }
 
-  let userExists = db.users.some((u: any) => u.email && u.email.toLowerCase() === userEmail);
-  if (!userExists) {
+  let normalUser = db.users.find((u: any) => u.email && u.email.toLowerCase() === userEmail);
+  if (!normalUser) {
     db.users.push({
       id: "usr_user_1",
       name: "موظف عادي",
@@ -1011,9 +1029,15 @@ function ensureLocalUsersSeeded(db: any): boolean {
       password: bcrypt.hashSync("DeltaUser2026", 10),
       role: "user",
       status: "active",
+      isSystem: true,
       createdAt: new Date().toISOString()
     });
     changed = true;
+  } else {
+    if (!normalUser.isSystem) {
+      normalUser.isSystem = true;
+      changed = true;
+    }
   }
 
   // Deduplicate user IDs to ensure strict uniqueness
@@ -1021,8 +1045,12 @@ function ensureLocalUsersSeeded(db: any): boolean {
   db.users.forEach((u: any, idx: number) => {
     if (u.email && u.email.toLowerCase() === adminEmail) {
       u.id = "c45b9915-e6a3-4c65-81c5-b3206c6f3144";
+      u.isSystem = true;
       seenIds.add(u.id);
       return;
+    }
+    if (u.email && u.email.toLowerCase() === userEmail) {
+      u.isSystem = true;
     }
     if (!u.id || seenIds.has(u.id)) {
       const generatedId = "usr_" + Date.now() + "_" + Math.floor(Math.random() * 1000) + "_" + idx;
@@ -4016,6 +4044,39 @@ app.post("/api/admin/users/update", async (req, res) => {
       return res.status(404).json({ success: false, error: "الموظف غير موجود" });
     }
 
+    let isSystemAccount = false;
+    let originalEmailVal = lowerEmail;
+
+    if (userIndex !== -1) {
+      const existingUser = db.users[userIndex];
+      originalEmailVal = existingUser.email?.toLowerCase().trim() || lowerEmail;
+      if (existingUser.isSystem) {
+        isSystemAccount = true;
+      }
+    }
+
+    const systemEmails = ["khaled@delta.com", "user@delta.com"];
+    if (systemEmails.includes(originalEmailVal)) {
+      isSystemAccount = true;
+    }
+
+    if (isSystemAccount) {
+      if (originalEmailVal === "khaled@delta.com") {
+        if (role && role !== "admin") {
+          return res.status(403).json({
+            success: false,
+            message: "This is a protected system administrator account. Its role cannot be changed."
+          });
+        }
+        if (status && status !== "active") {
+          return res.status(403).json({
+            success: false,
+            message: "This is a protected system administrator account. It cannot be disabled/blocked."
+          });
+        }
+      }
+    }
+
     let lowerNewEmail = "";
     if (newEmail && newEmail.toLowerCase().trim() !== lowerEmail) {
       lowerNewEmail = newEmail.toLowerCase().trim();
@@ -4147,6 +4208,7 @@ app.post("/api/admin/users/update", async (req, res) => {
       if (status) db.users[userIndex].status = status;
       if (hashedPassword) db.users[userIndex].password = hashedPassword;
       if (allowed_departments) db.users[userIndex].allowed_departments = allowed_departments;
+      if (isSystemAccount) db.users[userIndex].isSystem = true;
       await saveDb(db);
     }
 
@@ -4159,6 +4221,7 @@ app.post("/api/admin/users/update", async (req, res) => {
       if (status) updateData.status = status;
       if (hashedPassword) updateData.password = hashedPassword;
       if (allowed_departments) updateData.allowed_departments = allowed_departments;
+      if (isSystemAccount) updateData.isSystem = true;
 
       await User.findOneAndUpdate({ email: lowerEmail }, { $set: updateData });
     }
@@ -4194,6 +4257,36 @@ app.post("/api/admin/users/delete", async (req, res) => {
     if (userToDelete) {
       targetUserId = userToDelete.id;
       userEmailForDeletion = userToDelete.email?.toLowerCase().trim() || lowerEmail;
+      
+      if (userToDelete.isSystem) {
+        return res.status(403).json({
+          success: false,
+          message: "This is a protected system account and cannot be deleted."
+        });
+      }
+    }
+
+    const systemEmails = ["khaled@delta.com", "user@delta.com"];
+    if (userEmailForDeletion && systemEmails.includes(userEmailForDeletion.toLowerCase())) {
+      return res.status(403).json({
+        success: false,
+        message: "This is a protected system account and cannot be deleted."
+      });
+    }
+
+    if (mongoose.connection.readyState === 1) {
+      let mongoUser;
+      if (targetUserId) {
+        mongoUser = await User.findById(targetUserId);
+      } else if (userEmailForDeletion) {
+        mongoUser = await User.findOne({ email: userEmailForDeletion });
+      }
+      if (mongoUser && (mongoUser as any).isSystem) {
+        return res.status(403).json({
+          success: false,
+          message: "This is a protected system account and cannot be deleted."
+        });
+      }
     }
 
     // Delete locally from low db
@@ -5983,6 +6076,62 @@ app.post("/api/engineers/ledger", async (req, res) => {
   }
 });
 
+app.post("/api/engineers/ledger/approve-range", async (req, res) => {
+  try {
+    const { engineerName, startDate, endDate } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (!engineerName) {
+      return res.status(400).json({ success: false, error: "الرجاء اختيار اسم المهندس" });
+    }
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, error: "الرجاء تحديد النطاق الزمني بالكامل" });
+    }
+    
+    let updatedCount = 0;
+    
+    // Update transactions inside db.pettyCashBoxDays
+    if (db.pettyCashBoxDays && Array.isArray(db.pettyCashBoxDays)) {
+      db.pettyCashBoxDays = db.pettyCashBoxDays.map((d: any) => {
+        if (d.engineer === engineerName && d.date >= startDate && d.date <= endDate) {
+          const updatedTransactions = (d.transactions || []).map((t: any) => {
+            if (t.status !== 'approved') {
+              updatedCount++;
+            }
+            return { ...t, status: 'approved' };
+          });
+          return { ...d, transactions: updatedTransactions };
+        }
+        return d;
+      });
+    }
+    
+    // Update transactions inside db.engineerLedgers
+    if (db.engineerLedgers && db.engineerLedgers[engineerName] && Array.isArray(db.engineerLedgers[engineerName])) {
+      db.engineerLedgers[engineerName] = db.engineerLedgers[engineerName].map((d: any) => {
+        if (d.date >= startDate && d.date <= endDate) {
+          const updatedTransactions = (d.transactions || []).map((t: any) => {
+            return { ...t, status: 'approved' };
+          });
+          return { ...d, transactions: updatedTransactions };
+        }
+        return d;
+      });
+    }
+    
+    await saveDb(db);
+    res.json({ 
+      success: true, 
+      message: `تم بنجاح اعتماد وإغلاق حركات العهدة للمهندس (${engineerName}) للفترة من ${startDate} إلى ${endDate}.`,
+      pettyCashBoxDays: db.pettyCashBoxDays 
+    });
+  } catch (err: any) {
+    console.error("Approve ledger range error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post("/api/engineers/ledger/reset", async (req, res) => {
   try {
     const { engineerName } = req.body;
@@ -6068,6 +6217,7 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
       description: finalDescription,
       method: finalMethod,
       project: finalProject,
+      status: 'unapproved',
       attachment: attachment || undefined,
       attachmentName: attachmentName || undefined
     };
@@ -6612,6 +6762,185 @@ Output the results strictly as a JSON object matching the requested schema.`;
   } catch (err: any) {
     console.error("[Excel Analysis] Error parsing or analyzing Excel:", err);
     return res.status(500).json({ success: false, error: err.message || "حدث خطأ أثناء معالجة ملف الإكسيل بالذكاء الاصطناعي." });
+  }
+});
+
+// AI-POWERED CUSTODY EXCEL ANALYSIS ENDPOINT
+app.post("/api/custody/analyze-excel", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "لم يتم تحديد ملف إكسيل للرفع." });
+    }
+
+    const selectedMonth = req.body.selected_month; // Format e.g., "2026-07"
+    if (!selectedMonth) {
+      return res.status(400).json({ success: false, error: "لم يتم تحديد الشهر المستهدف للتحليل." });
+    }
+
+    const engineerName = req.body.engineerName || "";
+
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json(sheet);
+
+    if (rawRows.length === 0) {
+      return res.status(400).json({ success: false, error: "ملف الإكسيل فارغ ولا يحتوي على أي بيانات." });
+    }
+
+    if (!geminiApiKey) {
+      return res.status(500).json({
+        success: false,
+        error: "لم يتم تكوين مفتاح API لجيميني (GEMINI_API_KEY). الرجاء إضافته في الإعدادات لتفعيل الذكاء الاصطناعي."
+      });
+    }
+
+    const db = getDb();
+    const projectsList = db.projects || [];
+
+    const systemInstruction = `You are an expert Construction Auditor and AI Accounting Assistant.
+Analyze the provided raw rows from an uploaded Excel sheet representing custody / box movements.
+Your task is to identify financial transactions (received funds/inflow, spent expenses/outflow), extract them, clean them, and return them strictly according to the specified JSON schema.
+
+For each transaction, extract or determine:
+- date: formatted strictly as YYYY-MM-DD. Estimate based on context, row data, or header info. The returned date MUST fall within the selected target month/year: "${selectedMonth}". For example, if selected month is "2026-07", then all dates must be of format "2026-07-XX".
+- description: clear, concise Arabic statement summarizing what this inflow or outflow was for.
+- inflow: the numeric value of received funds (0 if none or empty).
+- outflow: the numeric value of spent expenses/outflow (0 if none or empty).
+- project: the associated project name. This must be strictly selected from this authorized list: ${JSON.stringify(projectsList)}. If no match is found, use an empty string "" or "عام".
+- method: payment/receipt method (e.g., "نقدي", "انستاباي", "شيك"). Default to "نقدي" if not clear.
+
+Return the entries as a JSON object matching the requested schema. Ensure to filter out any empty rows, title headers, or non-transaction rows.`;
+
+    const textContent = `Analyze and extract transactions from these raw Excel rows.
+Target Month: ${selectedMonth}
+Target Engineer/Person: ${engineerName || "General / عام"}
+Raw Rows Data:
+${JSON.stringify(rawRows.slice(0, 150), null, 2)}
+
+Output the results strictly as a JSON object matching the requested schema.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [{ text: textContent }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            extractedTransactions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  date: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  inflow: { type: Type.NUMBER },
+                  outflow: { type: Type.NUMBER },
+                  project: { type: Type.STRING },
+                  method: { type: Type.STRING }
+                },
+                required: ["date", "description", "inflow", "outflow", "project", "method"]
+              }
+            }
+          },
+          required: ["extractedTransactions"]
+        }
+      }
+    });
+
+    const textResult = response?.text || "{}";
+    const parsedResult = JSON.parse(textResult.trim());
+    const extracted = parsedResult.extractedTransactions || [];
+
+    if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
+    if (!db.engineerLedgers) db.engineerLedgers = {};
+
+    const finalEngineerName = engineerName || "عام";
+
+    for (const tx of extracted) {
+      const inflowVal = parseFloat(tx.inflow) || 0;
+      const outflowVal = parseFloat(tx.outflow) || 0;
+      
+      // Ensure date falls in selected month
+      let dateVal = tx.date || `${selectedMonth}-01`;
+      if (!dateVal.startsWith(selectedMonth)) {
+        // Fallback to selected month
+        const dayPart = dateVal.split('-')[2] || "01";
+        dateVal = `${selectedMonth}-${dayPart.padStart(2, '0')}`;
+      }
+
+      // Final validate date format YYYY-MM-DD
+      const dateParts = dateVal.split('-');
+      if (dateParts.length !== 3 || dateParts[0].length !== 4) {
+        dateVal = `${selectedMonth}-01`;
+      }
+
+      const descVal = (tx.description || "").trim();
+      const methodVal = (tx.method || "نقدي").trim();
+      const projVal = tx.project || "";
+
+      // Only insert if there's actually an inflow or outflow
+      if (inflowVal === 0 && outflowVal === 0) {
+        continue;
+      }
+
+      const newTx = {
+        id: `tx-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        inflow: inflowVal,
+        outflow: outflowVal,
+        description: descVal,
+        method: methodVal,
+        project: projVal,
+        status: 'unapproved'
+      };
+
+      // 1. Update in db.pettyCashBoxDays
+      let dayObj = db.pettyCashBoxDays.find((d: any) => d.date === dateVal && d.engineer === finalEngineerName);
+      if (dayObj) {
+        if (!dayObj.transactions) dayObj.transactions = [];
+        dayObj.transactions.push(newTx);
+      } else {
+        dayObj = {
+          date: dateVal,
+          engineer: finalEngineerName,
+          transactions: [newTx]
+        };
+        db.pettyCashBoxDays.push(dayObj);
+      }
+
+      // 2. Update in db.engineerLedgers[finalEngineerName]
+      if (!db.engineerLedgers[finalEngineerName]) {
+        db.engineerLedgers[finalEngineerName] = [];
+      }
+      let ledgerDayObj = db.engineerLedgers[finalEngineerName].find((d: any) => d.date === dateVal);
+      if (ledgerDayObj) {
+        if (!ledgerDayObj.transactions) ledgerDayObj.transactions = [];
+        ledgerDayObj.transactions.push(newTx);
+      } else {
+        ledgerDayObj = {
+          date: dateVal,
+          transactions: [newTx]
+        };
+        db.engineerLedgers[finalEngineerName].push(ledgerDayObj);
+      }
+    }
+
+    await saveDb(db);
+
+    return res.json({
+      success: true,
+      message: "تم استخراج ومعالجة حركات العهدة وحفظها كمسودات بنجاح!",
+      pettyCashBoxDays: db.pettyCashBoxDays
+    });
+
+  } catch (err: any) {
+    console.error("[Custody Excel AI Analysis] Error:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || "حدث خطأ غير متوقع أثناء معالجة شيت العهدة بالذكاء الاصطناعي."
+    });
   }
 });
 

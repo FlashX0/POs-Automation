@@ -11,6 +11,7 @@ interface Transaction {
   project: string;
   attachment?: string;
   attachmentName?: string;
+  status?: 'unapproved' | 'approved' | 'draft';
 }
 
 interface BoxDay {
@@ -107,6 +108,37 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const [project, setProject] = useState<string>('');
   const [editingStartingBalance, setEditingStartingBalance] = useState<boolean>(false);
   const [startingBalanceInput, setStartingBalanceInput] = useState<string>('0');
+
+  // Date Range Approval Modal States & Helper
+  const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
+  const [approvalStartDate, setApprovalStartDate] = useState<string>('');
+  const [approvalEndDate, setApprovalEndDate] = useState<string>('');
+
+  const getWeekRange = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        return { start: todayStr, end: todayStr };
+      }
+      const day = date.getDay(); // 0 is Sunday, 1 is Monday... 6 is Saturday
+      // Saturday is the start of the week in construction/local projects. Distance from Saturday:
+      const diffToSaturday = day === 6 ? 0 : (day + 1);
+      const start = new Date(date);
+      start.setDate(date.getDate() - diffToSaturday);
+      
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6); // End of week is Friday
+      
+      return {
+        start: start.toISOString().split('T')[0],
+        end: end.toISOString().split('T')[0]
+      };
+    } catch (e) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      return { start: todayStr, end: todayStr };
+    }
+  };
 
   // Sort box days chronologically to compute cumulative balances
   const sortedDays = useMemo(() => {
@@ -303,24 +335,6 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           onSave(finData.pettyCashBoxDays);
         }
       }
-
-      // Fetch specific engineer ledger to make sure they are in sync
-      if (selectedEngineer) {
-        const res = await fetch(`/api/engineers/ledger?engineerName=${encodeURIComponent(selectedEngineer)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.ledgerData) {
-            const otherEngineersBoxDays = boxDays.filter(d => d.engineer !== selectedEngineer);
-            const updated = [...otherEngineersBoxDays, ...data.ledgerData];
-            
-            const currentEngDaysStr = JSON.stringify(boxDays.filter(d => d.engineer === selectedEngineer));
-            const fetchedEngDaysStr = JSON.stringify(data.ledgerData);
-            if (currentEngDaysStr !== fetchedEngDaysStr) {
-              onSave(updated);
-            }
-          }
-        }
-      }
     } catch (err) {
       console.error("Failed to sync daily box movement with DB on change:", err);
     }
@@ -330,38 +344,58 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     syncAndLoadFromDb();
   }, [selectedEngineer, selectedDate]);
 
-  const handleConfirmLedger = async () => {
+  const handleConfirmLedgerRange = async () => {
     if (!selectedEngineer) {
       alert("الرجاء اختيار المهندس أولاً!");
       return;
     }
+    if (!approvalStartDate || !approvalEndDate) {
+      alert("الرجاء تحديد الفترة الزمنية بالكامل!");
+      return;
+    }
+
+    const confirmMsg = `هل أنت متأكد من إغلاق واعتماد كافة حركات العهدة من تاريخ [${approvalStartDate}] إلى تاريخ [${approvalEndDate}]؟ لا يمكن التعديل عليها بعد الاعتماد.`;
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
     setIsSavingLedger(true);
     try {
-      const engineerData = boxDays.filter(d => d.engineer === selectedEngineer);
-      const res = await fetch("/api/engineers/ledger", {
+      const res = await fetch("/api/engineers/ledger/approve-range", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           engineerName: selectedEngineer,
-          ledgerData: engineerData
+          startDate: approvalStartDate,
+          endDate: approvalEndDate
         })
       });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
-          onNotify("success", "تم الاعتماد", "تم تأكيد واعتماد ترحيل العهدة للمهندس بنجاح في قاعدة البيانات!");
+          onSave(data.pettyCashBoxDays);
+          onNotify("success", "تم الاعتماد بالفترة بنجاح ✅", data.message);
+          setShowApprovalModal(false);
         } else {
           onNotify("error", "فشل الاعتماد", data.error || "حدث خطأ");
         }
       } else {
-        onNotify("error", "فشل الاتصال", "فشل الاتصال بالسيرفر لحفظ العهدة");
+        onNotify("error", "فشل الاتصال", "فشل الاتصال بالسيرفر لاعتماد العهدة");
       }
     } catch (err) {
       console.error(err);
-      onNotify("error", "خطأ", "حدث خطأ غير متوقع أثناء ترحيل العهدة");
+      onNotify("error", "خطأ", "حدث خطأ غير متوقع أثناء اعتماد العهدة");
     } finally {
       setIsSavingLedger(false);
     }
+  };
+
+  const handleConfirmLedger = async () => {
+    // Legacy fallback, opens the modal now
+    const range = getWeekRange(selectedDate);
+    setApprovalStartDate(range.start);
+    setApprovalEndDate(range.end);
+    setShowApprovalModal(true);
   };
 
   const handleResetLedger = async () => {
@@ -657,6 +691,67 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
 
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [isProcessingCustodyExcel, setIsProcessingCustodyExcel] = useState<boolean>(false);
+  const custodyExcelInputRef = useRef<HTMLInputElement>(null);
+
+  const generateMonthsList = () => {
+    const list = [];
+    const currentDate = new Date();
+    for (let i = -12; i <= 6; i++) {
+      const d = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const formatter = new Intl.DateTimeFormat('ar-EG', { month: 'long', year: 'numeric' });
+      const label = formatter.format(d);
+      list.push({ value, label });
+    }
+    return list;
+  };
+
+  const handleCustodyExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!selectedMonth) {
+      onNotify('error', 'خطأ', 'الرجاء تحديد الشهر المستهدف أولاً!');
+      return;
+    }
+
+    setIsProcessingCustodyExcel(true);
+    onNotify('info', 'جاري معالجة الإكسيل 🤖', 'يتم قراءة ملف الإكسيل واستخراج حركات العهد وتصنيفها كمسودات بالذكاء الاصطناعي...');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('selected_month', selectedMonth);
+    formData.append('engineerName', selectedEngineer);
+
+    try {
+      const res = await fetch('/api/custody/analyze-excel', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          onSave(data.pettyCashBoxDays);
+          onNotify('success', 'نجاح الاستيراد 🎉', data.message || 'تم استيراد وحفظ حركات شيت العهدة بنجاح كمسودات!');
+        } else {
+          onNotify('error', 'فشل الاستيراد', data.error || 'حدث خطأ أثناء معالجة ملف الإكسيل.');
+        }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        onNotify('error', 'فشل الاستيراد', data?.error || 'فشل الاتصال بالخادم لاستيراد شيت العهدة.');
+      }
+    } catch (err: any) {
+      console.error("[Custody Excel AI] Error during upload:", err);
+      onNotify('error', 'خطأ', 'حدث خطأ غير متوقع أثناء معالجة ملف الإكسيل.');
+    } finally {
+      setIsProcessingCustodyExcel(false);
+      if (custodyExcelInputRef.current) custodyExcelInputRef.current.value = '';
+    }
+  };
+
   const refreshFinancialsFromServer = async () => {
     try {
       const res = await fetch('/api/financial-data');
@@ -927,6 +1022,42 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Custody Excel AI Analysis */}
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl no-print">
+              <span className="text-[10px] text-slate-400 font-bold">شهر الاستيراد:</span>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-slate-900 text-white text-xs font-bold rounded-lg border-0 focus:ring-1 focus:ring-emerald-500 py-1 px-2.5 outline-none cursor-pointer"
+              >
+                <option value="">-- اختر الشهر --</option>
+                {generateMonthsList().map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+              
+              <button
+                onClick={() => custodyExcelInputRef.current?.click()}
+                disabled={!selectedMonth || isProcessingCustodyExcel}
+                className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  !selectedMonth 
+                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                }`}
+              >
+                <Upload className={`w-3.5 h-3.5 ${isProcessingCustodyExcel ? 'animate-spin' : ''}`} />
+                <span>{isProcessingCustodyExcel ? 'جاري الاستيراد...' : 'استيراد إكسيل بالـ AI 🤖'}</span>
+              </button>
+              
+              <input
+                type="file"
+                ref={custodyExcelInputRef}
+                accept=".xlsx, .xls"
+                onChange={handleCustodyExcelUpload}
+                className="hidden"
+              />
+            </div>
+
             <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl no-print">
               <span className="text-[10px] text-slate-400 font-bold">نمط تنسيق الطباعة:</span>
               <select
@@ -1428,13 +1559,14 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                   <th className="pb-3 text-center">دائن (-)</th>
                   <th className="pb-3 pr-2">المشروع</th>
                   <th className="pb-3 pr-2">المرفق</th>
+                  <th className="pb-3 text-center">الحالة</th>
                   <th className="pb-3 text-center">إجراء</th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-xs text-slate-500 font-bold">
+                    <td colSpan={8} className="text-center py-8 text-xs text-slate-500 font-bold">
                       لا توجد حركات مسجلة لهذا اليوم. يرجى إضافة حركة جديدة من النموذج الجانبي.
                     </td>
                   </tr>
@@ -1476,13 +1608,26 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                         )}
                       </td>
                       <td className="py-3.5 text-center">
-                        <button
-                          onClick={() => handleDeleteTransaction(tx.id)}
-                          className="text-rose-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 cursor-pointer"
-                          title="حذف الحركة"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                          tx.status === 'approved'
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        }`}>
+                          {tx.status === 'approved' ? 'معتمد ✅' : 'مسودة ⏳'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 text-center">
+                        {tx.status === 'approved' ? (
+                          <span className="text-slate-500 font-bold" title="لا يمكن حذف الحركات المعتمدة">🔒</span>
+                        ) : (
+                          <button
+                            onClick={() => handleDeleteTransaction(tx.id)}
+                            className="text-rose-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 cursor-pointer"
+                            title="حذف الحركة"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -1518,6 +1663,88 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 2️⃣ Date Range Approval Modal */}
+      {showApprovalModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 no-print animate-in fade-in duration-200">
+          <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden text-right" dir="rtl">
+            {/* Modal Header */}
+            <div className="bg-slate-900/60 px-6 py-4 border-b border-slate-800 flex justify-between items-center flex-row-reverse">
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="text-slate-400 hover:text-white transition-colors text-base font-bold"
+              >
+                ✕
+              </button>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <CheckCircle className="text-amber-500 w-5 h-5" />
+                <span>اعتماد وترحيل العهدة بفترة زمنية 📆</span>
+              </h3>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex gap-3 text-right">
+                <AlertCircle className="text-amber-400 w-5 h-5 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-amber-400">تنبيه هام وتأكيد صارم</h4>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    سيتم إغلاق واعتماد كافة حركات العهدة للمهندس <span className="font-bold text-white">({selectedEngineer || 'عام'})</span> في الفترة المحددة أدناه. لا يمكن تعديل أو حذف أي حركة بعد اعتمادها وتأكيد ترحيلها النهائي.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 block">من تاريخ:</label>
+                  <input
+                    type="date"
+                    value={approvalStartDate}
+                    onChange={(e) => setApprovalStartDate(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 block">إلى تاريخ:</label>
+                  <input
+                    type="date"
+                    value={approvalEndDate}
+                    onChange={(e) => setApprovalEndDate(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-900/60 border-t border-slate-800 flex justify-end gap-3">
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+              >
+                إلغاء ✕
+              </button>
+              <button
+                onClick={handleConfirmLedgerRange}
+                disabled={isSavingLedger}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-800 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
+              >
+                {isSavingLedger ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>جاري الترحيل...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>تأكيد الترحيل النهائي 🚀</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
