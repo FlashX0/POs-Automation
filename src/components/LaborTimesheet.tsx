@@ -124,6 +124,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   // Navigation tabs state
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [printBorderThickness, setPrintBorderThickness] = useState<'light' | 'sharp'>('sharp');
   const [printFixPageBreak, setPrintFixPageBreak] = useState<boolean>(true);
 
@@ -622,6 +623,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
         `هل أنت متأكد من حذف كشف حضور العامل "${selectedSheet.workerName}" نهائياً من السيستم؟`
       )
     ) {
+      setIsDeleting(true);
       try {
         const res = await fetch('/api/labor-timesheets/delete', {
           method: 'POST',
@@ -631,13 +633,12 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
+            // Update local state immediately before refetching
+            const updated = timesheets.filter((ts) => ts.id !== selectedSheetId);
+            onSave(updated);
+            setSelectedSheetId(updated[0]?.id || '');
             if (onRefresh) {
               onRefresh();
-              setSelectedSheetId('');
-            } else {
-              const updated = timesheets.filter((ts) => ts.id !== selectedSheetId);
-              onSave(updated);
-              setSelectedSheetId(updated[0]?.id || '');
             }
           } else {
             alert(`فشل حذف الكشف: ${data.error || 'خطأ غير معروف'}`);
@@ -648,6 +649,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
       } catch (err) {
         console.error('Error deleting labor timesheet:', err);
         alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف الكشف.');
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -1401,7 +1404,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                 <button
                   type="button"
                   onClick={handleDeleteTimesheet}
-                  className="border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 p-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  disabled={isDeleting}
+                  className={`border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 p-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
                   title="حذف الكشف بالكامل"
                 >
                   <Trash2 className="w-4 h-4" />

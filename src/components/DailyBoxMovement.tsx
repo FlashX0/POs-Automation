@@ -367,11 +367,11 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
         const data = await res.json();
         if (data.success) {
           onNotify("success", "تم التصفير والبدء على مياه بيضاء", "تم تصفير وإعادة تعيين الحركات للمهندس بنجاح!");
+          // Update local state immediately before doing any refetching
+          const updated = boxDays.filter(d => d.engineer !== selectedEngineer);
+          onSave(updated);
           if (onResetSuccess) {
             onResetSuccess();
-          } else {
-            const updated = boxDays.filter(d => d.engineer !== selectedEngineer);
-            onSave(updated);
           }
         } else {
           onNotify("error", "فشل التصفير", data.error || "حدث خطأ");

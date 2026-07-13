@@ -53,6 +53,7 @@ interface CostAnalysisProps {
   engineers?: { id: string; name: string; project: string }[];
   boxDays?: any[];
   onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
+  onRefresh?: () => void;
 }
 
 export const CostAnalysis: React.FC<CostAnalysisProps> = ({
@@ -62,7 +63,8 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   onSave,
   engineers = [],
   boxDays = [],
-  onNotify
+  onNotify,
+  onRefresh
 }) => {
   // Input Form States
   const [selectedProject, setSelectedProject] = useState<string>(projectsList[0] || 'الساحل');
@@ -87,6 +89,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   // AI aggregation state
   const [isAggregating, setIsAggregating] = useState<boolean>(false);
@@ -462,6 +465,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   // Delete cost entry
   const handleDeleteEntry = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا القيد التحليلي؟')) {
+      setIsDeleting(true);
       try {
         // Direct Supabase Hard Delete
         const supabase = await getSupabaseClient();
@@ -480,6 +484,9 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           if (data.success) {
             const updated = entries.filter(item => item.id !== id);
             onSave(updated, categories);
+            if (onRefresh) {
+              onRefresh();
+            }
           } else {
             alert(`فشل حذف القيد التحليلي: ${data.error || 'خطأ غير معروف'}`);
           }
@@ -489,6 +496,8 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
       } catch (err) {
         console.error('Error deleting cost analysis entry:', err);
         alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف القيد التحليلي.');
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -1583,7 +1592,8 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
                         </button>
                         <button
                           onClick={() => handleDeleteEntry(item.id)}
-                          className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
+                          disabled={isDeleting}
+                          className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           title="حذف بند التحليل"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

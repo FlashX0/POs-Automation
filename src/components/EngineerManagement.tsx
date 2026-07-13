@@ -65,6 +65,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
   const [project, setProject] = useState('');
   const [code, setCode] = useState('');
   const [initialBalance, setInitialBalance] = useState<string>('0');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Files in folder states
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -257,6 +258,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
 
   const handleDelete = async (id: string, engName: string) => {
     if (window.confirm(`هل أنت متأكد من حذف المهندس "${engName}" وكل سجلاته؟`)) {
+      setIsDeleting(true);
       try {
         const res = await fetch('/api/engineers/delete', {
           method: 'POST',
@@ -266,11 +268,11 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
+            // Update local state immediately before doing any refetching
+            const updated = engineers.filter(eng => eng.id !== id);
+            onSave(updated);
             if (onRefresh) {
               onRefresh();
-            } else {
-              const updated = engineers.filter(eng => eng.id !== id);
-              onSave(updated);
             }
           } else {
             alert(`فشل حذف المهندس: ${data.error || 'خطأ غير معروف'}`);
@@ -281,6 +283,8 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
       } catch (err) {
         console.error('Error deleting engineer:', err);
         alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المهندس.');
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -536,15 +540,17 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                       <div className="flex gap-2.5 pt-2">
                         <button
                           type="submit"
-                          className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                          disabled={isDeleting}
+                          className={`flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           <Check className="w-4 h-4" />
-                          <span>حفظ البيانات</span>
+                          <span>{isDeleting ? 'جاري الحذف...' : 'حفظ البيانات'}</span>
                         </button>
                         <button
                           type="button"
                           onClick={handleResetForm}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-700"
+                          disabled={isDeleting}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           إلغاء
                         </button>
@@ -628,14 +634,16 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                               <div className="flex items-center justify-center gap-2">
                                 <button
                                   onClick={() => handleStartEdit(eng)}
-                                  className="text-indigo-400 hover:text-indigo-300 p-1.5 rounded hover:bg-indigo-500/10 cursor-pointer transition-all"
+                                  disabled={isDeleting}
+                                  className="text-indigo-400 hover:text-indigo-300 p-1.5 rounded hover:bg-indigo-500/10 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                   title="تعديل البيانات"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => handleDelete(eng.id, eng.name)}
-                                  className="text-rose-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 cursor-pointer transition-all"
+                                  disabled={isDeleting}
+                                  className="text-rose-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                   title="حذف المهندس"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />

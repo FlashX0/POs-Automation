@@ -2462,7 +2462,7 @@ app.post("/api/projects/delete", async (req, res) => {
       }
     }
     
-    saveDb(db);
+    await saveDb(db);
     
     // Delete in MongoDB if connected
     if (mongoose.connection.readyState === 1) {
@@ -2588,7 +2588,7 @@ app.post("/api/suppliers/delete", async (req, res) => {
       }
     }
     
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, suppliers: db.suppliers });
   } catch (error: any) {
     console.error("Delete supplier error:", error);
@@ -3830,7 +3830,7 @@ app.post("/api/admin/users/delete", async (req, res) => {
     } else if (userEmailForDeletion) {
       db.users = db.users.filter((u: any) => u.email.toLowerCase() !== userEmailForDeletion.toLowerCase());
     }
-    saveDb(db);
+    await saveDb(db);
 
     // Delete from MongoDB
     if (mongoose.connection.readyState === 1) {
@@ -3968,8 +3968,12 @@ app.post("/api/admin/reset", async (req, res) => {
     db.engineerLedgers = {};
     db.archives = [];
     db.engineers = [];
+    db.deletedEngineerIds = [];
+    db.deletedSubcontractorIds = [];
+    db.deletedLaborTimesheetIds = [];
+    db.deletedCostAnalysisIds = [];
     
-    saveDb(db);
+    await saveDb(db);
 
     // Hard delete from live Supabase tables to keep them fully synced
     const supabase = getSupabaseAdminClient() || getSupabaseClient();
@@ -4295,7 +4299,7 @@ app.post("/api/admin/devices/delete", async (req, res) => {
       if (db.deleted_devices) {
         db.deleted_devices = db.deleted_devices.filter((f: string) => f !== fingerprint);
       }
-      saveDb(db);
+      await saveDb(db);
       deleted = true;
     } catch (e) {
       console.error("[Device Auth] Local JSON DB delete error:", e);
@@ -5038,7 +5042,7 @@ app.post("/api/notifications/clear", async (req, res) => {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
     db.notifications = [];
-    saveDb(db);
+    await saveDb(db);
     res.json({ success: true, notifications: [] });
   } catch (error: any) {
     console.error("Clear notifications error:", error);
@@ -5240,7 +5244,7 @@ app.delete("/api/comparisons/:id", async (req, res) => {
 
     const { id } = req.params;
     db.quotation_comparisons = db.quotation_comparisons.filter((c: any) => c.id !== id);
-    saveDb(db);
+    await saveDb(db);
 
     res.json({ success: true, message: "تم حذف المقارنة بنجاح" });
   } catch (error: any) {
@@ -5277,6 +5281,12 @@ app.post("/api/engineers/delete", async (req, res) => {
     if (db.pettyCashBoxDays) {
       db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => d.engineer !== name);
     }
+
+    // 4. Track deleted engineers to prevent stale client-side states from restoring them
+    db.deletedEngineerIds = db.deletedEngineerIds || [];
+    if (id && !db.deletedEngineerIds.includes(id)) {
+      db.deletedEngineerIds.push(id);
+    }
     
     await saveDb(db);
     
@@ -5307,6 +5317,12 @@ app.post("/api/subcontractors/delete", async (req, res) => {
     if (db.subcontractorContracts) {
       db.subcontractorContracts = db.subcontractorContracts.filter((c: any) => c.id !== id);
     }
+
+    // Track deleted subcontractors to prevent stale client-side states from restoring them
+    db.deletedSubcontractorIds = db.deletedSubcontractorIds || [];
+    if (id && !db.deletedSubcontractorIds.includes(id)) {
+      db.deletedSubcontractorIds.push(id);
+    }
     
     await saveDb(db);
     
@@ -5336,6 +5352,12 @@ app.post("/api/labor-timesheets/delete", async (req, res) => {
     if (db.laborTimesheets) {
       db.laborTimesheets = db.laborTimesheets.filter((ts: any) => ts.id !== id);
     }
+
+    // Track deleted labor timesheets to prevent stale client-side states from restoring them
+    db.deletedLaborTimesheetIds = db.deletedLaborTimesheetIds || [];
+    if (id && !db.deletedLaborTimesheetIds.includes(id)) {
+      db.deletedLaborTimesheetIds.push(id);
+    }
     
     await saveDb(db);
     
@@ -5364,6 +5386,12 @@ app.post("/api/cost-analysis/delete", async (req, res) => {
     
     if (db.costAnalysisEntries) {
       db.costAnalysisEntries = db.costAnalysisEntries.filter((item: any) => item.id !== id);
+    }
+
+    // Track deleted cost analysis entries to prevent stale client-side states from restoring them
+    db.deletedCostAnalysisIds = db.deletedCostAnalysisIds || [];
+    if (id && !db.deletedCostAnalysisIds.includes(id)) {
+      db.deletedCostAnalysisIds.push(id);
     }
     
     await saveDb(db);
@@ -5411,15 +5439,29 @@ app.post("/api/financial-data/update", async (req, res) => {
     const { pettyCashBoxDays, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives, engineers } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
+    // Load deleted entities lists to prevent restoration of deleted items
+    db.deletedEngineerIds = db.deletedEngineerIds || [];
+    db.deletedSubcontractorIds = db.deletedSubcontractorIds || [];
+    db.deletedLaborTimesheetIds = db.deletedLaborTimesheetIds || [];
+    db.deletedCostAnalysisIds = db.deletedCostAnalysisIds || [];
     
     if (pettyCashBoxDays !== undefined) db.pettyCashBoxDays = pettyCashBoxDays;
-    if (subcontractorContracts !== undefined) db.subcontractorContracts = subcontractorContracts;
-    if (laborTimesheets !== undefined) db.laborTimesheets = laborTimesheets;
-    if (costAnalysisEntries !== undefined) db.costAnalysisEntries = costAnalysisEntries;
+    if (subcontractorContracts !== undefined) {
+      db.subcontractorContracts = subcontractorContracts.filter((c: any) => !db.deletedSubcontractorIds.includes(c.id));
+    }
+    if (laborTimesheets !== undefined) {
+      db.laborTimesheets = laborTimesheets.filter((ts: any) => !db.deletedLaborTimesheetIds.includes(ts.id));
+    }
+    if (costAnalysisEntries !== undefined) {
+      db.costAnalysisEntries = costAnalysisEntries.filter((item: any) => !db.deletedCostAnalysisIds.includes(item.id));
+    }
     if (costAnalysisCategories !== undefined) db.costAnalysisCategories = costAnalysisCategories;
     if (pendingTransactions !== undefined) db.pendingTransactions = pendingTransactions;
     if (archives !== undefined) db.archives = archives;
-    if (engineers !== undefined) db.engineers = engineers;
+    if (engineers !== undefined) {
+      db.engineers = engineers.filter((eng: any) => !db.deletedEngineerIds.includes(eng.id));
+    }
     
     await saveDb(db);
     res.json({ success: true, message: "تم حفظ البيانات المالية المحاسبية بنجاح" });

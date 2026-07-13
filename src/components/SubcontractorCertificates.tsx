@@ -60,6 +60,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 }) => {
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const handleSubcontractorOCR = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -491,6 +492,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   const handleDeleteContractDirect = async () => {
     if (!selectedContractId) return;
     if (confirm('هل أنت متأكد من رغبتك في حذف هذا المستخلص بالكامل؟')) {
+      setIsDeleting(true);
       try {
         const res = await fetch('/api/subcontractors/delete', {
           method: 'POST',
@@ -500,13 +502,12 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
+            // Update local state immediately
+            const updated = contracts.filter((c) => c.id !== selectedContractId);
+            onSave(updated);
+            setSelectedContractId(updated[0]?.id || '');
             if (onRefresh) {
               onRefresh();
-              setSelectedContractId('');
-            } else {
-              const updated = contracts.filter((c) => c.id !== selectedContractId);
-              onSave(updated);
-              setSelectedContractId(updated[0]?.id || '');
             }
           } else {
             alert(`فشل حذف المستخلص: ${data.error || 'خطأ غير معروف'}`);
@@ -517,6 +518,8 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
       } catch (err) {
         console.error('Error deleting subcontractor contract:', err);
         alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المستخلص.');
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -1088,7 +1091,8 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                 <button
                   type="button"
                   onClick={handleDeleteContractDirect}
-                  className="border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 p-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  disabled={isDeleting}
+                  className={`border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 p-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
                   title="حذف هذا العقد بالكامل"
                 >
                   <Trash2 className="w-4 h-4" />
