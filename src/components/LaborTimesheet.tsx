@@ -56,6 +56,7 @@ interface LaborTimesheetProps {
   archives?: any[];
   onUpdateArchives?: (updatedArchives: any[]) => void;
   onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
+  onRefresh?: () => void;
 }
 
 // Utility to convert column index to Excel letter (A, B, C... AA, AB...)
@@ -110,6 +111,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   archives = [],
   onUpdateArchives,
   onNotify,
+  onRefresh,
 }) => {
   const formatCurrency = (val: number): string => {
     if (val < 0) {
@@ -621,13 +623,6 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
       )
     ) {
       try {
-        // Direct Supabase Hard Delete
-        const supabase = await getSupabaseClient();
-        if (supabase) {
-          const { error: sbErr } = await supabase.from('labor_timesheets').delete().eq('id', selectedSheetId);
-          if (sbErr) console.error('خطأ في حذف الكشف من السيرفر:', sbErr.message);
-        }
-
         const res = await fetch('/api/labor-timesheets/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -636,9 +631,14 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
-            const updated = timesheets.filter((ts) => ts.id !== selectedSheetId);
-            onSave(updated);
-            setSelectedSheetId(updated[0]?.id || '');
+            if (onRefresh) {
+              onRefresh();
+              setSelectedSheetId('');
+            } else {
+              const updated = timesheets.filter((ts) => ts.id !== selectedSheetId);
+              onSave(updated);
+              setSelectedSheetId(updated[0]?.id || '');
+            }
           } else {
             alert(`فشل حذف الكشف: ${data.error || 'خطأ غير معروف'}`);
           }

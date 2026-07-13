@@ -45,6 +45,7 @@ interface SubcontractorCertificatesProps {
   onUpdateArchives?: (updatedArchives: any[]) => void;
   onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
   engineers?: any[];
+  onRefresh?: () => void;
 }
 
 export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps> = ({
@@ -55,6 +56,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   onUpdateArchives,
   onNotify,
   engineers = [],
+  onRefresh,
 }) => {
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
@@ -490,13 +492,6 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
     if (!selectedContractId) return;
     if (confirm('هل أنت متأكد من رغبتك في حذف هذا المستخلص بالكامل؟')) {
       try {
-        // Direct Supabase Hard Delete
-        const supabase = await getSupabaseClient();
-        if (supabase) {
-          const { error: sbErr } = await supabase.from('subcontractor_contracts').delete().eq('id', selectedContractId);
-          if (sbErr) console.error('خطأ في حذف المستخلص من السيرفر:', sbErr.message);
-        }
-
         const res = await fetch('/api/subcontractors/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -505,9 +500,14 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
-            const updated = contracts.filter((c) => c.id !== selectedContractId);
-            onSave(updated);
-            setSelectedContractId(updated[0]?.id || '');
+            if (onRefresh) {
+              onRefresh();
+              setSelectedContractId('');
+            } else {
+              const updated = contracts.filter((c) => c.id !== selectedContractId);
+              onSave(updated);
+              setSelectedContractId(updated[0]?.id || '');
+            }
           } else {
             alert(`فشل حذف المستخلص: ${data.error || 'خطأ غير معروف'}`);
           }

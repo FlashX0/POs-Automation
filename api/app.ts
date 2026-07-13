@@ -3959,7 +3959,7 @@ app.post("/api/admin/reset", async (req, res) => {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
     
-    // Clear financial modules only (keep users and metadata intact)
+    // Clear financial modules and engineers (keep users and metadata intact)
     db.pettyCashBoxDays = [];
     db.subcontractorContracts = [];
     db.laborTimesheets = [];
@@ -3967,9 +3967,25 @@ app.post("/api/admin/reset", async (req, res) => {
     db.pendingTransactions = [];
     db.engineerLedgers = {};
     db.archives = [];
+    db.engineers = [];
     
     saveDb(db);
-    return res.json({ success: true, message: "تمت إعادة تعيين قاعدة البيانات بنجاح" });
+
+    // Hard delete from live Supabase tables to keep them fully synced
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('petty_cash_box_days').delete().neq('id', 'placeholder_force_delete_all');
+        await supabase.from('subcontractor_contracts').delete().neq('id', 'placeholder_force_delete_all');
+        await supabase.from('labor_timesheets').delete().neq('id', 'placeholder_force_delete_all');
+        await supabase.from('cost_analysis_entries').delete().neq('id', 'placeholder_force_delete_all');
+        await supabase.from('engineers').delete().neq('id', 'placeholder_force_delete_all');
+      } catch (sbErr: any) {
+        console.warn("[Admin Reset] Direct Supabase tables delete bypassed or failed:", sbErr.message);
+      }
+    }
+    
+    return res.json({ success: true, message: "تمت إعادة تعيين قاعدة البيانات والمسح نهائياً من السيرفر بنجاح" });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }

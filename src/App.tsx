@@ -514,109 +514,15 @@ export default function App() {
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState<boolean>(false);
 
   // --- Integrated Financial & Accounting States & Defaults ---
-  const [engineers, setEngineers] = useState<any[]>([
-    { id: 'eng-1', name: 'م. أحمد علي', phone: '01012345678', project: 'June - Main Gate', code: 'ENG-101' },
-    { id: 'eng-2', name: 'م. عمرو حسن', phone: '01123456789', project: 'Al Burouj - Sitewide', code: 'ENG-102' },
-    { id: 'eng-3', name: 'م. مصطفى محمود', phone: '01234567890', project: 'EDNC', code: 'ENG-103' }
-  ]);
+  const [engineers, setEngineers] = useState<any[]>([]);
 
-  const [pettyCashBoxDays, setPettyCashBoxDays] = useState<any[]>([
-    {
-      date: '2026-06-23',
-      startingBalanceOverride: -177656,
-      transactions: [
-        {
-          id: 'tx-1',
-          inflow: 3000,
-          outflow: 0,
-          description: 'تحويل من استاذ احمد فتح الله',
-          method: 'انستاباي',
-          project: 'June - Main Gate'
-        }
-      ]
-    },
-    {
-      date: '2026-06-24',
-      transactions: [
-        {
-          id: 'tx-2',
-          inflow: 0,
-          outflow: 2000,
-          description: 'دفعة عمال شاهر',
-          method: 'نقدي',
-          project: 'Al Burouj - Sitewide'
-        }
-      ]
-    }
-  ]);
+  const [pettyCashBoxDays, setPettyCashBoxDays] = useState<any[]>([]);
 
-  const [subcontractorContracts, setSubcontractorContracts] = useState<any[]>([
-    {
-      id: 'sub-con-1',
-      subcontractor: 'صنايعي الاستبنج',
-      project: 'June - Main Gate',
-      statementNo: '01',
-      supervisor: 'م. محمد حمدي',
-      accountant: 'أ. محمد إبراهيم',
-      items: [
-        {
-          id: 'work-item-1',
-          date: '2026-06-25',
-          description: 'عامل تشوين وتجهيز الاعمال',
-          unit: 'يومية',
-          rate: 500,
-          previousQty: 0,
-          currentQty: 8,
-          completionPercent: 100
-        }
-      ],
-      payments: [
-        {
-          id: 'pay-1',
-          date: '2026-06-25',
-          description: 'دفعه محمد سعيد',
-          amount: 3000
-        },
-        {
-          id: 'pay-2',
-          date: '2026-06-25',
-          description: 'دفعه محمد سعيد',
-          amount: 2000
-        }
-      ]
-    }
-  ]);
+  const [subcontractorContracts, setSubcontractorContracts] = useState<any[]>([]);
 
-  const [laborTimesheets, setLaborTimesheets] = useState<any[]>([
-    {
-      id: 'timesheet-1',
-      workerName: 'شاهر',
-      startDate: '2026-06-24',
-      endDate: '2026-06-30',
-      previousTotal: 19030,
-      previousPaid: 0,
-      previousRemaining: 19030,
-      currentPaid: 8000,
-      dailyRate: 300,
-      overtimeRate: 300,
-      sohraRate: 45,
-      days: [
-        { dayName: 'الأربعاء', date: '2026-06-24', dailySahel: 2, dailyBurouj: 4, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 7, sohraHyde: 0 },
-        { dayName: 'الخميس', date: '2026-06-25', dailySahel: 2, dailyBurouj: 4, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 28, sohraHyde: 0 },
-        { dayName: 'الجمعة', date: '2026-06-26', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 0, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 2, sohraBurouj: 2, sohraHyde: 0 },
-        { dayName: 'السبت', date: '2026-06-27', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 2, sohraHyde: 0 },
-        { dayName: 'الأحد', date: '2026-06-28', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 2, sohraHyde: 0 },
-        { dayName: 'الإثنين', date: '2026-06-29', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 2, sohraHyde: 0 },
-        { dayName: 'الثلاثاء', date: '2026-06-30', dailySahel: 2, dailyBurouj: 1, dailyHyde: 0, overtimeSahel: 2, overtimeBurouj: 0, overtimeHyde: 0, sohraSahel: 0, sohraBurouj: 2, sohraHyde: 0 }
-      ]
-    }
-  ]);
+  const [laborTimesheets, setLaborTimesheets] = useState<any[]>([]);
 
-  const [costAnalysisEntries, setCostAnalysisEntries] = useState<any[]>([
-    { id: 'cost-1', project: 'June - Main Gate', category: 'بوفيه وضيافة', amount: 1500, date: '2026-06-25', description: 'ضيافة وفد استشاري بالموقع' },
-    { id: 'cost-2', project: 'June - Main Gate', category: 'حديد تسليح', amount: 45000, date: '2026-06-26', description: 'شراء أسياخ حديد تكميلية' },
-    { id: 'cost-3', project: 'Al Burouj - Sitewide', category: 'مواد تشغيل', amount: 8000, date: '2026-06-27', description: 'ديزل وزيوت تشغيل اللودر' }
-  ]);
+  const [costAnalysisEntries, setCostAnalysisEntries] = useState<any[]>([]);
   const [costAnalysisCategories, setCostAnalysisCategories] = useState<string[]>([
     'مواد تشغيل', 'بوفيه وضيافة', 'منتجات أسمنتية', 'حديد تسليح', 'أدوات ومهمات'
   ]);
@@ -723,11 +629,7 @@ export default function App() {
   };
 
   // Petty Cash States (Keep legacy if needed to avoid syntax errors)
-  const [pettyCashRecords, setPettyCashRecords] = useState<any[]>([
-    { id: 'pc-1', project: 'مشروع طريق الملك سلمان', engineer: 'م. أحمد الحربي', amount: 4500, category: 'أجور عمالة', date: '2026-07-01', description: 'أجور عمالة يومية إضافية لأعمال الردم', status: 'Approved' },
-    { id: 'pc-2', project: 'مشروع ازدواج طريق الخرج', engineer: 'م. خالد الدوسري', amount: 1200, category: 'مواد بناء طارئة', date: '2026-07-03', description: 'شراء كابلات وخامات كهربائية عاجلة', status: 'Pending' },
-    { id: 'pc-3', project: 'مشروع صيانة طريق القصيم', engineer: 'م. فهد العتيبي', amount: 850, category: 'نقل ومحروقات', date: '2026-07-05', description: 'تعبئة ديزل للمعدات الثقيلة والمولدات', status: 'Approved' }
-  ]);
+  const [pettyCashRecords, setPettyCashRecords] = useState<any[]>([]);
   const [newPcProject, setNewPcProject] = useState('');
   const [newPcEngineer, setNewPcEngineer] = useState('');
   const [newPcAmount, setNewPcAmount] = useState('');
@@ -736,11 +638,7 @@ export default function App() {
   const [newPcDescription, setNewPcDescription] = useState('');
 
   // Subcontractor Progress Certificates States
-  const [subcontractorCertificates, setSubcontractorCertificates] = useState<any[]>([
-    { id: 'sub-1', subcontractor: 'شركة أساسات نجد للمقاولات', contractNo: 'DRC-2026-042', project: 'مشروع طريق الملك سلمان', statementNo: '03', contractValue: 250000, previousWork: 45, currentWork: 20, deductions: 5000, retentionPercent: 10, status: 'Approved' },
-    { id: 'sub-2', subcontractor: 'مؤسسة الرياض لتمهيد الطرق', contractNo: 'DRC-2026-015', project: 'مشروع ازدواج طريق الخرج', statementNo: '01', contractValue: 180000, previousWork: 0, currentWork: 35, deductions: 0, retentionPercent: 10, status: 'Pending' },
-    { id: 'sub-3', subcontractor: 'الشركة العربية للخرسانة الجاهزة', contractNo: 'DRC-2026-088', project: 'مشروع صيانة طريق القصيم', statementNo: '05', contractValue: 420000, previousWork: 60, currentWork: 15, deductions: 12000, retentionPercent: 10, status: 'Approved' }
-  ]);
+  const [subcontractorCertificates, setSubcontractorCertificates] = useState<any[]>([]);
   const [newCertSubcontractor, setNewCertSubcontractor] = useState('');
   const [newCertContractNo, setNewCertContractNo] = useState('');
   const [newCertProject, setNewCertProject] = useState('');
@@ -7173,6 +7071,7 @@ export default function App() {
           onUpdateArchives={updateArchives}
           onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
           engineers={engineers}
+          onRefresh={refetchFinancialData}
         />
       </main>
     )}
@@ -7187,6 +7086,7 @@ export default function App() {
           archives={archives}
           onUpdateArchives={updateArchives}
           onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
+          onRefresh={refetchFinancialData}
         />
       </main>
     )}
@@ -7202,6 +7102,7 @@ export default function App() {
           engineers={engineers}
           boxDays={pettyCashBoxDays}
           onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
+          onRefresh={refetchFinancialData}
         />
       </main>
     )}
@@ -7213,6 +7114,7 @@ export default function App() {
           engineers={engineers}
           projectsList={projectsList}
           boxDays={pettyCashBoxDays}
+          onRefresh={refetchFinancialData}
           onSave={(updated) => {
             setEngineers(updated);
             syncFinancialsWithBackend(
