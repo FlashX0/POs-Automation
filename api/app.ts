@@ -333,18 +333,22 @@ try {
   console.warn("Could not create directories in /tmp:", e);
 }
 
-// 1. الاتصال بقاعدة البيانات السحابية مباشرة باستخدام رابط الاتصال الموفر
-const MONGODB_URI = "mongodb+srv://narutoluffy201_db_user:016135@cluster0.zlje0ku.mongodb.net/?appName=Cluster0";
-mongoose.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 5000, // حد أقصى للاتصال 5 ثوانٍ لمنع تعليق المشروع في حالة عدم إضافة الـ IP الصحيح لقائمة السماح
-  socketTimeoutMS: 10000,
-})
-  .then(() => console.log("Connected to MongoDB Atlas successfully!"))
-  .catch((err) => {
-    console.warn("⚠️ لم نتمكن من الاتصال بـ MongoDB Atlas (قد يكون سبب ذلك عدم إضافة عنوان IP إلى قائمة المسموح بهم):");
-    console.warn(err.message);
-    console.warn("📌 لا تقلق! الخدمة مبرمجة لتعمل تلقائياً وبكفاءة كاملة على التخزين المحلي الآمن (local db.json /tmp).");
-  });
+// 1. الاتصال بقاعدة البيانات السحابية مباشرة باستخدام رابط الاتصال الموفر من البيئة المحيطة
+const MONGODB_URI = (process.env.MONGODB_URI || "mongodb+srv://narutoluffy201_db_user:016135@cluster0.zlje0ku.mongodb.net/?appName=Cluster0").trim();
+if (MONGODB_URI) {
+  mongoose.connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 5000, // حد أقصى للاتصال 5 ثوانٍ لمنع تعليق المشروع في حالة عدم إضافة الـ IP الصحيح لقائمة السماح
+    socketTimeoutMS: 10000,
+  })
+    .then(() => console.log("Connected to MongoDB Atlas successfully!"))
+    .catch((err) => {
+      console.warn("⚠️ لم نتمكن من الاتصال بـ MongoDB Atlas (قد يكون سبب ذلك عدم إضافة عنوان IP إلى قائمة المسموح بهم):");
+      console.warn(err.message);
+      console.warn("📌 لا تقلق! الخدمة مبرمجة لتعمل تلقائياً وبكفاءة كاملة على التخزين المحلي الآمن (local db.json /tmp).");
+    });
+} else {
+  console.warn("⚠️ لم يتم توفير MONGODB_URI في المتغيرات البيئية، سيتم استخدام التخزين المحلي الآمن.");
+}
 
 // 2. إنشاء الـ Schema والـ Model بدلاً من ملف db.json القديم
 const projectSchema = new mongoose.Schema({
@@ -1031,6 +1035,21 @@ function sanitizeDeletedRecords(db: any) {
   return db;
 }
 
+function initializeDbVersion(db: any) {
+  if (db && typeof db === "object") {
+    if (db.version === undefined) {
+      db.version = 1;
+    }
+    if (!db.updatedAt) {
+      db.updatedAt = new Date().toISOString();
+    }
+    if (!db.lastModified) {
+      db.lastModified = new Date().toISOString();
+    }
+  }
+  return db;
+}
+
 function getDb() {
   if (memoryDb) {
     const usersChanged = ensureLocalUsersSeeded(memoryDb);
@@ -1040,7 +1059,7 @@ function getDb() {
       } catch (e) {}
     }
     cleanDatabaseDiagnosticsInternal(memoryDb);
-    return memoryDb;
+    return initializeDbVersion(memoryDb);
   }
   try {
     const raw = fs.readFileSync(DB_FILE, "utf-8");
@@ -1074,7 +1093,7 @@ function getDb() {
     }
     memoryDb = parsed;
     cleanDatabaseDiagnosticsInternal(memoryDb);
-    return parsed;
+    return initializeDbVersion(parsed);
   } catch (err) {
     const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
     ensureLocalUsersSeeded(fallback);
@@ -1083,7 +1102,7 @@ function getDb() {
       fs.writeFileSync(DB_FILE, JSON.stringify(fallback, null, 2), "utf-8");
     } catch (e) {}
     cleanDatabaseDiagnosticsInternal(memoryDb);
-    return fallback;
+    return initializeDbVersion(fallback);
   }
 }
 
@@ -1302,6 +1321,30 @@ function sanitizeAndExtractBrands(docs: any[]): any[] {
 }
 
 let lastMongoSyncTime = 0;
+let syncInProgress = false;
+let currentSyncPromise: Promise<any> | null = null;
+
+class TaskQueue {
+  private currentPromise: Promise<any> = Promise.resolve();
+  
+  enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const nextPromise = this.currentPromise.then(task);
+    this.currentPromise = nextPromise.catch(() => {});
+    return nextPromise;
+  }
+}
+
+const dbWriteQueue = new TaskQueue();
+
+// Structured logging helper
+function structuredLog(action: string, status: 'SUCCESS' | 'ERROR' | 'INFO' | 'WARN', details: any) {
+  const timestamp = new Date().toISOString();
+  const logMsg = `[${timestamp}] [DB_SYSTEM] [${action.toUpperCase()}] [${status}] ${typeof details === "string" ? details : JSON.stringify(details)}`;
+  console.log(logMsg);
+  try {
+    fs.appendFileSync(path.join(DATA_DIR, "system_audit.log"), logMsg + "\n", "utf-8");
+  } catch (e) {}
+}
 
 async function saveDbToSupabase(data: any) {
   const supabase = getSupabaseAdminClient() || getSupabaseClient();
@@ -1331,113 +1374,255 @@ async function saveDbToSupabase(data: any) {
 }
 
 async function saveDb(data: any) {
-  if (data && data.documents) {
-    data.documents = sanitizeAndExtractBrands(data.documents);
-  }
-  memoryDb = data;
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
-  } catch (err) {
-    console.warn("Could not save to database file (expected in read-only Vercel serverless environments):", err);
-  }
-
-  // Prevent subsequent reads from Atlas or Supabase for the next 15 seconds to let this write fully propagate
-  lastMongoSyncTime = Date.now() + 15000;
-
-  // 1. Push backup to Supabase Storage
-  try {
-    await saveDbToSupabase(data);
-  } catch (err: any) {
-    console.error("[Supabase Sync] Background save to Supabase failed:", err.message);
-  }
-
-  // 2. Push to MongoDB Atlas asynchronously to keep all instances entirely in sync
-  if (mongoose.connection.readyState === 1) {
-    try {
-      await AppState.updateOne(
-        { key: "global_state" },
-        { data: data },
-        { upsert: true }
-      );
-    } catch (err: any) {
-      console.error("Could not background save AppState to MongoDB:", err.message);
+  return dbWriteQueue.enqueue(async () => {
+    structuredLog("update", "INFO", "Initiating atomic database write transaction...");
+    
+    // Ensure brands are sanitized
+    if (data && data.documents) {
+      data.documents = sanitizeAndExtractBrands(data.documents);
     }
-  }
+
+    // 1. Load latest state from the single source of truth (Supabase Storage / MongoDB) to perform Optimistic Locking check
+    let persistedState: any = null;
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    
+    // Let's try downloading from Supabase Storage
+    if (supabase) {
+      try {
+        const bucketName = "POs Files";
+        const supabasePath = "db_backup/db.json";
+        const { data: dlData, error } = await supabase.storage.from(bucketName).download(supabasePath);
+        if (!error && dlData) {
+          const text = await dlData.text();
+          persistedState = JSON.parse(text);
+        }
+      } catch (err: any) {
+        console.warn("[DB_SYSTEM] Optimistic lock: failed to load persisted state from Supabase, trying MongoDB fallback...");
+      }
+    }
+
+    // If Supabase check failed, try MongoDB
+    if (!persistedState && mongoose.connection.readyState === 1) {
+      try {
+        const dbDoc = await AppState.findOne({ key: "global_state" });
+        if (dbDoc && dbDoc.data) {
+          persistedState = dbDoc.data;
+        }
+      } catch (err: any) {
+        console.warn("[DB_SYSTEM] Optimistic lock: failed to load persisted state from MongoDB.");
+      }
+    }
+
+    // Default version to 1 if not defined
+    if (data.version === undefined) {
+      data.version = 1;
+    }
+
+    // Optimistic locking comparison
+    if (persistedState && persistedState.version !== undefined) {
+      if (persistedState.version > data.version) {
+        structuredLog("update", "WARN", {
+          message: "Optimistic locking conflict: Stale write rejected.",
+          currentPersistedVersion: persistedState.version,
+          requestVersion: data.version
+        });
+        throw new Error(`Optimistic locking conflict: database has been modified by another process (current version: ${persistedState.version}, requested version: ${data.version}). Please refresh and try again.`);
+      }
+    }
+
+    // Increment version, set updated/modified timestamps
+    const oldVersion = data.version;
+    const newVersion = (persistedState?.version || oldVersion) + 1;
+    data.version = newVersion;
+    data.updatedAt = new Date().toISOString();
+    data.lastModified = new Date().toISOString();
+
+    // 2. Persist directly to MongoDB/Supabase first (Single source of truth)
+    let writeSucceeded = false;
+    
+    // Save to Supabase Storage
+    if (supabase) {
+      try {
+        const bucketName = "POs Files";
+        const supabasePath = "db_backup/db.json";
+        const jsonStr = JSON.stringify(data, null, 2);
+        const buffer = Buffer.from(jsonStr, "utf-8");
+        const { error } = await supabase.storage
+          .from(bucketName)
+          .upload(supabasePath, buffer, {
+            contentType: "application/json",
+            upsert: true
+          });
+        if (error) {
+          console.error("[Supabase Sync] Error uploading db.json backup to Supabase Storage:", error);
+        } else {
+          writeSucceeded = true;
+        }
+      } catch (err: any) {
+        console.error("[Supabase Sync] Exception uploading db.json:", err.message);
+      }
+    }
+
+    // Save to MongoDB Atlas
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await AppState.updateOne(
+          { key: "global_state" },
+          { data: data },
+          { upsert: true }
+        );
+        writeSucceeded = true;
+      } catch (err: any) {
+        console.error("Could not write AppState to MongoDB:", err.message);
+      }
+    }
+
+    // Fallback if both cloud endpoints failed (e.g. offline) - we still allow local file write
+    if (!writeSucceeded) {
+      structuredLog("update", "WARN", "Could not connect to Supabase or MongoDB Atlas. Writing directly to local fallback storage.");
+    }
+
+    // 3. Update memoryDb cache and local file storage AFTER cloud write succeeded
+    memoryDb = data;
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+    } catch (err) {
+      console.warn("Could not save to local database file:", err);
+    }
+
+    // 4. INTEGRITY VERIFICATION (STEP 7)
+    // After every successful write, verify MongoDB/Supabase contains the expected version.
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const verifyDoc = await AppState.findOne({ key: "global_state" });
+        if (!verifyDoc || !verifyDoc.data || verifyDoc.data.version !== newVersion) {
+          // Verification failed! Log error, reload cache, return failure
+          structuredLog("update", "ERROR", {
+            message: "Integrity verification failed! MongoDB does not contain expected version.",
+            expectedVersion: newVersion,
+            foundVersion: verifyDoc?.data?.version
+          });
+          
+          if (verifyDoc && verifyDoc.data) {
+            memoryDb = sanitizeDeletedRecords(verifyDoc.data);
+            fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+          }
+          throw new Error(`Database integrity verification failed: version mismatch. Expected ${newVersion}, got ${verifyDoc?.data?.version}`);
+        } else {
+          structuredLog("update", "SUCCESS", `Integrity verification passed! Expected version ${newVersion} confirmed.`);
+        }
+      } catch (err: any) {
+        structuredLog("update", "ERROR", `Integrity check failed with error: ${err.message}`);
+        throw err;
+      }
+    }
+
+    // Prevent subsequent reads from Atlas or Supabase for the next 15 seconds to let this write fully propagate
+    lastMongoSyncTime = Date.now() + 15000;
+  });
 }
 
 async function fetchAndSyncDbFromMongo() {
-  // If we synced successfully recently (or wrote to it recently), use local memory cache to avoid unnecessary slow queries
-  if (Date.now() - lastMongoSyncTime < 15000 && memoryDb) {
+  if (syncInProgress) {
+    if (currentSyncPromise) {
+      structuredLog("sync", "INFO", "Sync already in progress. Sharing active sync execution.");
+      return currentSyncPromise;
+    }
     return getDb();
   }
 
-  // 1. Try loading from Supabase Storage (Primary Cloud Persistent State)
-  const supabase = getSupabaseAdminClient() || getSupabaseClient();
-  if (supabase) {
+  syncInProgress = true;
+  currentSyncPromise = (async () => {
     try {
-      const bucketName = "POs Files";
-      const supabasePath = "db_backup/db.json";
-      console.log(`[Supabase Sync] Attempting to download db.json from Supabase bucket "${bucketName}"...`);
-      const { data, error } = await supabase.storage
-        .from(bucketName)
-        .download(supabasePath);
-      
-      if (!error && data) {
-        const text = await data.text();
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === "object") {
-          memoryDb = sanitizeDeletedRecords(parsed);
-          try {
-            fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
-          } catch {}
-          console.log("[Supabase Sync] Successfully loaded database state from Supabase Storage!");
-          lastMongoSyncTime = Date.now();
-          return memoryDb;
-        }
-      } else {
-        console.warn("[Supabase Sync] db_backup/db.json not found in Supabase Storage, trying MongoDB Atlas fallback...");
-      }
-    } catch (err: any) {
-      console.error("[Supabase Sync] Exception downloading db.json backup from Supabase:", err.message);
-    }
-  }
+      structuredLog("sync", "INFO", "Database synchronization started.");
 
-  // 2. Try loading from MongoDB Atlas (Fallback)
-  if (mongoose.connection.readyState === 1) {
-    try {
-      const dbDoc = await AppState.findOne({ key: "global_state" });
-      if (dbDoc && dbDoc.data) {
-        memoryDb = sanitizeDeletedRecords(dbDoc.data);
+      // If we synced successfully recently (or wrote to it recently), use local memory cache to avoid unnecessary slow queries
+      if (Date.now() - lastMongoSyncTime < 15000 && memoryDb) {
+        return getDb();
+      }
+
+      // 1. Try loading from Supabase Storage (Primary Cloud Persistent State)
+      const supabase = getSupabaseAdminClient() || getSupabaseClient();
+      if (supabase) {
         try {
-          fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
-        } catch {}
-        console.log("Successfully loaded database state from MongoDB Atlas!");
-        lastMongoSyncTime = Date.now();
-        
-        // Push state to Supabase to keep them aligned
-        await saveDbToSupabase(memoryDb);
-        return memoryDb;
-      } else {
-        // First run: save current local db.json/getDb state to Atlas
-        const localDb = getDb();
-        if (localDb) {
-          await AppState.updateOne(
-            { key: "global_state" },
-            { data: localDb },
-            { upsert: true }
-          );
-          console.log("Seeded empty MongoDB Atlas with active local db.json data!");
-          lastMongoSyncTime = Date.now();
+          const bucketName = "POs Files";
+          const supabasePath = "db_backup/db.json";
+          console.log(`[Supabase Sync] Attempting to download db.json from Supabase bucket "${bucketName}"...`);
+          const { data, error } = await supabase.storage
+            .from(bucketName)
+            .download(supabasePath);
           
-          // Seed Supabase state
-          await saveDbToSupabase(localDb);
+          if (!error && data) {
+            const text = await data.text();
+            const parsed = JSON.parse(text);
+            if (parsed && typeof parsed === "object") {
+              memoryDb = sanitizeDeletedRecords(parsed);
+              try {
+                fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+              } catch {}
+              console.log("[Supabase Sync] Successfully loaded database state from Supabase Storage!");
+              lastMongoSyncTime = Date.now();
+              structuredLog("sync", "SUCCESS", "Database synchronization completed successfully from Supabase.");
+              return memoryDb;
+            }
+          } else {
+            console.warn("[Supabase Sync] db_backup/db.json not found in Supabase Storage, trying MongoDB Atlas fallback...");
+          }
+        } catch (err: any) {
+          console.error("[Supabase Sync] Exception downloading db.json backup from Supabase:", err.message);
         }
       }
+
+      // 2. Try loading from MongoDB Atlas (Fallback)
+      if (mongoose.connection.readyState === 1) {
+        try {
+          const dbDoc = await AppState.findOne({ key: "global_state" });
+          if (dbDoc && dbDoc.data) {
+            memoryDb = sanitizeDeletedRecords(dbDoc.data);
+            try {
+              fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+            } catch {}
+            console.log("Successfully loaded database state from MongoDB Atlas!");
+            lastMongoSyncTime = Date.now();
+            
+            // Push state to Supabase to keep them aligned
+            await saveDbToSupabase(memoryDb);
+            structuredLog("sync", "SUCCESS", "Database synchronization completed successfully from MongoDB fallback.");
+            return memoryDb;
+          } else {
+            // First run: save current local db.json/getDb state to Atlas
+            const localDb = getDb();
+            if (localDb) {
+              await AppState.updateOne(
+                { key: "global_state" },
+                { data: localDb },
+                { upsert: true }
+              );
+              console.log("Seeded empty MongoDB Atlas with active local db.json data!");
+              lastMongoSyncTime = Date.now();
+              
+              // Seed Supabase state
+              await saveDbToSupabase(localDb);
+              structuredLog("sync", "SUCCESS", "Database synchronization completed with database seed.");
+            }
+          }
+        } catch (err: any) {
+          console.warn("Could not load AppState from MongoDB Atlas, using fallback:", err.message);
+        }
+      }
+
+      structuredLog("sync", "SUCCESS", "Database synchronization completed using local fallback storage.");
+      return getDb();
     } catch (err: any) {
-      console.warn("Could not load AppState from MongoDB Atlas, using fallback:", err.message);
+      structuredLog("sync", "ERROR", `Database synchronization failed: ${err.message}`);
+      throw err;
+    } finally {
+      syncInProgress = false;
+      currentSyncPromise = null;
     }
-  }
-  return getDb();
+  })();
+
+  return currentSyncPromise;
 }
 
 async function moveProjectStorageFolder(oldProjName: string, newProjName: string) {
