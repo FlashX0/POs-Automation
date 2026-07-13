@@ -5785,6 +5785,102 @@ app.post("/api/cost-analysis/delete", async (req, res) => {
   }
 });
 
+app.post("/api/cost-analysis/save-analysis", async (req, res) => {
+  try {
+    const { engineerName, projectName, notes, entries, categories } = req.body;
+    if (!Array.isArray(entries)) {
+      return res.status(400).json({ success: false, error: "تنسيق بنود التحليل غير صحيح." });
+    }
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    db.saved_analyses = db.saved_analyses || [];
+    
+    const newSaved = {
+      id: 'saved_analysis_' + Date.now(),
+      engineerName: engineerName || 'عام',
+      projectName: projectName || 'عام',
+      date: new Date().toISOString(),
+      notes: notes || '',
+      entries,
+      categories: categories || []
+    };
+    
+    db.saved_analyses.push(newSaved);
+    
+    await saveDb(db);
+    
+    res.json({ success: true, message: "تم حفظ التحليل المالي الحالي بنجاح في السجلات المحفوظة", analysis: newSaved });
+  } catch (err: any) {
+    console.error("Save analysis error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/cost-analysis/saved-analyses", async (req, res) => {
+  try {
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    res.json({ success: true, savedAnalyses: db.saved_analyses || [] });
+  } catch (err: any) {
+    console.error("Fetch saved analyses error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/cost-analysis/delete-saved-analysis", async (req, res) => {
+  try {
+    const { id } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    if (db.saved_analyses) {
+      db.saved_analyses = db.saved_analyses.filter((item: any) => item.id !== id);
+    }
+    
+    await saveDb(db);
+    res.json({ success: true, message: "تم حذف التحليل المحفوظ بنجاح" });
+  } catch (err: any) {
+    console.error("Delete saved analysis error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/cost-analysis/clear-current", async (req, res) => {
+  try {
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    
+    // Add all current entry IDs to deleted list so they aren't synced back from stale caches
+    db.deletedCostAnalysisIds = db.deletedCostAnalysisIds || [];
+    const currentEntries = db.costAnalysisEntries || [];
+    currentEntries.forEach((item: any) => {
+      if (item.id && !db.deletedCostAnalysisIds.includes(item.id)) {
+        db.deletedCostAnalysisIds.push(item.id);
+      }
+    });
+    
+    db.costAnalysisEntries = [];
+    
+    await saveDb(db);
+    
+    // Try to delete from Supabase Database if tables exist
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('cost_analysis_entries').delete().neq('id', '_dummy_id_clear_all_');
+      } catch (sbErr) {
+        console.warn("[Supabase Table Sync] Skip direct table delete because tables might not exist:", sbErr);
+      }
+    }
+    
+    res.json({ success: true, message: "تم تصفير وحذف كافة بنود التحليل المالي الحالي بنجاح للبدء من جديد" });
+  } catch (err: any) {
+    console.error("Clear current analysis error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get("/api/financial-data", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();

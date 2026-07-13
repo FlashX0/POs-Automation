@@ -582,3 +582,38 @@ html, body {
   }
 }
 
+/* Print Layout for Charts and Clean Header fixes */
+@media print {
+    /* إجبار المتصفح على رندرة الألوان الخلفية والرسومات */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    
+    /* حاوية المخططات والرسوم البيانية أثناء الطباعة */
+    .charts-print-container {
+        display: flex !important;
+        flex-direction: row !important; /* عرض المخططين بجانب بعض أفقياً */
+        justify-content: space-between !important;
+        width: 100% !important;
+        page-break-inside: avoid !important; /* منع انقطاع المخطط بين الصفحات */
+        break-inside: avoid !important;
+        margin-bottom: 30px !important;
+    }
+    
+    /* ضبط أبعاد كروت الرسوم البيانية والـ SVG داخلياً */
+    .charts-print-container .chart-card {
+        width: 48% !important; /* تقسيم متزن لكل مخطط */
+        background: #ffffff !important;
+        border: 1px solid #ced4da !important;
+        border-radius: 6px !important;
+        padding: 10px !important;
+    }
+    
+    /* إصلاح نصوص الليبل الرمادية الباهتة وتسويدها */
+    .chart-card text, .chart-card span, .chart-card li {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+}
+

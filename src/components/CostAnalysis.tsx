@@ -18,7 +18,11 @@ import {
   Upload,
   Check,
   X,
-  AlertCircle
+  AlertCircle,
+  Settings,
+  ChevronDown,
+  Database,
+  History
 } from 'lucide-react';
 import { 
   PieChart, 
@@ -99,6 +103,38 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
   const [targetMonth, setTargetMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [isEngineerAggregating, setIsEngineerAggregating] = useState<boolean>(false);
   const [archiveUrl, setArchiveUrl] = useState<string>('');
+
+  // --- Saved Analyses states ---
+  const [savedAnalyses, setSavedAnalyses] = useState<any[]>([]);
+  const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
+  const [showRecallModal, setShowRecallModal] = useState<boolean>(false);
+  const [saveEngineerName, setSaveEngineerName] = useState<string>('');
+  const [saveProjectName, setSaveProjectName] = useState<string>('');
+  const [saveNotes, setSaveNotes] = useState<string>('');
+  const [isSavingAnalysis, setIsSavingAnalysis] = useState<boolean>(false);
+  const [isFetchingSaved, setIsFetchingSaved] = useState<boolean>(false);
+  const [showActionsDropdown, setShowActionsDropdown] = useState<boolean>(false);
+
+  const fetchSavedAnalyses = async () => {
+    setIsFetchingSaved(true);
+    try {
+      const res = await fetch('/api/cost-analysis/saved-analyses');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSavedAnalyses(data.savedAnalyses || []);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching saved analyses:', err);
+    } finally {
+      setIsFetchingSaved(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSavedAnalyses();
+  }, []);
 
   // Excel Parse states
   const [isParsingExcel, setIsParsingExcel] = useState<boolean>(false);
@@ -498,6 +534,122 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
         alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف القيد التحليلي.');
       } finally {
         setIsDeleting(false);
+      }
+    }
+  };
+
+  // Save current analysis snapshot to database
+  const handleSaveAnalysisSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!saveEngineerName.trim()) {
+      alert('الرجاء إدخال اسم المهندس القائم بالحفظ');
+      return;
+    }
+    setIsSavingAnalysis(true);
+    try {
+      const res = await fetch('/api/cost-analysis/save-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engineerName: saveEngineerName.trim(),
+          projectName: saveProjectName || 'عام',
+          notes: saveNotes.trim(),
+          entries: entries, // Save snapshot of entries
+          categories: categories // Save snapshot of categories
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (onNotify) {
+            onNotify('success', 'تم حفظ التحليل المالي بنجاح 💾', `تم تسجيل وحفظ الحالة الحالية باسم المهندس ${saveEngineerName} للرجوع إليها لاحقاً.`);
+          } else {
+            alert('تم الحفظ بنجاح!');
+          }
+          setShowSaveModal(false);
+          setSaveNotes('');
+          fetchSavedAnalyses();
+        } else {
+          alert('فشل حفظ التحليل: ' + (data.error || 'خطأ غير معروف'));
+        }
+      } else {
+        alert('فشل الاتصال بالسيرفر لحفظ التحليل.');
+      }
+    } catch (err: any) {
+      console.error('Error saving analysis:', err);
+      alert('حدث خطأ أثناء الحفظ: ' + err.message);
+    } finally {
+      setIsSavingAnalysis(false);
+    }
+  };
+
+  // Restore a saved analysis snapshot
+  const handleRecallAnalysis = (analysis: any) => {
+    if (window.confirm(`هل أنت متأكد من استدعاء التحليل المحفوظ بتاريخ ${new Date(analysis.date).toLocaleString('ar-EG')}؟ سيؤدي ذلك إلى استبدال بنود التكاليف الحالية بالكامل بالنسخة المسترجعة.`)) {
+      onSave(analysis.entries, analysis.categories);
+      if (onNotify) {
+        onNotify('success', 'تم استدعاء التحليل بنجاح 📂', `تم استرجاع عدد ${analysis.entries.length} بند مصنف وحالة بنود التحليل لحظياً بنجاح!`);
+      } else {
+        alert('تم استدعاء التحليل بنجاح!');
+      }
+      setShowRecallModal(false);
+    }
+  };
+
+  // Delete a saved analysis from list
+  const handleDeleteSavedAnalysis = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm('هل أنت متأكد من حذف هذا التحليل المحفوظ نهائياً؟')) {
+      try {
+        const res = await fetch('/api/cost-analysis/delete-saved-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setSavedAnalyses(prev => prev.filter(item => item.id !== id));
+            if (onNotify) {
+              onNotify('success', 'تم حذف التحليل المحفوظ 🗑️', 'تم إزالة سجل التحليل المحفوظ نهائياً.');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error deleting saved analysis:', err);
+      }
+    }
+  };
+
+  // Danger Zone - Clear all entries
+  const handleClearAllItems = async () => {
+    if (window.confirm('⚠️ تحذير شديد الخطورة: هل أنت متأكد تماماً من رغبتك في حذف وتصفير كافة بنود التحليل التكاليف الحالي بالكامل؟ سيتم مسح جدول التكاليف الحالي نهائياً والبدء على مياه بيضاء 100% ولا يمكن التراجع عن هذا الإجراء.')) {
+      if (window.confirm('تأكيد أخير: هل أنت متأكد؟')) {
+        try {
+          const res = await fetch('/api/cost-analysis/clear-current', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              onSave([], categories);
+              if (onNotify) {
+                onNotify('success', 'تم تصفير الجدول بنجاح 🧹', 'تم مسح وتصفير كافة بنود التكاليف الحالية بنجاح، وبدء صفحة جديدة.');
+              } else {
+                alert('تم تصفير كافة البنود بنجاح!');
+              }
+              if (onRefresh) {
+                onRefresh();
+              }
+            } else {
+              alert('فشل تصفير التكاليف الحالية: ' + (data.error || 'خطأ غير معروف'));
+            }
+          }
+        } catch (err: any) {
+          console.error('Error clearing cost entries:', err);
+          alert('حدث خطأ أثناء الاتصال بالخادم لتصفير البيانات: ' + err.message);
+        }
       }
     }
   };
@@ -1101,6 +1253,174 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
         </div>
       </div>
 
+      {/* Save Current Analysis Modal Container */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form 
+            onSubmit={handleSaveAnalysisSubmit}
+            className="bg-[#111827] border border-slate-800 p-6 rounded-2xl max-w-md w-full space-y-4 text-right"
+            dir="rtl"
+          >
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Database className="text-indigo-400 w-4 h-4" />
+              <span>حفظ حالة التحليل الحالي 💾</span>
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              سيتم حفظ لقطة (Snapshot) متكاملة لكافة بنود التكاليف المصنفة المسجلة حالياً وتوزيعاتها للرجوع إليها أو استدعائها في أي وقت.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 font-bold block mb-1">اسم المهندس القائم بالحفظ:</label>
+                <select
+                  required
+                  value={saveEngineerName}
+                  onChange={(e) => setSaveEngineerName(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="">-- اختر المهندس --</option>
+                  {engineers.map((eng) => (
+                    <option key={eng.id} value={eng.name}>{eng.name}</option>
+                  ))}
+                  <option value="المهندس المسؤول">المهندس المسؤول</option>
+                  <option value="الإدارة المالية">الإدارة المالية</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 font-bold block mb-1">اسم المشروع المرتبط (اختياري):</label>
+                <select
+                  value={saveProjectName}
+                  onChange={(e) => setSaveProjectName(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="عام">عام / كل المشاريع</option>
+                  {projectsList.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 font-bold block mb-1">ملاحظات توضيحية إضافية:</label>
+                <textarea
+                  value={saveNotes}
+                  onChange={(e) => setSaveNotes(e.target.value)}
+                  placeholder="أدخل أي ملاحظات تفصيلية حول هذا التحليل المالي..."
+                  rows={3}
+                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 resize-none leading-relaxed"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingAnalysis}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{isSavingAnalysis ? 'جاري الحفظ...' : 'حفظ السجل المحفوظ'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Recall Saved Analysis Modal Container */}
+      {showRecallModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl max-w-2xl w-full space-y-4 text-right" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <History className="text-amber-400 w-4 h-4" />
+                <span>استدعاء تحليل مالي سابق 📂</span>
+              </h3>
+              <button 
+                onClick={() => setShowRecallModal(false)}
+                className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              تصفح قائمة التحليلات التي تم حفظها مسبقاً. بمجرد استدعاء أحد السجلات، سيتم استبدال جدول بنود مصروفات التكاليف بالكامل بنسخة السجل المسترجعة.
+            </p>
+
+            <div className="max-h-[350px] overflow-y-auto space-y-3 pr-1">
+              {isFetchingSaved ? (
+                <div className="text-center py-10 text-slate-500 text-xs font-bold">جاري تحميل السجلات المحفوظة...</div>
+              ) : savedAnalyses.length === 0 ? (
+                <div className="text-center py-10 text-slate-500 text-xs font-bold border border-dashed border-slate-800 rounded-xl bg-slate-900/10">
+                  لا توجد تحليلات محفوظة حالياً في قاعدة البيانات.
+                </div>
+              ) : (
+                savedAnalyses.map((analysis) => (
+                  <div 
+                    key={analysis.id}
+                    onClick={() => handleRecallAnalysis(analysis)}
+                    className="p-4 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer group"
+                  >
+                    <div className="space-y-1.5 text-right">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-xs text-white">المهندس القائم بالحفظ: {analysis.engineerName}</span>
+                        <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-400 rounded text-[9px] font-bold">
+                          {analysis.projectName || 'عام'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium">
+                        تاريخ الحفظ: {new Date(analysis.date).toLocaleString('ar-EG')}
+                      </div>
+                      {analysis.notes && (
+                        <p className="text-[11px] text-slate-400 bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-850 max-w-md leading-relaxed">
+                          {analysis.notes}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2.5 self-end sm:self-center">
+                      <div className="text-left font-mono">
+                        <div className="text-xs font-extrabold text-emerald-400">
+                          {analysis.entries?.length || 0} بنود
+                        </div>
+                        <div className="text-[9px] text-slate-500 font-bold">
+                          {analysis.categories?.length || 0} تصنيفات
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => handleDeleteSavedAnalysis(analysis.id, e)}
+                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer opacity-80 sm:opacity-0 group-hover:opacity-100"
+                        title="حذف السجل المحفوظ نهائياً"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowRecallModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                إغلاق النافذة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Form & Custom Category Modal Container */}
       {showAddCategoryModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1267,9 +1587,9 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
       {/* Charts & Interactive Dashboards */}
       {entries.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 charts-print-container">
           {/* Category spending distribution chart */}
-          <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md flex flex-col space-y-4">
+          <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md flex flex-col space-y-4 chart-card">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800/60 pb-3">
               <PieIcon className="text-indigo-400 w-4 h-4" />
               <span>توزيع نسب بنود التكلفة (مخطط دائري)</span>
@@ -1329,7 +1649,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           </div>
 
           {/* Project spending bar chart */}
-          <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md flex flex-col space-y-4">
+          <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md flex flex-col space-y-4 chart-card">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800/60 pb-3">
               <Folder className="text-indigo-400 w-4 h-4" />
               <span>تحليل مصروفات بنود التكلفة حسب المشاريع</span>
@@ -1377,46 +1697,124 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           </h3>
 
           <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
-            <label className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-300 cursor-pointer hover:bg-slate-850 hover:border-slate-700 transition-all no-print select-none">
+            <label className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-400 cursor-pointer hover:bg-slate-850 hover:border-slate-700 transition-all no-print select-none">
               <input
                 type="checkbox"
                 checked={showSignaturesInPrint}
                 onChange={(e) => setShowSignaturesInPrint(e.target.checked)}
                 className="rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
               />
-              <span>إظهار جدول التوقيعات في الطباعة</span>
+              <span>توقيعات الطباعة</span>
             </label>
-            <label className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-300 cursor-pointer hover:bg-slate-850 hover:border-slate-700 transition-all no-print select-none">
+            <label className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-400 cursor-pointer hover:bg-slate-850 hover:border-slate-700 transition-all no-print select-none">
               <input
                 type="checkbox"
                 checked={isPrintLandscape}
                 onChange={(e) => setIsPrintLandscape(e.target.checked)}
                 className="rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
               />
-              <span>طباعة بوضعية عرضية (Landscape)</span>
+              <span>طباعة عرضية (Landscape)</span>
             </label>
-            <button
-              onClick={() => window.print()}
-              className="px-3.5 py-1.5 bg-[#4F81BD]/20 hover:bg-[#4F81BD]/30 text-[#4F81BD] rounded-xl text-xs font-bold border border-[#4F81BD]/25 transition-all flex items-center gap-1.5 cursor-pointer no-print"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>طباعة كشف التحليل المالي 🖨️</span>
-            </button>
-            <button
-              onClick={handleAiAggregate}
-              disabled={isAggregating}
-              className="px-3.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-xl text-xs font-bold border border-indigo-500/25 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{isAggregating ? 'جاري تجميع المصروفات...' : 'تجميع المصروفات بالذكاء الاصطناعي 🤖'}</span>
-            </button>
-            <button
-              onClick={handleExportExcel}
-              className="px-3.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-xl text-xs font-bold border border-emerald-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>تصدير التحليل المنسق لشيت Excel 📊</span>
-            </button>
+
+            {/* Elegant Analysis Actions Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowActionsDropdown(!showActionsDropdown)}
+                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold border border-indigo-500/30 transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-950/40"
+              >
+                <Settings className="w-3.5 h-3.5 text-indigo-200" />
+                <span>إجراءات التحليل ⚙️</span>
+                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showActionsDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showActionsDropdown && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-10" 
+                    onClick={() => setShowActionsDropdown(false)} 
+                  />
+                  <div className="absolute left-0 mt-2 w-64 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-20 py-1.5 divide-y divide-slate-800 animate-in fade-in slide-in-from-top-2 duration-200" dir="rtl">
+                    <div className="py-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionsDropdown(false);
+                          setShowSaveModal(true);
+                        }}
+                        className="w-full text-right px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <Database className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>حفظ التحليل الحالي 💾</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionsDropdown(false);
+                          setShowRecallModal(true);
+                          fetchSavedAnalyses();
+                        }}
+                        className="w-full text-right px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <History className="w-3.5 h-3.5 text-amber-400" />
+                        <span>استدعاء تحليل سابق 📂</span>
+                      </button>
+                    </div>
+
+                    <div className="py-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionsDropdown(false);
+                          handleAiAggregate();
+                        }}
+                        disabled={isAggregating}
+                        className="w-full text-right px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>{isAggregating ? 'جاري التجميع...' : 'تجميع المصروفات بالذكاء الاصطناعي 🤖'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionsDropdown(false);
+                          handleExportExcel();
+                        }}
+                        className="w-full text-right px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>تصدير لشيت Excel المنسق 📊</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionsDropdown(false);
+                          window.print();
+                        }}
+                        className="w-full text-right px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-[#4F81BD]" />
+                        <span>طباعة كشف التحليل المالي 🖨️</span>
+                      </button>
+                    </div>
+
+                    <div className="py-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionsDropdown(false);
+                          handleClearAllItems();
+                        }}
+                        className="w-full text-right px-4 py-2.5 text-xs font-bold text-red-400 hover:bg-red-950/20 hover:text-red-300 transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        <span>تصفير وحذف كافة البنود ⚠️</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
