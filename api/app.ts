@@ -396,6 +396,14 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model("User", userSchema);
 
+const aiTrainingTemplateSchema = new mongoose.Schema({
+  originalText: { type: String, required: true },
+  correctedText: { type: String, required: true },
+  type: { type: String, default: "correction" },
+  createdAt: { type: Date, default: Date.now }
+});
+const AITrainingTemplate = mongoose.model("AITrainingTemplate", aiTrainingTemplateSchema);
+
 // 3. مصفوفة المشاريع الافتراضية الخاصة بك بالكامل دون أي نقص
 const defaultProjects = [
   "Al Burouj - Sitewide",
@@ -6784,28 +6792,15 @@ Output the results strictly as a JSON object matching the requested schema.`;
   }
 });
 
-// AI-POWERED CUSTODY EXCEL ANALYSIS ENDPOINT
-app.post("/api/custody/analyze-excel", upload.single("file"), async (req, res) => {
+// AI-POWERED MULTIMODAL CUSTODY PARSER (AI Multimodal Parser)
+app.post("/api/custody/analyze-multimodal", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: "لم يتم تحديد ملف إكسيل للرفع." });
-    }
-
-    const selectedMonth = req.body.selected_month; // Format e.g., "2026-07"
+    const selectedMonth = req.body.selected_month || req.body.selectedMonth; // format "YYYY-MM"
     if (!selectedMonth) {
       return res.status(400).json({ success: false, error: "لم يتم تحديد الشهر المستهدف للتحليل." });
     }
 
-    const engineerName = req.body.engineerName || "";
-
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rawRows = XLSX.utils.sheet_to_json(sheet);
-
-    if (rawRows.length === 0) {
-      return res.status(400).json({ success: false, error: "ملف الإكسيل فارغ ولا يحتوي على أي بيانات." });
-    }
+    const engineerName = req.body.engineerName || "عام";
 
     if (!geminiApiKey) {
       return res.status(500).json({
@@ -6815,59 +6810,180 @@ app.post("/api/custody/analyze-excel", upload.single("file"), async (req, res) =
     }
 
     const db = getDb();
+
+    // 1. Load Training templates for Few-Shot prompting
+    let trainingData: any[] = db.aiTrainingTemplates || [];
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const mongoTemplates = await AITrainingTemplate.find({});
+        if (mongoTemplates && mongoTemplates.length > 0) {
+          trainingData = mongoTemplates;
+        }
+      } catch (err: any) {
+        console.warn("[Training Engine] Failed to load templates from MongoDB:", err.message);
+      }
+    }
+
+    let isExcel = false;
+    let excelText = "";
+    let imagePart: any = null;
+
+    if (req.file) {
+      const mime = req.file.mimetype || "";
+      const name = req.file.originalname || "";
+      if (
+        mime.includes("sheet") || 
+        mime.includes("excel") || 
+        mime.includes("csv") || 
+        name.endsWith(".xlsx") || 
+        name.endsWith(".xls") || 
+        name.endsWith(".csv")
+      ) {
+        isExcel = true;
+      }
+    }
+
+    if (isExcel && req.file) {
+      // Parse Excel / CSV using xlsx library
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rawRows = XLSX.utils.sheet_to_json(sheet);
+
+      if (rawRows.length === 0) {
+        return res.status(400).json({ success: false, error: "ملف الإكسيل فارغ ولا يحتوي على أي بيانات." });
+      }
+      excelText = JSON.stringify(rawRows.slice(0, 250), null, 2);
+    } else {
+      // Handle Image / Screenshot (pasted or uploaded)
+      let fileBuffer: Buffer | null = null;
+      let mimeType = "image/png";
+
+      if (req.file) {
+        fileBuffer = req.file.buffer;
+        mimeType = req.file.mimetype;
+      } else if (req.body.imageBase64) {
+        fileBuffer = Buffer.from(req.body.imageBase64, "base64");
+        if (req.body.mimeType) mimeType = req.body.mimeType;
+      }
+
+      if (!fileBuffer) {
+        return res.status(400).json({ success: false, error: "لم يتم استلام أي ملف أو صورة للتحليل." });
+      }
+
+      imagePart = {
+        inlineData: {
+          mimeType: mimeType,
+          data: fileBuffer.toString("base64")
+        }
+      };
+    }
+
     const projectsList = db.projects || [];
 
-    const systemInstruction = `You are an expert Construction Auditor and AI Accounting Assistant.
-Analyze the provided raw rows from an uploaded Excel sheet representing custody / box movements.
-Your task is to identify financial transactions (received funds/inflow, spent expenses/outflow), extract them, clean them, and return them strictly according to the specified JSON schema.
+    // 2. Multimodal prompt construction with Few-Shot Training Data
+    const systemInstruction = `أنت خبير محاسبة إنشائية متمرس ومحاسب قانوني محترف.
+قم باستخراج حركات العهدة (المبالغ الواردة/المدين والمبالغ الصادرة/الدائن) حصرياً لشهر ${selectedMonth}.
+التزم بالقواعد والمسميات والمطابقات التي تدربت عليها في الأمثلة السابقة لحفظ الأخطاء وتجنب تكرارها:
+${JSON.stringify(trainingData.slice(0, 50))}
 
-For each transaction, extract or determine:
-- date: formatted strictly as YYYY-MM-DD. Estimate based on context, row data, or header info. The returned date MUST fall within the selected target month/year: "${selectedMonth}". For example, if selected month is "2026-07", then all dates must be of format "2026-07-XX".
-- description: clear, concise Arabic statement summarizing what this inflow or outflow was for.
-- inflow: the numeric value of received funds (0 if none or empty).
-- outflow: the numeric value of spent expenses/outflow (0 if none or empty).
-- project: the associated project name. This must be strictly selected from this authorized list: ${JSON.stringify(projectsList)}. If no match is found, use an empty string "" or "عام".
-- method: payment/receipt method (e.g., "نقدي", "انستاباي", "شيك"). Default to "نقدي" if not clear.
+يجب الالتزام بالقواعد التالية أثناء استخراج البيانات:
+1. استخراج حركات العهدة وتحديد قيم المدين (inflow) والدائن (outflow).
+2. بالنسبة للتاريخ: يجب أن يكون بالتنسيق الصريح YYYY-MM-DD وأن يقع حصرياً في الشهر المستهدف: "${selectedMonth}". على سبيل المثال، إذا كان الشهر المستهدف هو "2026-07"، فيجب أن تكون كافة التواريخ بصيغة "2026-07-XX".
+3. بالنسبة للمشروع (project): يجب تحديد اسم المشروع المرتبط بكل حركة بدقة ومطابقته حصرياً من هذه القائمة المصرح بها للمشاريع:
+${JSON.stringify(projectsList)}
+إذا لم تجد أي تطابق، استخدم قيمة "عام".
+4. بالنسبة للبيان/الوصف (description): يجب استخراج ووصف الحركة ببيان واضح ومختصر باللغة العربية.
+5. طريقة الدفع (method): حدد الطريقة (مثل "نقدي", "انستاباي", "شيك"). القيمة الافتراضية "نقدي" إذا لم تتضح.
 
-Return the entries as a JSON object matching the requested schema. Ensure to filter out any empty rows, title headers, or non-transaction rows.`;
+أخرج الناتج النهائي بصيغة JSON صريحة ومطابقة للهيكل التالي فقط دون أي نصوص أو تعليقات خارجية:
+{
+  "extractedTransactions": [
+    { "date": "YYYY-MM-DD", "description": "text", "inflow": number, "outflow": number, "project": "text", "method": "text" }
+  ]
+}`;
 
-    const textContent = `Analyze and extract transactions from these raw Excel rows.
+    let response;
+    if (isExcel) {
+      const textContent = `Analyze and extract transactions from these raw Excel rows.
 Target Month: ${selectedMonth}
-Target Engineer/Person: ${engineerName || "General / عام"}
+Target Engineer/Person: ${engineerName}
 Raw Rows Data:
-${JSON.stringify(rawRows.slice(0, 150), null, 2)}
+${excelText}
 
 Output the results strictly as a JSON object matching the requested schema.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: [{ text: textContent }],
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            extractedTransactions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  date: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  inflow: { type: Type.NUMBER },
-                  outflow: { type: Type.NUMBER },
-                  project: { type: Type.STRING },
-                  method: { type: Type.STRING }
-                },
-                required: ["date", "description", "inflow", "outflow", "project", "method"]
+      response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [{ text: textContent }],
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              extractedTransactions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    inflow: { type: Type.NUMBER },
+                    outflow: { type: Type.NUMBER },
+                    project: { type: Type.STRING },
+                    method: { type: Type.STRING }
+                  },
+                  required: ["date", "description", "inflow", "outflow", "project", "method"]
+                }
               }
-            }
-          },
-          required: ["extractedTransactions"]
+            },
+            required: ["extractedTransactions"]
+          }
         }
-      }
-    });
+      });
+    } else {
+      const promptText = `Analyze this image / custody screenshot and extract all box movements (transactions) for the target month: ${selectedMonth}.
+Target Engineer/Person: ${engineerName}
+
+Analyze the image visually, perform OCR, map the descriptions and projects based on the authorized project list and the training templates provided in the system instruction.
+Return the structured transactions strictly in JSON format.`;
+
+      response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: {
+          parts: [
+            imagePart,
+            { text: promptText }
+          ]
+        },
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              extractedTransactions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    inflow: { type: Type.NUMBER },
+                    outflow: { type: Type.NUMBER },
+                    project: { type: Type.STRING },
+                    method: { type: Type.STRING }
+                  },
+                  required: ["date", "description", "inflow", "outflow", "project", "method"]
+                }
+              }
+            },
+            required: ["extractedTransactions"]
+          }
+        }
+      });
+    }
 
     const textResult = response?.text || "{}";
     const parsedResult = JSON.parse(textResult.trim());
@@ -6950,16 +7066,182 @@ Output the results strictly as a JSON object matching the requested schema.`;
 
     return res.json({
       success: true,
-      message: "تم استخراج ومعالجة حركات العهدة وحفظها كمسودات بنجاح!",
+      message: "تم تشغيل المعالج الذكي الشامل بنجاح واستخراج حركات العهدة كمسودات!",
       pettyCashBoxDays: db.pettyCashBoxDays
     });
 
   } catch (err: any) {
-    console.error("[Custody Excel AI Analysis] Error:", err);
+    console.error("[Multimodal AI Analysis] Error:", err);
     return res.status(500).json({
       success: false,
-      error: err.message || "حدث خطأ غير متوقع أثناء معالجة شيت العهدة بالذكاء الاصطناعي."
+      error: err.message || "حدث خطأ غير متوقع أثناء معالجة المستند بالمعالج الذكي الشامل."
     });
+  }
+});
+
+// Dedicated Training Template Save Endpoint
+app.post("/api/custody/train", async (req, res) => {
+  try {
+    const { originalText, correctedText, type } = req.body;
+    if (!originalText || !correctedText) {
+      return res.status(400).json({ success: false, error: "النص الأصلي والـتصحيح مطلوبان." });
+    }
+
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    db.aiTrainingTemplates = db.aiTrainingTemplates || [];
+    
+    const newTemplate = {
+      originalText: originalText.trim(),
+      correctedText: correctedText.trim(),
+      type: type || "correction",
+      createdAt: new Date().toISOString()
+    };
+    db.aiTrainingTemplates.push(newTemplate);
+    await saveDb(db);
+
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await AITrainingTemplate.create({
+          originalText: originalText.trim(),
+          correctedText: correctedText.trim(),
+          type: type || "correction"
+        });
+      } catch (err: any) {
+        console.warn("Failed to save template to MongoDB:", err.message);
+      }
+    }
+
+    return res.json({ success: true, message: "تم تسجيل قالب التدريب بنجاح للتعلم المستمر!" });
+  } catch (err: any) {
+    console.error("[Training Engine] Error saving template:", err);
+    return res.status(500).json({ success: false, error: err.message || "حدث خطأ أثناء حفظ قالب التدريب." });
+  }
+});
+
+// Endpoint to update transaction details & learn from edits
+app.post("/api/engineers/ledger/update-tx", async (req, res) => {
+  try {
+    const { engineerName, date, txId, description, project, method, inflow, outflow } = req.body;
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+
+    let foundTx: any = null;
+    let oldDesc = "";
+    let oldProj = "";
+
+    // 1. Update in db.pettyCashBoxDays
+    if (db.pettyCashBoxDays) {
+      db.pettyCashBoxDays = db.pettyCashBoxDays.map((d: any) => {
+        if (d.date === date && d.engineer === engineerName) {
+          const updatedTxs = (d.transactions || []).map((t: any) => {
+            if (t.id === txId) {
+              foundTx = { ...t };
+              oldDesc = t.description || "";
+              oldProj = t.project || "";
+              return {
+                ...t,
+                description: description !== undefined ? description : t.description,
+                project: project !== undefined ? project : t.project,
+                method: method !== undefined ? method : t.method,
+                inflow: inflow !== undefined ? parseFloat(inflow) || 0 : t.inflow,
+                outflow: outflow !== undefined ? parseFloat(outflow) || 0 : t.outflow
+              };
+            }
+            return t;
+          });
+          return { ...d, transactions: updatedTxs };
+        }
+        return d;
+      });
+    }
+
+    // 2. Update in db.engineerLedgers
+    if (db.engineerLedgers && db.engineerLedgers[engineerName]) {
+      db.engineerLedgers[engineerName] = db.engineerLedgers[engineerName].map((d: any) => {
+        if (d.date === date) {
+          const updatedTxs = (d.transactions || []).map((t: any) => {
+            if (t.id === txId) {
+              return {
+                ...t,
+                description: description !== undefined ? description : t.description,
+                project: project !== undefined ? project : t.project,
+                method: method !== undefined ? method : t.method,
+                inflow: inflow !== undefined ? parseFloat(inflow) || 0 : t.inflow,
+                outflow: outflow !== undefined ? parseFloat(outflow) || 0 : t.outflow
+              };
+            }
+            return t;
+          });
+          return { ...d, transactions: updatedTxs };
+        }
+        return d;
+      });
+    }
+
+    if (!foundTx) {
+      return res.status(404).json({ success: false, error: "الحركة غير موجودة" });
+    }
+
+    // Auto train if original text or project was modified
+    db.aiTrainingTemplates = db.aiTrainingTemplates || [];
+    let autoTrained = false;
+
+    if (description && oldDesc && description.trim() !== oldDesc.trim()) {
+      const newTemplate = {
+        originalText: oldDesc.trim(),
+        correctedText: description.trim(),
+        type: "description",
+        createdAt: new Date().toISOString()
+      };
+      db.aiTrainingTemplates.push(newTemplate);
+      if (mongoose.connection.readyState === 1) {
+        try {
+          await AITrainingTemplate.create({
+            originalText: oldDesc.trim(),
+            correctedText: description.trim(),
+            type: "description"
+          });
+          autoTrained = true;
+        } catch (ex) {
+          console.error("Auto training save failed:", ex);
+        }
+      }
+    }
+
+    if (project && oldProj && project.trim() !== oldProj.trim()) {
+      const newTemplate = {
+        originalText: oldProj.trim(),
+        correctedText: project.trim(),
+        type: "project",
+        createdAt: new Date().toISOString()
+      };
+      db.aiTrainingTemplates.push(newTemplate);
+      if (mongoose.connection.readyState === 1) {
+        try {
+          await AITrainingTemplate.create({
+            originalText: oldProj.trim(),
+            correctedText: project.trim(),
+            type: "project"
+          });
+          autoTrained = true;
+        } catch (ex) {
+          console.error("Auto training save failed:", ex);
+        }
+      }
+    }
+
+    await saveDb(db);
+
+    res.json({ 
+      success: true, 
+      message: "تم تحديث الحركة بنجاح وتعليم الموديل من هذا التعديل!", 
+      pettyCashBoxDays: db.pettyCashBoxDays,
+      autoTrained
+    });
+  } catch (err: any) {
+    console.error("Update petty cash transaction error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

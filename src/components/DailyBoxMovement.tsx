@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye, ChevronDown, Settings } from 'lucide-react';
+import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye, ChevronDown, Settings, Check, X, Edit } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 import { calculateLedgerBalances, calculateInflow, calculateOutflow } from '../utils/ledgerUtils';
 
@@ -87,6 +87,139 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const aiFileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Unified AI Multimodal Parser Modal States ---
+  const [showAIModal, setShowAIModal] = useState<boolean>(false);
+  const [selectedAIFile, setSelectedAIFile] = useState<File | null>(null);
+  const [aiFilePreview, setAiFilePreview] = useState<string | null>(null);
+  const [isProcessingAIUnified, setIsProcessingAIUnified] = useState<boolean>(false);
+  const [aiModalMonth, setAiModalMonth] = useState<string>('');
+
+  // --- Inline Edit States for Unapproved Transactions ---
+  const [editingTxId, setEditingTxId] = useState<string | null>(null);
+  const [editingTxDate, setEditingTxDate] = useState<string>('');
+  const [editDescription, setEditDescription] = useState<string>('');
+  const [editProject, setEditProject] = useState<string>('');
+  const [editMethod, setEditMethod] = useState<string>('');
+  const [editInflow, setEditInflow] = useState<string>('');
+  const [editOutflow, setEditOutflow] = useState<string>('');
+
+  // Clipboard paste listener
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (!showAIModal) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            setSelectedAIFile(file);
+            setAiFilePreview(URL.createObjectURL(file));
+            onNotify('info', 'تم التقاط الصورة من الحافظة 📋', `تم التعرف على لقطة الشاشة المنسوخة: ${file.name || 'screenshot.png'}`);
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [showAIModal]);
+
+  const handleFileSelection = (file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const allowed = ['xlsx', 'xls', 'csv', 'png', 'jpg', 'jpeg'];
+    if (!ext || !allowed.includes(ext)) {
+      onNotify('error', 'صيغة ملف غير صالحة', 'يُرجى رفع ملف إكسيل (.xlsx, .xls) أو ملف CSV، أو صورة (.png, .jpg, .jpeg) فقط.');
+      return;
+    }
+    setSelectedAIFile(file);
+    if (file.type.startsWith('image/')) {
+      setAiFilePreview(URL.createObjectURL(file));
+    } else {
+      setAiFilePreview(null);
+    }
+  };
+
+  const handleAIUnifiedProcess = async () => {
+    if (!aiModalMonth) {
+      onNotify('warning', 'تنبيه', 'الرجاء اختيار الشهر والسن المستهدفة أولاً!');
+      return;
+    }
+    if (!selectedAIFile) {
+      onNotify('warning', 'تنبيه', 'الرجاء رفع ملف إكسيل أو صورة عهدة أولاً!');
+      return;
+    }
+
+    setIsProcessingAIUnified(true);
+    onNotify('info', 'جاري تشغيل المعالج الذكي الشامل ⚡', 'يتم استخراج وتحليل حركات العهدة باستخدام قوالب التعلم الذاتي والذكاء الاصطناعي...');
+    
+    const formData = new FormData();
+    formData.append('file', selectedAIFile);
+    formData.append('selected_month', aiModalMonth);
+    formData.append('engineerName', selectedEngineer || 'عام');
+
+    try {
+      const res = await fetch('/api/custody/analyze-multimodal', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          onNotify('success', 'نجاح المعالج الذكي الشامل ⚡', 'تم استخراج الحركات بنجاح وعرضها كمسودات غير معتمدة!');
+          onSave(data.pettyCashBoxDays);
+          setShowAIModal(false);
+          setSelectedAIFile(null);
+          setAiFilePreview(null);
+        } else {
+          onNotify('error', 'فشل المعالجة بالذكاء الاصطناعي', data.error || 'حدث خطأ ما.');
+        }
+      } else {
+        onNotify('error', 'خطأ في الاتصال', 'فشل الاتصال بالخادم لمعالجة العهدة بالذكاء الاصطناعي.');
+      }
+    } catch (err: any) {
+      onNotify('error', 'خطأ', err.message || 'حدث خطأ أثناء معالجة المستند.');
+    } finally {
+      setIsProcessingAIUnified(false);
+    }
+  };
+
+  const handleSaveEditedTransaction = async () => {
+    if (!editingTxId) return;
+
+    try {
+      const res = await fetch('/api/engineers/ledger/update-tx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engineerName: selectedEngineer || 'عام',
+          date: editingTxDate,
+          txId: editingTxId,
+          description: editDescription,
+          project: editProject,
+          method: editMethod,
+          inflow: parseFloat(editInflow) || 0,
+          outflow: parseFloat(editOutflow) || 0
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          onSave(data.pettyCashBoxDays);
+          onNotify('success', 'تم تعديل الحركة بنجاح 🎉', data.autoTrained ? 'تم حفظ التعديل وتدريب محرك الذكاء الاصطناعي بنجاح!' : 'تم التحديث بنجاح.');
+          setEditingTxId(null);
+        } else {
+          onNotify('error', 'فشل تعديل الحركة', data.error || 'حدث خطأ ما.');
+        }
+      } else {
+        onNotify('error', 'خطأ في الاتصال', 'فشل الاتصال بالخادم لتعديل الحركة.');
+      }
+    } catch (err: any) {
+      onNotify('error', 'خطأ', err.message || 'حدث خطأ غير متوقع.');
+    }
+  };
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -1028,42 +1161,6 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Custody Excel AI Analysis */}
-            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl no-print">
-              <span className="text-[10px] text-slate-400 font-bold">شهر الاستيراد:</span>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-slate-900 text-white text-xs font-bold rounded-lg border-0 focus:ring-1 focus:ring-emerald-500 py-1 px-2.5 outline-none cursor-pointer"
-              >
-                <option value="">-- اختر الشهر --</option>
-                {generateMonthsList().map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-              
-              <button
-                onClick={() => custodyExcelInputRef.current?.click()}
-                disabled={!selectedMonth || isProcessingCustodyExcel}
-                className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-                  !selectedMonth 
-                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
-                }`}
-              >
-                <Upload className={`w-3.5 h-3.5 ${isProcessingCustodyExcel ? 'animate-spin' : ''}`} />
-                <span>{isProcessingCustodyExcel ? 'جاري الاستيراد...' : 'استيراد إكسيل بالـ AI 🤖'}</span>
-              </button>
-              
-              <input
-                type="file"
-                ref={custodyExcelInputRef}
-                accept=".xlsx, .xls"
-                onChange={handleCustodyExcelUpload}
-                className="hidden"
-              />
-            </div>
-
             <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl no-print">
               <span className="text-[10px] text-slate-400 font-bold">نمط تنسيق الطباعة:</span>
               <select
@@ -1105,13 +1202,13 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                     <button
                       onClick={() => {
                         setIsDropdownOpen(false);
-                        aiFileInputRef.current?.click();
+                        setAiModalMonth(selectedMonth || '');
+                        setShowAIModal(true);
                       }}
-                      className="w-full text-right px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-all flex items-center gap-2.5"
-                      disabled={isProcessingAI}
+                      className="w-full text-right px-4 py-2 text-xs text-slate-200 hover:bg-emerald-950/40 hover:text-emerald-400 font-extrabold transition-all flex items-center gap-2.5"
                     >
-                      <Upload className={`w-4 h-4 text-emerald-400 ${isProcessingAI ? 'animate-spin' : ''}`} />
-                      <span>{isProcessingAI ? 'جاري تحليل الصورة 🤖...' : 'تحليل تصفية بالذكاء الاصطناعي 🤖'}</span>
+                      <Upload className="w-4 h-4 text-emerald-400 animate-pulse" />
+                      <span>⚡ معالجة واستيراد بالذكاء الاصطناعي</span>
                     </button>
                   </div>
 
@@ -1568,23 +1665,75 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                   transactions.map((tx) => (
                     <tr key={tx.id} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
                       <td className="py-3.5 text-center font-mono font-bold text-emerald-400">
-                        {tx.inflow > 0 ? formatCurrency(tx.inflow) : '-'}
+                        {editingTxId === tx.id ? (
+                          <input
+                            type="number"
+                            value={editInflow}
+                            onChange={(e) => setEditInflow(e.target.value)}
+                            className="bg-slate-950 text-emerald-400 text-xs rounded border border-slate-750 px-2 py-1 w-24 text-center font-mono outline-none focus:border-emerald-500 font-bold"
+                          />
+                        ) : (
+                          tx.inflow > 0 ? formatCurrency(tx.inflow) : '-'
+                        )}
                       </td>
                       <td className="py-3.5 pr-2">
-                        {tx.inflow > 0 ? (
-                          <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-bold">
-                            {tx.method}
-                          </span>
-                        ) : '-'}
+                        {editingTxId === tx.id ? (
+                          <select
+                            value={editMethod}
+                            onChange={(e) => setEditMethod(e.target.value)}
+                            className="bg-slate-950 text-slate-300 text-xs font-bold rounded border border-slate-750 px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer"
+                          >
+                            <option value="نقدي">نقدي</option>
+                            <option value="انستاباي">انستاباي</option>
+                            <option value="شيك">شيك</option>
+                          </select>
+                        ) : (
+                          tx.inflow > 0 || tx.outflow > 0 ? (
+                            <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+                              {tx.method}
+                            </span>
+                          ) : '-'
+                        )}
                       </td>
-                      <td className="py-3.5 pr-2 font-bold max-w-xs truncate" title={tx.description}>
-                        {tx.description}
+                      <td className="py-3.5 pr-2 font-bold max-w-xs truncate text-right" title={tx.description}>
+                        {editingTxId === tx.id ? (
+                          <input
+                            type="text"
+                            value={editDescription}
+                            onChange={(e) => setEditDescription(e.target.value)}
+                            className="bg-slate-950 text-slate-100 text-xs rounded border border-slate-750 px-3 py-1 w-full outline-none focus:border-indigo-500 text-right font-bold"
+                          />
+                        ) : (
+                          tx.description
+                        )}
                       </td>
                       <td className="py-3.5 text-center font-mono font-bold text-rose-400">
-                        {tx.outflow > 0 ? formatCurrency(tx.outflow) : '-'}
+                        {editingTxId === tx.id ? (
+                          <input
+                            type="number"
+                            value={editOutflow}
+                            onChange={(e) => setEditOutflow(e.target.value)}
+                            className="bg-slate-950 text-rose-400 text-xs rounded border border-slate-750 px-2 py-1 w-24 text-center font-mono outline-none focus:border-rose-500 font-bold"
+                          />
+                        ) : (
+                          tx.outflow > 0 ? formatCurrency(tx.outflow) : '-'
+                        )}
                       </td>
                       <td className="py-3.5 pr-2 font-medium text-slate-400">
-                        {tx.project}
+                        {editingTxId === tx.id ? (
+                          <select
+                            value={editProject}
+                            onChange={(e) => setEditProject(e.target.value)}
+                            className="bg-slate-950 text-slate-300 text-xs rounded border border-slate-750 px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer font-bold"
+                          >
+                            <option value="عام">عام</option>
+                            {projectsList.map((proj) => (
+                              <option key={proj} value={proj}>{proj}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          tx.project
+                        )}
                       </td>
                       <td className="py-3.5 pr-2">
                         {tx.attachment ? (
@@ -1612,15 +1761,53 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                       </td>
                       <td className="py-3.5 text-center">
                         {tx.status === 'approved' ? (
-                          <span className="text-slate-500 font-bold" title="لا يمكن حذف الحركات المعتمدة">🔒</span>
+                          <span className="text-slate-500 font-bold" title="لا يمكن تعديل أو حذف الحركات المعتمدة">🔒</span>
                         ) : (
-                          <button
-                            onClick={() => handleDeleteTransaction(tx.id)}
-                            className="text-rose-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 cursor-pointer"
-                            title="حذف الحركة"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex justify-center items-center gap-1.5">
+                            {editingTxId === tx.id ? (
+                              <>
+                                <button
+                                  onClick={handleSaveEditedTransaction}
+                                  className="text-emerald-400 hover:text-emerald-300 p-1 rounded hover:bg-emerald-500/10 cursor-pointer"
+                                  title="حفظ التعديل"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingTxId(null)}
+                                  className="text-slate-400 hover:text-slate-300 p-1 rounded hover:bg-slate-500/10 cursor-pointer"
+                                  title="إلغاء"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setEditingTxId(tx.id);
+                                    setEditingTxDate(currentDay.date);
+                                    setEditDescription(tx.description);
+                                    setEditProject(tx.project || 'عام');
+                                    setEditMethod(tx.method || 'نقدي');
+                                    setEditInflow(tx.inflow > 0 ? tx.inflow.toString() : '0');
+                                    setEditOutflow(tx.outflow > 0 ? tx.outflow.toString() : '0');
+                                  }}
+                                  className="text-indigo-400 hover:text-indigo-300 p-1 rounded hover:bg-indigo-500/10 cursor-pointer"
+                                  title="تعديل الحركة"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTransaction(tx.id)}
+                                  className="text-rose-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 cursor-pointer"
+                                  title="حذف الحركة"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -1732,6 +1919,156 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                   <>
                     <CheckCircle className="w-3.5 h-3.5" />
                     <span>تأكيد الترحيل النهائي 🚀</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================== */}
+      {/* ⚡ Unified AI Multimodal Parser Modal ⚡ */}
+      {/* ================================================== */}
+      {showAIModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 no-print">
+          <div className="bg-slate-900 border border-slate-750 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 duration-150" dir="rtl">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-slate-850/50 border-b border-slate-850 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <div className="bg-emerald-500/10 p-1.5 rounded-lg border border-emerald-500/20">
+                  <Upload className="w-5 h-5 text-emerald-400 animate-pulse" />
+                </div>
+                <div className="text-right">
+                  <h3 className="text-sm font-black text-white">المعالج الذكي الشامل (AI Multimodal Parser)</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">استخرج حركات العهدة فورياً من الصور والملفات بمساعدة الذكاء الاصطناعي</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAIModal(false);
+                  setSelectedAIFile(null);
+                  setAiFilePreview(null);
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer transition-all"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh] text-right">
+              {/* 1. Month Picker */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 block">اختر شهر الاستيراد والتحليل المستهدف:</label>
+                <select
+                  value={aiModalMonth}
+                  onChange={(e) => setAiModalMonth(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-white text-xs font-bold rounded-xl px-3.5 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                >
+                  <option value="">-- اختر الشهر المستهدف --</option>
+                  {generateMonthsList().map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-500">سيتم استيراد كافة حركات العهدة وتثبيتها في هذا الشهر حصرياً.</p>
+              </div>
+
+              {/* 2. File Dropzone */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 block">ارفع شيت الإكسيل أو الصورة / لقطة الشاشة للتحليل:</label>
+                
+                <div
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleFileSelection(file);
+                  }}
+                  onClick={() => custodyExcelInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-700 hover:border-emerald-500/60 bg-slate-950/40 hover:bg-slate-950/80 rounded-xl p-8 flex flex-col items-center justify-center gap-3 transition-all cursor-pointer text-center relative group min-h-[160px]"
+                >
+                  {aiFilePreview ? (
+                    <div className="relative w-full max-h-48 overflow-hidden rounded-lg border border-slate-800">
+                      <img src={aiFilePreview} alt="Screenshot preview" className="w-full h-auto object-contain mx-auto" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-slate-950/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                        <span className="text-[10px] text-white font-bold bg-slate-900/80 px-2.5 py-1.5 rounded-lg border border-slate-700">تغيير الصورة أو الملف 📂</span>
+                      </div>
+                    </div>
+                  ) : selectedAIFile ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <FileText className="w-10 h-10 text-emerald-400" />
+                      <span className="text-xs font-bold text-slate-200">{selectedAIFile.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">({(selectedAIFile.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bg-slate-800 p-3 rounded-full border border-slate-700 group-hover:border-emerald-500/30 transition-all">
+                        <Upload className="w-6 h-6 text-slate-400 group-hover:text-emerald-400" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-slate-300">اسحب وأسقط الملف أو الصورة هنا، أو اضغط للتصفح</p>
+                        <p className="text-[10px] text-slate-500">يدعم صيغ Excel (.xlsx, .xls) و CSV والصور (.png, .jpg, .jpeg)</p>
+                      </div>
+                      <div className="mt-1 bg-slate-900 text-slate-400 text-[9px] px-2.5 py-1 rounded-lg border border-slate-800 flex items-center gap-1 font-mono justify-center">
+                        <span className="bg-slate-800 text-slate-300 px-1 py-0.5 rounded text-[8px]">Ctrl + V</span>
+                        <span>يدعم لصق سكرين شوت مباشرة من حافظة جهازك!</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <input
+                  type="file"
+                  ref={custodyExcelInputRef}
+                  accept=".xlsx, .xls, .csv, image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileSelection(file);
+                  }}
+                  className="hidden"
+                />
+              </div>
+
+              {/* Notice Box */}
+              <div className="bg-indigo-950/20 border border-indigo-900/30 p-4 rounded-xl flex gap-2.5 items-start">
+                <AlertCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-right">
+                  <h4 className="text-[11px] font-bold text-indigo-300">محرك التعليم المستمر والتعلم الذاتي نشط 🧠</h4>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    سيقوم المعالج بمطابقة مسميات المشاريع والبنود وتصنيفها بدقة تامة. أي تعديلات تجريها على المسودات لاحقاً ستُحفظ تلقائياً في قوالب التدريب ليتعلم منها السيستم ويمنع تكرار الخطأ مستقبلاً.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-850/50 border-t border-slate-800 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowAIModal(false);
+                  setSelectedAIFile(null);
+                  setAiFilePreview(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+              >
+                إلغاء ✕
+              </button>
+              <button
+                onClick={handleAIUnifiedProcess}
+                disabled={isProcessingAIUnified || !aiModalMonth || !selectedAIFile}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-850 disabled:text-slate-500 text-white text-xs font-black rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
+              >
+                {isProcessingAIUnified ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>جاري المعالجة والتحليل بالـ AI...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>تشغيل المعالج الذكي واستيراد العهدة ⚡</span>
                   </>
                 )}
               </button>
