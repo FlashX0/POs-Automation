@@ -1128,22 +1128,22 @@ function sanitizeDeletedRecords(db: any) {
         if (!ledgerDay || !ledgerDay.date) continue;
         let pDay = db.pettyCashBoxDays.find((d: any) => d.date === ledgerDay.date && (d.engineer || "عام") === engineerName);
         if (pDay) {
-          // Sync startingBalanceOverride
-          if (ledgerDay.startingBalanceOverride !== undefined && ledgerDay.startingBalanceOverride !== null) {
-            pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
-          }
-          if (pDay.startingBalanceOverride !== undefined && pDay.startingBalanceOverride !== null) {
-            ledgerDay.startingBalanceOverride = pDay.startingBalanceOverride;
-          }
-          // Sync updatedAt
+          // Sync everything using updatedAt
           const pDayTime = pDay.updatedAt ? new Date(pDay.updatedAt).getTime() : 0;
           const ledgerDayTime = ledgerDay.updatedAt ? new Date(ledgerDay.updatedAt).getTime() : 0;
+          
           if (ledgerDayTime > pDayTime) {
             pDay.updatedAt = ledgerDay.updatedAt;
             pDay.transactions = ledgerDay.transactions || [];
+            if (ledgerDay.startingBalanceOverride !== undefined && ledgerDay.startingBalanceOverride !== null) {
+              pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
+            }
           } else {
             ledgerDay.updatedAt = pDay.updatedAt;
             ledgerDay.transactions = pDay.transactions || [];
+            if (pDay.startingBalanceOverride !== undefined && pDay.startingBalanceOverride !== null) {
+              ledgerDay.startingBalanceOverride = pDay.startingBalanceOverride;
+            }
           }
         } else {
           // Add missing day to pettyCashBoxDays
