@@ -1,3 +1,4 @@
+import { AIModelSelector } from "./AIModelSelector";
 import React, { useState, useEffect, useMemo } from 'react';
 import { getSupabaseClient } from '../lib/supabaseClient';
 import { motion, AnimatePresence } from 'motion/react';
@@ -48,6 +49,8 @@ interface EngineerManagementProps {
 }
 
 export default function EngineerManagement({ engineers, projectsList, boxDays = [], onSave, onRefresh }: EngineerManagementProps) {
+  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'folders' | 'crud'>('folders');
   const [selectedEngineerFolder, setSelectedEngineerFolder] = useState<Engineer | null>(null);
@@ -150,6 +153,8 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
         body: JSON.stringify({
           engineerName: selectedEngineerFolder.name,
           month: monthToAnalyze,
+          useAdvanced: useAdvancedAI,
+          selectedAIModel: selectedAIModel,
         }),
       });
       const data = await res.json();
@@ -973,6 +978,12 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
           {/* Sub-tab 3: AI Monthly Cost Analysis & Reporting */}
           {innerTab === 'ai' && (
             <div className="space-y-6">
+              <AIModelSelector
+                useAdvanced={useAdvancedAI}
+                setUseAdvanced={setUseAdvancedAI}
+                selectedModel={selectedAIModel}
+                setSelectedModel={setSelectedAIModel}
+              />
               {/* Aggregation Control Panel */}
               <div className="bg-[#111827] border border-slate-800 p-6 rounded-2xl shadow-md text-right space-y-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">

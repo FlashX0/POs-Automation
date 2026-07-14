@@ -1,3 +1,4 @@
+import { AIModelSelector } from "./components/AIModelSelector";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -532,26 +533,33 @@ export default function App() {
 
   // --- Financial State Sync Wrappers ---
   const supabaseChannelRef = useRef<any>(null);
+  const refetchFinancialTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refetchFinancialData = async () => {
-    try {
-      const finRes = await fetch('/api/financial-data');
-      if (finRes.ok) {
-        const finData = await finRes.json();
-        if (finData.success) {
-          if (finData.pettyCashBoxDays) setPettyCashBoxDays(finData.pettyCashBoxDays);
-          if (finData.subcontractorContracts) setSubcontractorContracts(finData.subcontractorContracts);
-          if (finData.laborTimesheets) setLaborTimesheets(finData.laborTimesheets);
-          if (finData.costAnalysisEntries) setCostAnalysisEntries(finData.costAnalysisEntries);
-          if (finData.costAnalysisCategories) setCostAnalysisCategories(finData.costAnalysisCategories);
-          if (finData.pendingTransactions) setPendingTransactions(finData.pendingTransactions);
-          if (finData.archives) setArchives(finData.archives);
-          if (finData.engineers) setEngineers(finData.engineers);
-        }
-      }
-    } catch (err) {
-      console.warn("Could not refetch financial data:", err);
+  const refetchFinancialData = () => {
+    if (refetchFinancialTimeoutRef.current) {
+      clearTimeout(refetchFinancialTimeoutRef.current);
     }
+    refetchFinancialTimeoutRef.current = setTimeout(async () => {
+      refetchFinancialTimeoutRef.current = null;
+      try {
+        const finRes = await fetch('/api/financial-data');
+        if (finRes.ok) {
+          const finData = await finRes.json();
+          if (finData.success) {
+            if (finData.pettyCashBoxDays) setPettyCashBoxDays(finData.pettyCashBoxDays);
+            if (finData.subcontractorContracts) setSubcontractorContracts(finData.subcontractorContracts);
+            if (finData.laborTimesheets) setLaborTimesheets(finData.laborTimesheets);
+            if (finData.costAnalysisEntries) setCostAnalysisEntries(finData.costAnalysisEntries);
+            if (finData.costAnalysisCategories) setCostAnalysisCategories(finData.costAnalysisCategories);
+            if (finData.pendingTransactions) setPendingTransactions(finData.pendingTransactions);
+            if (finData.archives) setArchives(finData.archives);
+            if (finData.engineers) setEngineers(finData.engineers);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not refetch financial data:", err);
+      }
+    }, 1000);
   };
 
   const broadcastDbUpdate = () => {
@@ -564,30 +572,31 @@ export default function App() {
     }
   };
 
-  const syncFinancialsWithBackend = async (
-    boxDaysData: any[],
-    subContractsData: any[],
-    laborTimesheetsData: any[],
-    costEntries?: any[],
-    costCats?: string[],
-    pendingTxs?: any[],
-    archivesData?: any[],
-    engineersData?: any[]
-  ) => {
+  const syncFinancialsWithBackend = async (partialUpdate: {
+    pettyCashBoxDays?: any[];
+    subcontractorContracts?: any[];
+    laborTimesheets?: any[];
+    costAnalysisEntries?: any[];
+    costAnalysisCategories?: string[];
+    pendingTransactions?: any[];
+    archives?: any[];
+    engineers?: any[];
+  }) => {
     try {
+      const body: any = {};
+      if (partialUpdate.pettyCashBoxDays !== undefined) body.pettyCashBoxDays = partialUpdate.pettyCashBoxDays;
+      if (partialUpdate.subcontractorContracts !== undefined) body.subcontractorContracts = partialUpdate.subcontractorContracts;
+      if (partialUpdate.laborTimesheets !== undefined) body.laborTimesheets = partialUpdate.laborTimesheets;
+      if (partialUpdate.costAnalysisEntries !== undefined) body.costAnalysisEntries = partialUpdate.costAnalysisEntries;
+      if (partialUpdate.costAnalysisCategories !== undefined) body.costAnalysisCategories = partialUpdate.costAnalysisCategories;
+      if (partialUpdate.pendingTransactions !== undefined) body.pendingTransactions = partialUpdate.pendingTransactions;
+      if (partialUpdate.archives !== undefined) body.archives = partialUpdate.archives;
+      if (partialUpdate.engineers !== undefined) body.engineers = partialUpdate.engineers;
+
       const res = await fetch('/api/financial-data/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pettyCashBoxDays: boxDaysData,
-          subcontractorContracts: subContractsData,
-          laborTimesheets: laborTimesheetsData,
-          costAnalysisEntries: costEntries !== undefined ? costEntries : costAnalysisEntries,
-          costAnalysisCategories: costCats !== undefined ? costCats : costAnalysisCategories,
-          pendingTransactions: pendingTxs !== undefined ? pendingTxs : pendingTransactions,
-          archives: archivesData !== undefined ? archivesData : archives,
-          engineers: engineersData !== undefined ? engineersData : (engineersData === null ? [] : engineers)
-        })
+        body: JSON.stringify(body)
       });
       if (res.ok) {
         broadcastDbUpdate();
@@ -599,33 +608,33 @@ export default function App() {
 
   const updatePendingTransactions = (updated: any[]) => {
     setPendingTransactions(updated);
-    syncFinancialsWithBackend(pettyCashBoxDays, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, updated, archives);
+    syncFinancialsWithBackend({ pendingTransactions: updated });
   };
 
   const updateBoxDays = (updated: any[]) => {
     setPettyCashBoxDays(updated);
-    syncFinancialsWithBackend(updated, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives);
+    syncFinancialsWithBackend({ pettyCashBoxDays: updated });
   };
 
   const updateSubcontractorContracts = (updated: any[]) => {
     setSubcontractorContracts(updated);
-    syncFinancialsWithBackend(pettyCashBoxDays, updated, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives);
+    syncFinancialsWithBackend({ subcontractorContracts: updated });
   };
 
   const updateLaborTimesheets = (updated: any[]) => {
     setLaborTimesheets(updated);
-    syncFinancialsWithBackend(pettyCashBoxDays, subcontractorContracts, updated, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives);
+    syncFinancialsWithBackend({ laborTimesheets: updated });
   };
 
   const updateCostAnalysis = (updatedEntries: any[], updatedCategories: string[]) => {
     setCostAnalysisEntries(updatedEntries);
     setCostAnalysisCategories(updatedCategories);
-    syncFinancialsWithBackend(pettyCashBoxDays, subcontractorContracts, laborTimesheets, updatedEntries, updatedCategories, pendingTransactions, archives);
+    syncFinancialsWithBackend({ costAnalysisEntries: updatedEntries, costAnalysisCategories: updatedCategories });
   };
 
   const updateArchives = (updated: any[]) => {
     setArchives(updated);
-    syncFinancialsWithBackend(pettyCashBoxDays, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, updated);
+    syncFinancialsWithBackend({ archives: updated });
   };
 
   // Petty Cash States (Keep legacy if needed to avoid syntax errors)
@@ -653,6 +662,8 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadInstructions, setUploadInstructions] = useState<string>('');
+  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Filter States
@@ -1014,42 +1025,6 @@ export default function App() {
       setNotifications(data.notifications || []);
       setProjectsList(data.projects || []);
       setSuppliersList(data.suppliers || []);
-
-      // Fetch financial and accounting data persistently
-      try {
-        const finRes = await fetch('/api/financial-data');
-        if (finRes.ok) {
-          const finData = await finRes.json();
-          if (finData.success) {
-            if (finData.pettyCashBoxDays !== undefined) {
-              setPettyCashBoxDays(finData.pettyCashBoxDays);
-            }
-            if (finData.subcontractorContracts !== undefined) {
-              setSubcontractorContracts(finData.subcontractorContracts);
-            }
-            if (finData.laborTimesheets !== undefined) {
-              setLaborTimesheets(finData.laborTimesheets);
-            }
-            if (finData.costAnalysisEntries !== undefined) {
-              setCostAnalysisEntries(finData.costAnalysisEntries);
-            }
-            if (finData.costAnalysisCategories !== undefined) {
-              setCostAnalysisCategories(finData.costAnalysisCategories);
-            }
-            if (finData.pendingTransactions !== undefined) {
-              setPendingTransactions(finData.pendingTransactions);
-            }
-            if (finData.archives !== undefined) {
-              setArchives(finData.archives);
-            }
-            if (finData.engineers !== undefined) {
-              setEngineers(finData.engineers);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("Could not fetch financial data during initial load:", err);
-      }
 
       isInitialFetchCompleted.current = true;
  
@@ -1696,6 +1671,8 @@ export default function App() {
     if (uploadInstructions && uploadInstructions.trim() !== '') {
       formData.append('instructions', uploadInstructions.trim());
     }
+    formData.append("selectedAIModel", selectedAIModel);
+    formData.append("useAdvanced", useAdvancedAI ? "true" : "false");
 
     setUploading(true);
     setErrorMsg(null);
@@ -5095,6 +5072,12 @@ export default function App() {
             </div>
           </div>
 
+          <AIModelSelector
+            useAdvanced={useAdvancedAI}
+            setUseAdvanced={setUseAdvancedAI}
+            selectedModel={selectedAIModel}
+            setSelectedModel={setSelectedAIModel}
+          />
           <div className="bg-[#0b0f19]/40 rounded-2xl border-2 border-dashed border-sky-900/40 hover:border-sky-500/80 hover:shadow-lg transition-all p-8 text-center cursor-pointer relative group">
             <input 
               type="file" 
@@ -7117,16 +7100,7 @@ export default function App() {
           onRefresh={refetchFinancialData}
           onSave={(updated) => {
             setEngineers(updated);
-            syncFinancialsWithBackend(
-              pettyCashBoxDays,
-              subcontractorContracts,
-              laborTimesheets,
-              costAnalysisEntries,
-              costAnalysisCategories,
-              pendingTransactions,
-              archives,
-              updated
-            );
+            syncFinancialsWithBackend({ engineers: updated });
           }}
         />
       </main>

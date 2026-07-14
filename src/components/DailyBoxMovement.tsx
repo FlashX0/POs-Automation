@@ -1,3 +1,4 @@
+import { AIModelSelector } from "./AIModelSelector";
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye, ChevronDown, Settings, Check, X, Edit } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
@@ -59,7 +60,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
-
+  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
   const formatCurrency = (val: number): string => {
     if (val < 0) {
       const positiveVal = Math.abs(val);
@@ -90,6 +91,8 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
   // --- Unified AI Multimodal Parser Modal States ---
   const [showAIModal, setShowAIModal] = useState<boolean>(false);
+  const [selectedAIModel, setSelectedAIModel] = useState<string>('gpt-5.6-luna');
+  const [useMemory, setUseMemory] = useState<boolean>(false);
   const [selectedAIFile, setSelectedAIFile] = useState<File | null>(null);
   const [aiFilePreview, setAiFilePreview] = useState<string | null>(null);
   const [isProcessingAIUnified, setIsProcessingAIUnified] = useState<boolean>(false);
@@ -157,6 +160,9 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     formData.append('file', selectedAIFile);
     formData.append('selected_month', aiModalMonth);
     formData.append('engineerName', selectedEngineer || 'عام');
+    formData.append('selectedAIModel', selectedAIModel);
+    formData.append('useMemory', useMemory ? 'true' : 'false');
+    formData.append("useAdvanced", useAdvancedAI ? "true" : "false");
 
     try {
       const res = await fetch('/api/custody/analyze-multimodal', {
@@ -1291,7 +1297,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
 
               return (
-                <div key={day.date} className="break-inside-avoid text-black bg-white p-0 overflow-hidden print-ledger-box">
+                <div key={day.date + '-' + dayIdx} className="break-inside-avoid text-black bg-white p-0 overflow-hidden print-ledger-box">
                   <table className="print-ledger-table w-full text-center border-collapse text-xs sm:text-sm font-sans" style={{ borderCollapse: 'collapse', width: '100%' }}>
                     <thead>
                       <tr className="bg-[#D9E1F2]">
@@ -1957,8 +1963,16 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh] text-right">
-              {/* 1. Month Picker */}
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh] text-right">
+              {/* 1. Model Selection */}
+              <AIModelSelector
+                useAdvanced={useAdvancedAI}
+                setUseAdvanced={setUseAdvancedAI}
+                selectedModel={selectedAIModel}
+                setSelectedModel={setSelectedAIModel}
+              />
+
+              {/* 2. Month Picker */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300 block">اختر شهر الاستيراد والتحليل المستهدف:</label>
                 <select
@@ -1974,7 +1988,19 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                 <p className="text-[10px] text-slate-500">سيتم استيراد كافة حركات العهدة وتثبيتها في هذا الشهر حصرياً.</p>
               </div>
 
-              {/* 2. File Dropzone */}
+              {/* 3. Memory Toggle */}
+              <div className="space-y-1.5 flex items-center justify-between bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                <div className="text-right">
+                  <label className="text-xs font-bold text-slate-300 block">تفعيل الذاكرة والتعلم الذاتي</label>
+                  <p className="text-[10px] text-slate-500">يستخدم سياق التعلم السابق (يستهلك توكنز إضافية)</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={useMemory} onChange={(e) => setUseMemory(e.target.checked)} />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                </label>
+              </div>
+
+              {/* 4. File Dropzone */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300 block">ارفع شيت الإكسيل أو الصورة / لقطة الشاشة للتحليل:</label>
                 

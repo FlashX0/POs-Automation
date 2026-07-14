@@ -1,3 +1,4 @@
+import { AIUploadModal } from "./AIUploadModal";
 import React, { useState, useMemo, useEffect } from 'react';
 import { getSupabaseClient } from '../lib/supabaseClient';
 import { 
@@ -60,10 +61,10 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 }) => {
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  const handleSubcontractorOCR = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleSubcontractorOCR = async (file: File, model: string, useAdvanced: boolean) => {
     if (!file) return;
 
     setIsProcessingAI(true);
@@ -75,6 +76,8 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('selectedAIModel', model);
+    formData.append('useAdvanced', useAdvanced ? 'true' : 'false');
     formData.append('type', 'subcontractor');
 
     try {
@@ -86,6 +89,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data) {
+          setIsAIModalOpen(false);
           const ext = data.data;
           
           if (onNotify) {
@@ -1113,17 +1117,15 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                   <span className="text-xs font-bold text-amber-400 block mb-0.5">🚀 هل تريد ملء بيانات المستخلص تلقائياً بالذكاء الاصطناعي؟</span>
                   <p className="text-[10px] text-slate-400">ارفع مستخلص مقاول الباطن الورقي أو الرقمي وسيقوم Gemini OCR بقراءته وتعبئة الحقول فوراً.</p>
                 </div>
-                <label className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsAIModalOpen(true)}
+                  disabled={isProcessingAI}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0"
+                >
                   <Upload className="w-4 h-4" />
                   <span>{isProcessingAI ? 'جاري معالجة المستند... ⏳' : 'رفع وتحليل بالذكاء الاصطناعي 🤖'}</span>
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={handleSubcontractorOCR}
-                    disabled={isProcessingAI}
-                    className="hidden"
-                  />
-                </label>
+                </button>
               </div>
 
               <div>

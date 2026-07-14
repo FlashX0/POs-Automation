@@ -1,3 +1,4 @@
+import { AIModelSelector } from "./AIModelSelector";
 import React, { useState, useMemo, useEffect } from 'react';
 import { getSupabaseClient } from '../lib/supabaseClient';
 import { 
@@ -138,6 +139,8 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
   // Excel Parse states
   const [isParsingExcel, setIsParsingExcel] = useState<boolean>(false);
+  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [selectedAIModel, setSelectedAIModel] = useState('deepseek-v4-pro-bynara');
   const [excelPreviewEntries, setExcelPreviewEntries] = useState<CostEntry[]>([]);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
@@ -157,6 +160,8 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('selectedAIModel', selectedAIModel);
+    formData.append('useAdvanced', useAdvancedAI ? 'true' : 'false');
 
     try {
       const res = await fetch('/api/ai/excel-analysis', {
@@ -1014,6 +1019,12 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
       </div>
 
       {/* --- AI-Powered Excel Upload & Classification Section --- */}
+      <AIModelSelector
+        useAdvanced={useAdvancedAI}
+        setUseAdvanced={setUseAdvancedAI}
+        selectedModel={selectedAIModel}
+        setSelectedModel={setSelectedAIModel}
+      />
       <div className="bg-[#111827] border border-indigo-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden no-print space-y-6">
         <div className="absolute left-0 top-0 h-full w-1.5 bg-gradient-to-b from-indigo-500 to-purple-600" />
         

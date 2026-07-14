@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AIModelSelector } from './AIModelSelector';
 import * as XLSX from 'xlsx-js-style';
 import { 
   Plus, 
@@ -54,6 +55,8 @@ interface PriceComparisonProps {
 }
 
 export const PriceComparison: React.FC<PriceComparisonProps> = ({ documents = [], onNotify }) => {
+  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   const [comparisons, setComparisons] = useState<QuotationComparison[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -93,6 +96,8 @@ export const PriceComparison: React.FC<PriceComparisonProps> = ({ documents = []
     formData.append('prId', poId);
     formData.append('fallbackMaterial', material);
     formData.append('fallbackQuantity', String(quantity));
+    formData.append('selectedAIModel', selectedAIModel);
+    formData.append('useAdvanced', useAdvancedAI ? 'true' : 'false');
 
     try {
       const res = await fetch('/api/comparisons/analyze', {
@@ -653,12 +658,20 @@ export const PriceComparison: React.FC<PriceComparisonProps> = ({ documents = []
             <div className="bg-[#111c30]/50 border border-sky-900/40 rounded-2xl p-5 mb-2">
               <div className="flex items-center gap-2 text-sky-400 font-bold text-xs mb-3">
                 <Sparkles className="w-4 h-4 text-sky-400 animate-pulse" />
-                <span>مساعد المشتريات والتحليل الذكي بالذكاء الاصطناعي (Gemini 3.5 Flash)</span>
+                <span>مساعد المشتريات والتحليل الذكي بالذكاء الاصطناعي (NaraRouter)</span>
               </div>
               
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
                 
                 {/* Upload Zone */}
+                <div className="lg:col-span-12">
+                  <AIModelSelector
+                    useAdvanced={useAdvancedAI}
+                    setUseAdvanced={setUseAdvancedAI}
+                    selectedModel={selectedAIModel}
+                    setSelectedModel={setSelectedAIModel}
+                  />
+                </div>
                 <div className="lg:col-span-7 flex flex-col gap-3">
                   <div 
                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}

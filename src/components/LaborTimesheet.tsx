@@ -124,6 +124,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   // Navigation tabs state
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [printBorderThickness, setPrintBorderThickness] = useState<'light' | 'sharp'>('sharp');
   const [printFixPageBreak, setPrintFixPageBreak] = useState<boolean>(true);
@@ -141,6 +142,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('selectedAIModel', model);
+    formData.append('useAdvanced', useAdvanced ? 'true' : 'false');
     formData.append('type', 'labor');
 
     try {
@@ -152,6 +155,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data) {
+          setIsAIModalOpen(false);
           const ext = data.data;
           
           if (onNotify) {
@@ -1877,7 +1881,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                         {selectedSheet.days.map((day, dIdx) => {
                           const valMap = getNormalizedDayValues(day, computedSums.projects, selectedSheet);
                           return (
-                            <tr key={day.date} className="border-b border-slate-850 text-slate-300 hover:bg-slate-900/20 transition-all font-medium">
+                            <tr key={day.date + '-' + dIdx} className="border-b border-slate-850 text-slate-300 hover:bg-slate-900/20 transition-all font-medium">
                               <td className="py-3 px-2 text-right border-l border-slate-800 font-bold text-white">{day.dayName}</td>
                               <td className="py-3 px-2 text-right border-l border-slate-800 font-mono text-slate-400 text-[10px]">{day.date}</td>
                               
@@ -2245,7 +2249,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   {selectedSheet.days.map((day, dIdx) => {
                     const valMap = getNormalizedDayValues(day, computedSums.projects, selectedSheet);
                     return (
-                      <tr key={day.date} className="border-b border-solid border-[#4F81BD] text-slate-800 font-bold bg-white">
+                      <tr key={day.date + '-' + dIdx} className="border-b border-solid border-[#4F81BD] text-slate-800 font-bold bg-white">
                         <td className="py-2 px-1 border-e-2 border-solid border-[#4F81BD] bg-[#F5F7FA]">{day.dayName}</td>
                         <td className="py-2 px-1 border-e-2 border-solid border-[#4F81BD] font-mono text-[9px]">{day.date}</td>
                         
