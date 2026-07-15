@@ -815,11 +815,22 @@ export async function saveDb(data: any) {
     // 1. Fetch latest persisted state from Supabase app_state table
     if (adminClient) {
       try {
-        const { data: row, error: fetchErr } = await adminClient
+        let { data: row, error: fetchErr } = await adminClient
           .from('app_state')
           .select('data')
           .eq('id', 'global_state')
           .maybeSingle();
+
+        if (fetchErr || !row) {
+          const { data: rowKey } = await adminClient
+            .from('app_state')
+            .select('data')
+            .eq('key', 'global_state')
+            .maybeSingle();
+          if (rowKey) {
+            row = rowKey;
+          }
+        }
 
         if (row && row.data) {
           persistedState = row.data;
@@ -876,10 +887,10 @@ export async function saveDb(data: any) {
     // 2. Save to Supabase (Single Source of Truth)
     if (adminClient) {
       try {
-        // A. Upsert global state to app_state
+        // A. Upsert global state to app_state supporting both id and key column fields
         const { error: upsertErr } = await adminClient
           .from('app_state')
-          .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() });
+          .upsert({ id: 'global_state', key: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() });
 
         if (upsertErr) {
           throw upsertErr;
@@ -976,11 +987,22 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
 
       if (adminClient) {
         try {
-          const { data: row, error: fetchErr } = await adminClient
+          let { data: row, error: fetchErr } = await adminClient
             .from('app_state')
             .select('data')
             .eq('id', 'global_state')
             .maybeSingle();
+
+          if (fetchErr || !row) {
+            const { data: rowKey } = await adminClient
+              .from('app_state')
+              .select('data')
+              .eq('key', 'global_state')
+              .maybeSingle();
+            if (rowKey) {
+              row = rowKey;
+            }
+          }
 
           if (row && row.data) {
             const parsed = sanitizeDeletedRecords(row.data);
@@ -998,7 +1020,7 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
             if (localDb) {
               await adminClient
                 .from('app_state')
-                .upsert({ id: 'global_state', data: localDb, updated_at: new Date().toISOString() });
+                .upsert({ id: 'global_state', key: 'global_state', data: localDb, updated_at: new Date().toISOString() });
               console.log("Seeded empty Supabase app_state with active local db data!");
               memoryDb = sanitizeDeletedRecords(localDb);
               lastMongoSyncTime = Date.now();

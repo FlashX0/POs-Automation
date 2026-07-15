@@ -786,7 +786,9 @@ export default function App() {
   // Device Fingerprint & IP Verification States
   const [currentUser, setCurrentUser] = useState<any>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('logged_in_user');
+      const saved = localStorage.getItem('logged_in_user') || 
+                    localStorage.getItem('delta_user_session') || 
+                    localStorage.getItem('delta_user');
       if (saved) {
         try {
           return JSON.parse(saved);
@@ -837,7 +839,9 @@ export default function App() {
         return;
       }
 
-      const savedUserStr = localStorage.getItem('logged_in_user');
+      const savedUserStr = localStorage.getItem('logged_in_user') || 
+                           localStorage.getItem('delta_user_session') || 
+                           localStorage.getItem('delta_user');
       if (!savedUserStr) {
         // No saved user, immediately redirect to login
         setCurrentUser(null);
@@ -869,6 +873,8 @@ export default function App() {
           if (data.success && data.user) {
             setCurrentUser(data.user);
             localStorage.setItem('logged_in_user', JSON.stringify(data.user));
+            localStorage.setItem('delta_user_session', JSON.stringify(data.user));
+            localStorage.setItem('delta_user', JSON.stringify(data.user));
             
             // Strict Admin Route Security: Redirect normal users trying to access /admin
             if (data.user.role !== 'admin' && (currentPath.includes('admin') || isAdminView || isUrlAdmin)) {
@@ -884,6 +890,8 @@ export default function App() {
       } catch (err) {
         console.warn("[Session Guard] Verification failed:", err);
         localStorage.removeItem('logged_in_user');
+        localStorage.removeItem('delta_user_session');
+        localStorage.removeItem('delta_user');
         localStorage.removeItem('admin_session');
         setCurrentUser(null);
         navigateTo('/login');
@@ -4633,6 +4641,8 @@ export default function App() {
         onLoginSuccess={(user: any) => {
           setCurrentUser(user);
           localStorage.setItem('logged_in_user', JSON.stringify(user));
+          localStorage.setItem('delta_user_session', JSON.stringify(user));
+          localStorage.setItem('delta_user', JSON.stringify(user));
           const allowed = user.role === 'admin'
             ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
             : (user.allowed_departments || []);
@@ -4668,6 +4678,8 @@ export default function App() {
         onUpdateCurrentUser={(updatedUser: any) => {
           setCurrentUser(updatedUser);
           localStorage.setItem('logged_in_user', JSON.stringify(updatedUser));
+          localStorage.setItem('delta_user_session', JSON.stringify(updatedUser));
+          localStorage.setItem('delta_user', JSON.stringify(updatedUser));
         }}
         onBackToMain={() => {
           navigateTo('/');
@@ -4917,6 +4929,8 @@ export default function App() {
                     const confirmLogout = window.confirm("هل أنت متأكد من رغبتك في تسجيل الخروج من النظام؟");
                     if (confirmLogout) {
                       localStorage.removeItem('logged_in_user');
+                      localStorage.removeItem('delta_user_session');
+                      localStorage.removeItem('delta_user');
                       localStorage.removeItem('admin_session');
                       setCurrentUser(null);
                       navigateTo('/login');

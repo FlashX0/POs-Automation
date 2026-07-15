@@ -4635,7 +4635,8 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
       });
     }
     
-    const updatedDb = await saveDb(db);
+    await saveDb(db);
+    const updatedDb = await fetchAndSyncDbFromMongo(true);
     res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: updatedDb.pettyCashBoxDays || [] });
   } catch (err: any) {
     console.error("Update starting balance error:", err);

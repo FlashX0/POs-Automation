@@ -268,8 +268,6 @@ export class UserService {
       throw new Error("جلسة غير صالحة");
     }
     const lowerEmail = email.toLowerCase().trim();
-    const db = getDb();
-    db.users = db.users || [];
     let matchedUser = null;
 
     // Search table users in Supabase directly as requested
@@ -296,17 +294,39 @@ export class UserService {
           };
         }
       } catch (err: any) {
-        console.warn("[verifySession] Supabase search failed, falling back to local list:", err.message);
+        console.warn("[verifySession] Supabase search failed:", err.message);
       }
     }
 
-    // Fallback to local memory/JSON list
+    // Fallback to default hardcoded users ONLY if Supabase could not find them
     if (!matchedUser) {
-      matchedUser = db.users.find((u: any) => u.email && u.email.toLowerCase() === lowerEmail);
+      if (lowerEmail === "khaled@delta.com") {
+        matchedUser = {
+          id: "c45b9915-e6a3-4c65-81c5-b3206c6f3144",
+          name: "خالد",
+          email: "khaled@delta.com",
+          role: "admin",
+          status: "active",
+          allowed_departments: ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+        };
+      } else if (lowerEmail === "user@delta.com") {
+        matchedUser = {
+          id: "usr_user_1",
+          name: "موظف عادي",
+          email: "user@delta.com",
+          role: "user",
+          status: "active",
+          allowed_departments: []
+        };
+      }
     }
 
-    if (!matchedUser || matchedUser.status === "blocked") {
-      throw new Error("جلسة غير صالحة أو تم حظر الحساب");
+    if (!matchedUser) {
+      throw new Error("عذراً، المستخدم غير موجود في النظام");
+    }
+
+    if (matchedUser.status === "blocked") {
+      throw new Error("تم تعطيل حسابك من قبل الإدارة. يرجى التواصل مع المسؤول.");
     }
 
     if (matchedUser.role === 'admin') {
