@@ -64,7 +64,8 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   const [isAIModalOpen, setIsAIModalOpen] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  const handleSubcontractorOCR = async (file: File, model: string, useAdvanced: boolean) => {
+  const handleSubcontractorOCR = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
     setIsProcessingAI(true);
@@ -76,8 +77,8 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('selectedAIModel', model);
-    formData.append('useAdvanced', useAdvanced ? 'true' : 'false');
+    formData.append('selectedAIModel', 'gemini-2.5-pro');
+    formData.append('useAdvanced', 'false');
     formData.append('type', 'subcontractor');
 
     try {
@@ -152,6 +153,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
     } finally {
       setIsProcessingAI(false);
       e.target.value = '';
+      
     }
   };
 

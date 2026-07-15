@@ -187,6 +187,7 @@ import {
   Cell
 } from 'recharts';
 import { ProcessedDocument, AppStats, AppNotification, LineItem } from './types';
+import { DeliveryNoteAnalyzer } from './components/DeliveryNoteAnalyzer';
 
 const normalizeArabic = (text: any): string => {
   if (text === null || text === undefined) return '';
@@ -515,6 +516,7 @@ export default function App() {
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState<boolean>(false);
 
   // --- Integrated Financial & Accounting States & Defaults ---
+  const [dbVersion, setDbVersion] = useState<number>(0);
   const [engineers, setEngineers] = useState<any[]>([]);
 
   const [pettyCashBoxDays, setPettyCashBoxDays] = useState<any[]>([]);
@@ -554,6 +556,7 @@ export default function App() {
             if (finData.pendingTransactions) setPendingTransactions(finData.pendingTransactions);
             if (finData.archives) setArchives(finData.archives);
             if (finData.engineers) setEngineers(finData.engineers);
+            if (finData.version !== undefined) setDbVersion(finData.version);
           }
         }
       } catch (err) {
@@ -583,8 +586,15 @@ export default function App() {
     engineers?: any[];
   }) => {
     try {
-      const body: any = {};
-      if (partialUpdate.pettyCashBoxDays !== undefined) body.pettyCashBoxDays = partialUpdate.pettyCashBoxDays;
+      const body: any = { version: dbVersion };
+      if (partialUpdate.pettyCashBoxDays !== undefined) {
+        body.pettyCashBoxDays = partialUpdate.pettyCashBoxDays.map((day: any) => {
+          // Always ensure the frontend marks its sent state as the newest state when modifying it.
+          // Since partialUpdate only happens on user actions, we can safely bump updatedAt for all modified days.
+          // Actually, just ensuring it has a recent updatedAt is fine.
+          return { ...day, updatedAt: new Date().toISOString() };
+        });
+      }
       if (partialUpdate.subcontractorContracts !== undefined) body.subcontractorContracts = partialUpdate.subcontractorContracts;
       if (partialUpdate.laborTimesheets !== undefined) body.laborTimesheets = partialUpdate.laborTimesheets;
       if (partialUpdate.costAnalysisEntries !== undefined) body.costAnalysisEntries = partialUpdate.costAnalysisEntries;
@@ -599,6 +609,8 @@ export default function App() {
         body: JSON.stringify(body)
       });
       if (res.ok) {
+        const data = await res.json();
+        if (data.version !== undefined) setDbVersion(data.version);
         broadcastDbUpdate();
       }
     } catch (err) {
@@ -662,7 +674,7 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadInstructions, setUploadInstructions] = useState<string>('');
-  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [useAdvancedAI, setUseAdvancedAI] = useState(false);
   const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -1025,6 +1037,7 @@ export default function App() {
       setNotifications(data.notifications || []);
       setProjectsList(data.projects || []);
       setSuppliersList(data.suppliers || []);
+      if (data.version !== undefined) setDbVersion(data.version);
 
       isInitialFetchCompleted.current = true;
  
@@ -1409,7 +1422,7 @@ export default function App() {
       const res = await fetch('/api/documents/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documents: docsToRestore })
+        body: JSON.stringify({ documents: docsToRestore, version: dbVersion })
       });
 
       if (res.ok) {
@@ -1790,7 +1803,7 @@ export default function App() {
       const res = await fetch('/api/documents/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documents: remaining })
+        body: JSON.stringify({ documents: remaining, version: dbVersion })
       });
       if (res.ok) {
         setDocuments(remaining);
@@ -1814,7 +1827,7 @@ export default function App() {
       const res = await fetch('/api/documents/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documents: editDocs })
+        body: JSON.stringify({ documents: editDocs, version: dbVersion })
       });
       
       if (res.ok) {
@@ -2846,7 +2859,7 @@ export default function App() {
       const res = await fetch('/api/documents/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documents: updatedDocsList })
+        body: JSON.stringify({ documents: updatedDocsList, version: dbVersion })
       });
       
       if (res.ok) {
@@ -3362,7 +3375,7 @@ export default function App() {
     fetch('/api/documents/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ documents: updatedDocsList })
+      body: JSON.stringify({ documents: updatedDocsList, version: dbVersion })
     }).catch(() => {});
   };
 
@@ -3382,7 +3395,7 @@ export default function App() {
     fetch('/api/documents/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ documents: updatedDocsList })
+      body: JSON.stringify({ documents: updatedDocsList, version: dbVersion })
     }).catch(() => {});
   };
 
@@ -8162,6 +8175,12 @@ export default function App() {
 
                   {/* Bottom details helper banner in drawer */}
                   <div className="mt-6 flex flex-col gap-3">
+                    
+                    {/* Delivery Note Analyzer */}
+                    {selectedDoc.docType === 'po' && (
+                      <DeliveryNoteAnalyzer poId={selectedDoc.id} />
+                    )}
+  
                     <div className="p-4 bg-sky-50/15 border border-sky-100 rounded-2xl">
                       <span className="text-xs font-bold text-sky-850 block mb-1">💡 ملخص الـ AI وتحليل محتوى الملف الأصلي:</span>
                       <p className="text-xs text-slate-600 leading-relaxed font-medium select-text">

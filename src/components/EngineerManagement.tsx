@@ -49,7 +49,7 @@ interface EngineerManagementProps {
 }
 
 export default function EngineerManagement({ engineers, projectsList, boxDays = [], onSave, onRefresh }: EngineerManagementProps) {
-  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [useAdvancedAI, setUseAdvancedAI] = useState(false);
   const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'folders' | 'crud'>('folders');

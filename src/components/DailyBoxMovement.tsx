@@ -60,7 +60,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
-  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [useAdvancedAI, setUseAdvancedAI] = useState(false);
   const formatCurrency = (val: number): string => {
     if (val < 0) {
       const positiveVal = Math.abs(val);
@@ -1009,11 +1009,13 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
       updatedBoxDays[dayIdx] = {
         ...updatedBoxDays[dayIdx],
         transactions: [...updatedBoxDays[dayIdx].transactions, cleanTx],
+        updatedAt: new Date().toISOString(),
       };
     } else {
       updatedBoxDays.push({
         date: pendingTx.date,
         transactions: [cleanTx],
+        updatedAt: new Date().toISOString(),
       });
     }
 
@@ -1907,7 +1909,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
             <div className="px-6 py-4 bg-slate-900/60 border-t border-slate-800 flex justify-end gap-3">
               <button
                 onClick={() => setShowApprovalModal(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+                className="px-4 py-2 text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
               >
                 إلغاء ✕
               </button>
@@ -1974,7 +1976,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
               {/* 2. Month Picker */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300 block">اختر شهر الاستيراد والتحليل المستهدف:</label>
+                <label className="text-xs font-bold text-emerald-400 block">اختر شهر الاستيراد والتحليل المستهدف:</label>
                 <select
                   value={aiModalMonth}
                   onChange={(e) => setAiModalMonth(e.target.value)}
@@ -1991,7 +1993,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               {/* 3. Memory Toggle */}
               <div className="space-y-1.5 flex items-center justify-between bg-slate-950/40 p-3 rounded-xl border border-slate-800">
                 <div className="text-right">
-                  <label className="text-xs font-bold text-slate-300 block">تفعيل الذاكرة والتعلم الذاتي</label>
+                  <label className="text-xs font-bold text-emerald-400 block">تفعيل الذاكرة والتعلم الذاتي</label>
                   <p className="text-[10px] text-slate-500">يستخدم سياق التعلم السابق (يستهلك توكنز إضافية)</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -2084,7 +2086,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               <button
                 onClick={handleAIUnifiedProcess}
                 disabled={isProcessingAIUnified || !aiModalMonth || !selectedAIFile}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-850 disabled:text-slate-500 text-white text-xs font-black rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2 bg-slate-200 hover:bg-white disabled:bg-slate-850 disabled:text-slate-500 text-black text-xs font-black rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
               >
                 {isProcessingAIUnified ? (
                   <>

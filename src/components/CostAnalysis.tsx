@@ -139,7 +139,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
 
   // Excel Parse states
   const [isParsingExcel, setIsParsingExcel] = useState<boolean>(false);
-  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [useAdvancedAI, setUseAdvancedAI] = useState(false);
   const [selectedAIModel, setSelectedAIModel] = useState('deepseek-v4-pro-bynara');
   const [excelPreviewEntries, setExcelPreviewEntries] = useState<CostEntry[]>([]);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);

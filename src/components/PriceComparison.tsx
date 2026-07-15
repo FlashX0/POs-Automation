@@ -55,7 +55,7 @@ interface PriceComparisonProps {
 }
 
 export const PriceComparison: React.FC<PriceComparisonProps> = ({ documents = [], onNotify }) => {
-  const [useAdvancedAI, setUseAdvancedAI] = useState(true);
+  const [useAdvancedAI, setUseAdvancedAI] = useState(false);
   const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   const [comparisons, setComparisons] = useState<QuotationComparison[]>([]);
   const [loading, setLoading] = useState<boolean>(true);

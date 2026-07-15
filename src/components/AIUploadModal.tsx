@@ -25,7 +25,7 @@ export function AIUploadModal({
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [useAdvanced, setUseAdvanced] = useState(true);
+  const [useAdvanced, setUseAdvanced] = useState(false);
   const [selectedModel, setSelectedModel] = useState("gpt-5.6-luna");
 
   if (!isOpen) return null;
@@ -83,7 +83,7 @@ export function AIUploadModal({
           />
 
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 block">ارفع الملف هنا:</label>
+            <label className="text-xs font-bold text-emerald-400 block">ارفع الملف هنا:</label>
             <div
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onDrop={(e) => {
@@ -111,7 +111,7 @@ export function AIUploadModal({
                     <Upload className="w-6 h-6 text-slate-400 group-hover:text-emerald-400" />
                   </div>
                   <div className="space-y-1">
-                    <p className="text-xs font-bold text-slate-300">اسحب وأسقط الملف أو الصورة هنا، أو اضغط للتصفح</p>
+                    <p className="text-xs font-bold text-emerald-400">اسحب وأسقط الملف أو الصورة هنا، أو اضغط للتصفح</p>
                   </div>
                 </>
               )}
@@ -139,14 +139,14 @@ export function AIUploadModal({
               }
             }}
             disabled={isProcessing}
-            className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+            className="px-4 py-2 text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 rounded-xl transition-all cursor-pointer disabled:opacity-50"
           >
             إلغاء ✕
           </button>
           <button
             onClick={handleSubmit}
             disabled={isProcessing || !selectedFile}
-            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-850 disabled:text-slate-500 text-white text-xs font-black rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
+            className="px-5 py-2 bg-slate-200 hover:bg-white disabled:bg-slate-850 disabled:text-slate-500 text-black text-xs font-black rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
           >
             {isProcessing ? (
               <>

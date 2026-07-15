@@ -54,7 +54,7 @@ export function AIModelSelector({ useAdvanced, setUseAdvanced, selectedModel, se
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-emerald-400" />
           <div className="text-right">
-            <h4 className="text-sm font-bold text-white">إعدادات الذكاء الاصطناعي المتقدم (NaraRouter)</h4>
+            <h4 className={`text-sm font-bold ${useAdvanced ? 'text-black' : 'text-white'}`}>{useAdvanced ? 'تشغيل المعالج الذكى' : 'تصحيح كتابي'}</h4>
             <p className="text-[10px] text-slate-400">تحكم في دقة وتكلفة التحليل</p>
           </div>
         </div>

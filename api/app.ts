@@ -10,9 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import bcrypt from "bcryptjs";
 import * as XLSX from "xlsx";
-import { AsyncLocalStorage } from "async_hooks";
 
-export const requestStore = new AsyncLocalStorage<{ method: string }>();
 
 // Load environment variables
 dotenv.config();
@@ -41,7 +39,7 @@ function getJwtPayload(token: string): any {
   }
 }
 
-function checkSupabaseKeysConfig(): { isValid: boolean; error?: string } {
+export function checkSupabaseKeysConfig(): { isValid: boolean; error?: string } {
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseServiceRoleKey || "").trim();
   const anonKey = (process.env.SUPABASE_ANON_KEY || supabaseAnonKey || "").trim();
 
@@ -85,7 +83,7 @@ function maskKey(key: string | undefined): string {
   return `${cleanKey.slice(0, 4)}...${cleanKey.slice(-4)} (length: ${len})`;
 }
 
-function getSupabaseClient() {
+export function getSupabaseClient() {
   const url = (process.env.SUPABASE_URL || supabaseUrl || "").trim();
   const key = (process.env.SUPABASE_ANON_KEY || supabaseAnonKey || "").trim();
   
@@ -107,7 +105,7 @@ function getSupabaseClient() {
   return supabaseClient;
 }
 
-function getSupabaseAdminClient() {
+export function getSupabaseAdminClient() {
   const url = (process.env.SUPABASE_URL || supabaseUrl || "").trim();
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseServiceRoleKey || "").trim();
   
@@ -329,11 +327,7 @@ const ORIGINAL_DB_FILE = path.join(process.cwd(), "data", "db.json");
 const app = express();
 const PORT = 3000;
 
-app.use((req, res, next) => {
-  requestStore.run({ method: req.method }, () => {
-    next();
-  });
-});
+
 
 // التأكد من تهيئة المجلدات حتى لا تضرب الـ Routes المسؤولة عن معالجة الفواتير
 try {
@@ -361,54 +355,10 @@ mongoose.connect(MONGODB_URI, {
     console.warn("📌 لا تقلق! الخدمة مبرمجة لتعمل تلقائياً وبكفاءة كاملة على التخزين المحلي الآمن (local db.json /tmp).");
   });
 
-// 2. إنشاء الـ Schema والـ Model بدلاً من ملف db.json القديم
-const projectSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true }
-});
-const Project = mongoose.model("Project", projectSchema);
-
-const appStateSchema = new mongoose.Schema({
-  key: { type: String, default: "global_state", unique: true },
-  data: { type: mongoose.Schema.Types.Mixed, required: true }
-});
-const AppState = mongoose.model("AppState", appStateSchema);
-
-const allowedDeviceSchema = new mongoose.Schema({
-  device_fingerprint: { type: String, required: true, unique: true },
-  ip_address: { type: String },
-  device_info: { type: String },
-  status: { type: String, default: "pending" },
-  role: { type: String, default: "user" },
-  nickname: { type: String },
-  device_name: { type: String },
-  createdAt: { type: Date, default: Date.now }
-});
-const AllowedDevice = mongoose.model("AllowedDevice", allowedDeviceSchema);
-
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true, lowercase: true },
-  password: { type: String, required: true },
-  name: { type: String, required: true },
-  role: { type: String, default: "user" }, // admin or user
-  status: { type: String, default: "active" }, // active, blocked, etc.
-  allowed_departments: { type: [String], default: [] },
-  isSystem: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
-});
-const User = mongoose.model("User", userSchema);
-
-const aiTrainingTemplateSchema = new mongoose.Schema({
-  originalText: { type: String, required: true },
-  correctedText: { type: String, required: true },
-  type: { type: String, default: "correction" },
-  createdAt: { type: Date, default: Date.now }
-});
-const AITrainingTemplate = mongoose.model("AITrainingTemplate", aiTrainingTemplateSchema);
-
-// 3. مصفوفة المشاريع الافتراضية الخاصة بك بالكامل دون أي نقص
+import { UserService } from "./services/UserService.js";
+import { Project, AppState, AllowedDevice, User, AITrainingTemplate } from "./models/MongooseModels.js";
 const defaultProjects = [
   "Al Burouj - Sitewide",
-  "Azailya",
   "EDNC",
   "June - Main Gate",
   "June - Main Gate Landscape",
@@ -423,7 +373,6 @@ const defaultProjects = [
   "HP - Sea Shore",
   "HP - Road Works"
 ];
-
 const defaultSuppliers: string[] = [];
 
 const defaultDb = {
@@ -525,7 +474,6 @@ function mapProjectNameToStandard(name: any): string {
   const standardProjects = [
     "Al Burouj - Sitewide",
     "Azailya",
-    "EDNC",
     "June - Main Gate",
     "June - Main Gate Landscape",
     "June - Parcel 2",
@@ -574,211 +522,18 @@ async function seedDatabase() {
 }
 */
 
-async function seedAllRequiredUsers() {
-  try {
-    const db = getDb();
-    const changed = ensureLocalUsersSeeded(db);
-    if (changed) {
-      await saveDb(db);
-      console.log("[Seeder] Local users successfully verified & seeded.");
-    }
 
-    const adminEmail = "khaled@delta.com";
-    const userEmail = "user@delta.com";
-    const hashedAdmin = bcrypt.hashSync("016135", 10);
-    const hashedUser = bcrypt.hashSync("DeltaUser2026", 10);
-
-    // MongoDB User Collection seed
-    if (mongoose.connection.readyState === 1) {
-      try {
-        const mongoAdminExists = await User.findOne({ email: adminEmail });
-        if (!mongoAdminExists) {
-          await User.create({
-            _id: "c45b9915-e6a3-4c65-81c5-b3206c6f3144",
-            name: "خالد",
-            email: adminEmail,
-            password: hashedAdmin,
-            role: "admin",
-            status: "active",
-            isSystem: true
-          });
-          console.log("[Seeder] Seeded Admin (Khaled) to MongoDB Atlas.");
-        } else {
-          let mongoChanged = false;
-          if (false) {
-            mongoAdminExists.role = "admin";
-            mongoChanged = true;
-          }
-          if (false) {
-            (mongoAdminExists as any).isSystem = true;
-            mongoChanged = true;
-          }
-          if (mongoChanged) {
-            await mongoAdminExists.save();
-            console.log("[Seeder] Updated Admin (Khaled) role & isSystem to 'admin' in MongoDB Atlas.");
-          }
-        }
-        
-        const mongoUserExists = await User.findOne({ email: userEmail });
-        if (!mongoUserExists) {
-          await User.create({
-            name: "موظف عادي",
-            email: userEmail,
-            password: hashedUser,
-            role: "user",
-            status: "active",
-            isSystem: true
-          });
-          console.log("[Seeder] Seeded standard user to MongoDB Atlas.");
-        } else {
-          if (false) {
-            (mongoUserExists as any).isSystem = true;
-            await mongoUserExists.save();
-            console.log("[Seeder] Updated standard user isSystem in MongoDB Atlas.");
-          }
-        }
-      } catch (mongoErr: any) {
-        console.error("[Seeder] MongoDB user collection seed failed:", mongoErr.message);
-      }
-    }
-
-    // Supabase Auth and database synchronization (Purge & Align)
-    const adminClient = getSupabaseAdminClient();
-    const publicClient = getSupabaseClient();
-
-    if (adminClient) {
-      try {
-        console.log("[Seeder] Syncing database with Supabase Auth users using Admin Client...");
-        const { data: { users: sbUsers }, error: listError } = await adminClient.auth.admin.listUsers();
-        if (listError) {
-          throw listError;
-        }
-
-        console.log(`[Seeder] Found ${sbUsers.length} users in Supabase Auth.`);
-
-        // 1. Ensure Khaled exists in Supabase Auth with ID c45b9915-e6a3-4c65-81c5-b3206c6f3144
-        const khaledSb = sbUsers.find((u: any) => u.email && u.email.toLowerCase() === adminEmail);
-        if (!khaledSb) {
-          console.log("[Seeder] Creating Khaled in Supabase Auth with exact ID...");
-          const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-            id: "c45b9915-e6a3-4c65-81c5-b3206c6f3144",
-            email: adminEmail,
-            password: "016135",
-            email_confirm: true,
-            user_metadata: { name: "خالد", role: "admin" }
-          });
-          if (createErr) {
-            console.error("[Seeder] Failed to create Khaled in Supabase Auth:", createErr.message);
-          } else {
-            console.log("[Seeder] Khaled successfully created in Supabase Auth!");
-          }
-        }
-
-        // 2. Perform database purging of users that do not exist in Supabase Auth
-        // As requested: "قم بمسح أي حسابات عشوائية زائدة في جدول قاعدة البيانات لا تملك حساباً حقيقياً في الـ Supabase Auth (مثل حساب daly@delta.com الظاهر في الجدول وغير موجود في الـ Auth)."
-        const localDb = getDb();
-        localDb.users = localDb.users || [];
-        const originalCount = localDb.users.length;
-
-        // Collect all valid emails from Supabase Auth
-        const sbEmails = new Set<string>();
-        sbUsers.forEach((u: any) => {
-          if (u.email) sbEmails.add(u.email.toLowerCase());
-        });
-        // Always allow khaled
-        sbEmails.add(adminEmail);
-        // Also allow the default user@delta.com just in case Supabase is running locally/mocked
-        sbEmails.add(userEmail);
-
-        const initialLength = localDb.users.length;
-        localDb.users = localDb.users.filter((u: any) => {
-          if (!u.email) return false;
-          const lowerEmail = u.email.toLowerCase();
-          const existsInSb = sbEmails.has(lowerEmail);
-          if (!existsInSb) {
-            console.log(`[Seeder] Purging unsynced user from local database: ${u.email}`);
-          }
-          return true;
-        });
-
-        // 3. Keep local user IDs in sync with UIDs in Supabase Auth
-        localDb.users.forEach((u: any) => {
-          if (u.email && u.email.toLowerCase() === adminEmail) {
-            u.id = "c45b9915-e6a3-4c65-81c5-b3206c6f3144";
-            return;
-          }
-          const matchedSb = sbUsers.find((sb: any) => sb.email && sb.email.toLowerCase() === u.email.toLowerCase());
-          if (matchedSb && u.id !== matchedSb.id) {
-            console.log(`[Seeder] Syncing ID for ${u.email} to match Supabase Auth UID: ${matchedSb.id}`);
-            u.id = matchedSb.id;
-          }
-        });
-
-        if (localDb.users.length !== initialLength || originalCount !== localDb.users.length) {
-          await saveDb(localDb);
-        }
-
-        // Also purge from MongoDB
-        if (mongoose.connection.readyState === 1) {
-          try {
-            const allMongoUsers = await User.find({});
-            for (const mUser of allMongoUsers) {
-              const mEmail = mUser.email.toLowerCase();
-              if (mEmail !== adminEmail && mEmail !== userEmail && !sbEmails.has(mEmail)) {
-                console.log(`[Seeder] Purging unsynced user from MongoDB: ${mUser.email}`);
-                console.log("Purge skipped for: ", mUser.email);
-              }
-            }
-          } catch (mongoErr) {
-            console.error("[Seeder] MongoDB purge failed:", mongoErr);
-          }
-        }
-      } catch (sbErr: any) {
-        console.warn("[Seeder] Supabase Admin sync error:", sbErr.message);
-      }
-    } else if (publicClient) {
-      try {
-        console.log("[Seeder] Attempting to verify/seed admin user in Supabase Auth (Anon)...");
-        const { data: adminSb, error: adminSbError } = await publicClient.auth.signUp({
-          email: adminEmail,
-          password: "016135",
-          options: {
-            data: { name: "خالد", role: "admin" }
-          }
-        });
-        if (adminSbError) {
-          console.log(`[Seeder] Supabase Admin signup notice: ${adminSbError.message}`);
-        } else {
-          console.log("[Seeder] Supabase Admin signed up successfully!");
-        }
-
-        console.log("[Seeder] Attempting to verify/seed standard user in Supabase Auth (Anon)...");
-        const { data: userSb, error: userSbError } = await publicClient.auth.signUp({
-          email: userEmail,
-          password: "DeltaUser2026",
-          options: {
-            data: { name: "موظف عادي", role: "user" }
-          }
-        });
-        if (userSbError) {
-          console.log(`[Seeder] Supabase standard user signup notice: ${userSbError.message}`);
-        } else {
-          console.log("[Seeder] Supabase standard user signed up successfully!");
-        }
-      } catch (sbErr: any) {
-        console.warn("[Seeder] Supabase Auth seed failed:", sbErr.message);
-      }
-    }
-  } catch (err: any) {
-    console.error("[Seeder] General error seeding users:", err.message);
-  }
-}
 
 // Run immediate background seed
-seedAllRequiredUsers();
+try {
+  UserService.seedAllRequiredUsers();
+} catch (err) {
+  console.error("Failed background seedAllRequiredUsers:", err);
+}
 
 // تشغيل الدالة بمجرد تمام الاتصال والمزامنة لضمان استرجاع كل المشاريع من أطلس
 mongoose.connection.once("open", async () => {
+  try {
   try {
     // 1. تنظيف المشاريع الافتراضية الثلاثة والمستندات الافتراضية من MongoDB Atlas نهائياً لتبدأ لوحة التحكم فارغة 100%
     const targetDocIds = ["doc_1781725768123", "doc_1781722362282", "doc_1781722025253"];
@@ -808,7 +563,6 @@ mongoose.connection.once("open", async () => {
 
       // تصفية المشاريع الافتراضية القديمة من القائمة المدمجة في db
       const oldProjectsList = [
-        "Villette A&B", "Villette C&D", "Azalia", "Block 39", "EDNC", 
         "June - Main Gate Landscape", "June - Main Gate", "Al-brouj", "June", 
         "City Stars Al Sahel", "Allegria", "ETAPA", "Strip 2 Mall", 
         "Training Pool", "Al Brouj - New Buffer", "Hyde Park", 
@@ -855,6 +609,7 @@ mongoose.connection.once("open", async () => {
     console.log("[Security Startup] Resetting all devices to 'pending' and 'user' to force them to log in again.");
     // 1. Local JSON DB
     const db = getDb();
+
     if (db.allowed_devices && Array.isArray(db.allowed_devices)) {
       db.allowed_devices = db.allowed_devices.map((d: any) => ({
         ...d,
@@ -888,13 +643,22 @@ mongoose.connection.once("open", async () => {
     console.error("[Security Startup] Error during device status reset:", err.message);
   }
 
-  await fetchAndSyncDbFromMongo();
+  try {
+    await fetchAndSyncDbFromMongo();
+  } catch (err) {
+    console.error("Error in fetchAndSyncDbFromMongo:", err);
+  }
 
   // 5. Seed Users with Email/Password and Role (admin/user)
-  await seedAllRequiredUsers();
+  try {
+    await UserService.seedAllRequiredUsers();
+  } catch (err) {
+    console.error("Error in seedAllRequiredUsers:", err);
+  }
 
   try {
     const db = getDb();
+
     let changed = false;
 
     // تهيئة القائمة بالكامل بالمشاريع المعتمدة الـ 15 دون تكرار
@@ -921,6 +685,10 @@ mongoose.connection.once("open", async () => {
     }
   } catch (err) {
     console.error("Error syncing and seeding standard projects:", err);
+  }
+  
+  } catch (globalErr) {
+    console.error("CRITICAL ERROR IN MONGO OPEN EVENT:", globalErr);
   }
 });
 
@@ -993,84 +761,7 @@ function cleanDatabaseDiagnosticsInternal(db: any) {
   }
 }
 
-function ensureLocalUsersSeeded(db: any): boolean {
-  if (!db) return false;
-  db.users = db.users || [];
-  let changed = false;
 
-  const adminEmail = "khaled@delta.com";
-  const userEmail = "user@delta.com";
-
-  let adminUser = db.users.find((u: any) => u.email && u.email.toLowerCase() === adminEmail);
-  if (!adminUser) {
-    db.users.push({
-      id: "c45b9915-e6a3-4c65-81c5-b3206c6f3144",
-      name: "خالد",
-      email: adminEmail,
-      password: bcrypt.hashSync("016135", 10),
-      role: "admin",
-      status: "active",
-      isSystem: true,
-      createdAt: new Date().toISOString()
-    });
-    changed = true;
-  } else {
-    if (adminUser.id !== "c45b9915-e6a3-4c65-81c5-b3206c6f3144") {
-      adminUser.id = "c45b9915-e6a3-4c65-81c5-b3206c6f3144";
-      changed = true;
-    }
-    if (false) {
-      adminUser.role = "admin";
-      changed = true;
-    }
-    if (false) {
-      adminUser.isSystem = true;
-      changed = true;
-    }
-  }
-
-  let normalUser = db.users.find((u: any) => u.email && u.email.toLowerCase() === userEmail);
-  if (!normalUser) {
-    db.users.push({
-      id: "usr_user_1",
-      name: "موظف عادي",
-      email: userEmail,
-      password: bcrypt.hashSync("DeltaUser2026", 10),
-      role: "user",
-      status: "active",
-      isSystem: true,
-      createdAt: new Date().toISOString()
-    });
-    changed = true;
-  } else {
-    if (!normalUser.isSystem) {
-      normalUser.isSystem = true;
-      changed = true;
-    }
-  }
-
-  // Deduplicate user IDs to ensure strict uniqueness
-  const seenIds = new Set<string>();
-  db.users.forEach((u: any, idx: number) => {
-    if (u.email && u.email.toLowerCase() === adminEmail) {
-      u.id = "c45b9915-e6a3-4c65-81c5-b3206c6f3144";
-      u.isSystem = true;
-      seenIds.add(u.id);
-      return;
-    }
-    if (u.email && u.email.toLowerCase() === userEmail) {
-      u.isSystem = true;
-    }
-    if (!u.id || seenIds.has(u.id)) {
-      const generatedId = "usr_" + Date.now() + "_" + Math.floor(Math.random() * 1000) + "_" + idx;
-      u.id = generatedId;
-      changed = true;
-    }
-    seenIds.add(u.id);
-  });
-
-  return changed;
-}
 
 function sanitizeDeletedRecords(db: any) {
   if (!db || typeof db !== "object") return db;
@@ -1189,10 +880,10 @@ function initializeDbVersion(db: any) {
   return db;
 }
 
-function getDb() {
+export function getDb() {
   let dbResult;
   if (memoryDb) {
-    const usersChanged = ensureLocalUsersSeeded(memoryDb);
+    const usersChanged = false;
     if (usersChanged) {
       try {
         fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
@@ -1221,7 +912,7 @@ function getDb() {
         changed = true;
       }
 
-      const usersChanged = ensureLocalUsersSeeded(parsed);
+      const usersChanged = false;
       if (usersChanged) {
         changed = true;
       }
@@ -1236,7 +927,7 @@ function getDb() {
       dbResult = initializeDbVersion(parsed);
     } catch (err) {
       const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
-      ensureLocalUsersSeeded(fallback);
+      // ensureLocalUsersSeeded(fallback);
       memoryDb = fallback;
       try {
         fs.writeFileSync(DB_FILE, JSON.stringify(fallback, null, 2), "utf-8");
@@ -1534,54 +1225,43 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
     }
 
     // Helper to merge two conflicting items based on updatedAt and preserve values
-    function mergeTwoItems(itemA: any, itemB: any) {
+    function mergeTwoItems(itemA: any, itemB: any, colName: string = "") {
       if (!itemA) return itemB;
       if (!itemB) return itemA;
 
       const dateA = itemA.updatedAt ? new Date(itemA.updatedAt).getTime() : 0;
       const dateB = itemB.updatedAt ? new Date(itemB.updatedAt).getTime() : 0;
 
-      const newerItem = dateB >= dateA ? itemB : itemA;
-      const olderItem = dateB >= dateA ? itemA : itemB;
+      const newerItem = dateB > dateA ? itemB : itemA;
+      const olderItem = dateB > dateA ? itemA : itemB;
 
       const merged = { ...newerItem };
 
-      // Ensure startingBalanceOverride is preserved from either
-      if (olderItem.startingBalanceOverride !== undefined && olderItem.startingBalanceOverride !== null) {
-        if (merged.startingBalanceOverride === undefined || merged.startingBalanceOverride === null) {
-          merged.startingBalanceOverride = olderItem.startingBalanceOverride;
+      if (colName === "pettyCashBoxDays") {
+        merged.startingBalanceOverride = newerItem.startingBalanceOverride;
+      } else {
+        if (olderItem.startingBalanceOverride !== undefined && olderItem.startingBalanceOverride !== null) {
+          if (merged.startingBalanceOverride === undefined || merged.startingBalanceOverride === null) {
+            merged.startingBalanceOverride = olderItem.startingBalanceOverride;
+          }
         }
       }
 
-      // Merge transactions arrays securely
       if (Array.isArray(olderItem.transactions) || Array.isArray(newerItem.transactions)) {
-        const txsA = Array.isArray(olderItem.transactions) ? olderItem.transactions : [];
-        const txsB = Array.isArray(newerItem.transactions) ? newerItem.transactions : [];
-
-        const txMap = new Map();
-        for (const t of txsA) {
-          if (t && t.id) {
-            txMap.set(t.id, t);
+        const mergedTx = [...(olderItem.transactions || [])];
+        const newerTx = newerItem.transactions || [];
+        for (const nTx of newerTx) {
+          const eIdx = mergedTx.findIndex((e: any) => e.id === nTx.id);
+          if (eIdx >= 0) {
+            const date1 = nTx.updatedAt ? new Date(nTx.updatedAt).getTime() : 0;
+            const date2 = mergedTx[eIdx].updatedAt ? new Date(mergedTx[eIdx].updatedAt).getTime() : 0;
+            if (date1 >= date2) mergedTx[eIdx] = nTx;
+          } else {
+            mergedTx.push(nTx);
           }
         }
-        for (const t of txsB) {
-          if (t && t.id) {
-            const existing = txMap.get(t.id);
-            if (existing) {
-              const tDateExist = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-              const tDateNew = t.updatedAt ? new Date(t.updatedAt).getTime() : 0;
-              txMap.set(t.id, tDateNew >= tDateExist ? t : existing);
-            } else {
-              txMap.set(t.id, t);
-            }
-          }
-        }
-        merged.transactions = Array.from(txMap.values());
+        merged.transactions = mergedTx;
       }
-
-      const maxTime = Math.max(dateA, dateB, Date.now());
-      merged.updatedAt = new Date(maxTime).toISOString();
-
       return merged;
     }
 
@@ -1591,29 +1271,16 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
       const persItem = persMap.get(id);
       const origItem = origMap.get(id);
       if (persItem && JSON.stringify(persItem) !== JSON.stringify(origItem)) {
-        // Conflict detected! Automatically merge using mergeTwoItems
-        const resolved = mergeTwoItems(persItem, item);
+        const resolved = mergeTwoItems(persItem, item, collectionName);
         mergedUpdated.push(resolved);
       } else {
         mergedUpdated.push(item);
       }
     }
 
-    for (const id of deleted) {
-      const persItem = persMap.get(id);
-      const origItem = origMap.get(id);
-      if (persItem && JSON.stringify(persItem) !== JSON.stringify(origItem)) {
-        // Soft-merge: instead of failing, we ignore deletion and keep the updated persisted version
-        console.warn(`[DB_SYSTEM] Deletion conflict for ID ${id} in ${collectionName}. Persisted item is newer, keeping it.`);
-        deleted.delete(id);
-      }
-    }
-
-    const resultList = [...persList];
-    
+    const resultList = persList.filter((x: any) => !deleted.has(getKey(x)));
     for (const item of mergedUpdated) {
-      const id = getKey(item);
-      const idx = resultList.findIndex((x: any) => getKey(x) === id);
+      const idx = resultList.findIndex((x: any) => getKey(x) === getKey(item));
       if (idx !== -1) {
         resultList[idx] = item;
       }
@@ -1686,7 +1353,7 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
   return merged;
 }
 
-async function saveDb(data: any) {
+export async function saveDb(data: any) {
   return dbWriteQueue.enqueue(async () => {
     structuredLog("update", "INFO", "Initiating atomic database write transaction...");
     
@@ -1807,15 +1474,13 @@ async function saveDb(data: any) {
       }
     }
 
-    lastMongoSyncTime = Date.now() + 15000;
+    lastMongoSyncTime = Date.now() + 1000;
     return sanitizedData;
   });
 }
 
-async function fetchAndSyncDbFromMongo(force: boolean = false) {
-  const store = requestStore.getStore();
-  const isWriteRequest = store && store.method !== "GET";
-  const shouldForce = force || isWriteRequest;
+export async function fetchAndSyncDbFromMongo(force: boolean = false) {
+  const shouldForce = force;
 
   if (syncInProgress) {
     if (currentSyncPromise) {
@@ -1963,6 +1628,7 @@ async function moveProjectStorageFolder(oldProjName: string, newProjName: string
             const newUrl = publicUrlData.publicUrl;
             
             const db = getDb();
+
             let changed = false;
             if (db.documents && Array.isArray(db.documents)) {
               db.documents.forEach((doc: any) => {
@@ -1998,6 +1664,7 @@ async function moveVendorStorageFolder(oldVendorName: string, newVendorName: str
     console.log(`[Storage Move] Starting vendor folder rename from "${oldVendorFolder}" to "${newVendorFolder}"...`);
     
     const db = getDb();
+
     const projects = db.projects || [];
     
     for (const projName of projects) {
@@ -2088,6 +1755,7 @@ app.use(express.urlencoded({ limit: "25mb", extended: true }));
 // Express helper to add custom server-sent notification
 async function triggerNotification(type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) {
   const db = getDb();
+
   const rawDate = new Date();
   const notification = {
     id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -2107,6 +1775,7 @@ async function triggerNotification(type: 'info' | 'success' | 'warning' | 'error
 async function checkForUpcomingDueDates() {
   try {
     const db = getDb();
+
     const now = new Date();
     const documents = db.documents || [];
     let notificationsAdded = false;
@@ -2169,6 +1838,7 @@ async function extractDataFromDocument(fileBuffer: Buffer, mimeType: string, fil
   let learnedProjects: string[] = [];
   try {
     const db = getDb();
+
     learnedProjects = db.projects || [];
     const dbSuppliers = db.suppliers || [];
     const suppliers = new Set<string>(dbSuppliers);
@@ -2282,7 +1952,7 @@ If any extracted term matches or strongly resembles a known term, use its EXACT 
           model: currentModel,
           contents: { parts: [documentPart, textPart] },
           config: {
-            systemInstruction,
+            systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -2433,7 +2103,7 @@ async function extractFinancialFile(fileBuffer: Buffer, mimeType: string, filena
   const base64Data = fileBuffer.toString("base64");
   const todayStr = new Date().toISOString().split('T')[0];
   const db = getDb();
-  const knownProjects = db.projects || ["June - Main Gate", "Al Burouj - Sitewide", "EDNC", "عام"];
+
 
   const documentPart = {
     inlineData: {
@@ -2461,7 +2131,7 @@ Extract:
    - attendance: Number of days worked (e.g., 0, 0.5, 1, 1.5, 2)
    - overtime: Number of overtime hours worked (number)
    - sohra: Number of sohra hours worked (number)
-   - project: Project name. Map to one of known projects: ${JSON.stringify(knownProjects)} or default to 'الساحل' or 'البروج' or 'هايد بارك' if appropriate.`;
+   - project: Project name. Map to one of known projects: ${JSON.stringify(defaultProjects)} or default to 'الساحل' or 'البروج' or 'هايد بارك' if appropriate.`;
 
     schemaProperties = {
       weekStartDate: { type: Type.STRING, description: "Start date of the week in YYYY-MM-DD format." },
@@ -2496,7 +2166,7 @@ Analyze this invoice, cash receipt, or transfer screenshot (e.g. Instapay receip
 3. outflow: Outflow / spent amount (المصروفات / الدائن) if this is an expense or cash-out invoice/receipt (number, else 0).
 4. description: A clear, complete Arabic explanation of what this payment represents (e.g. 'شراء مواسير حديد لموقع الساحل', 'تحويل رصيد نقدي عهدة للمهندس').
 5. method: Payment method in Arabic, e.g., 'انستاباي', 'نقدي', 'شيك'.
-6. project: Current project associated with this transaction. Map to one of known projects: ${JSON.stringify(knownProjects)}. Default to 'عام' if not clear.
+6. project: Current project associated with this transaction. Map to one of known projects: ${JSON.stringify(defaultProjects)}. Default to 'عام' if not clear.
 7. engineer: Name of the engineer (اسم المهندس) if mentioned as recipient or payer or requester on the document. Choose from known engineers or extract the printed name.`;
 
     schemaProperties = {
@@ -2514,7 +2184,7 @@ Analyze this invoice, cash receipt, or transfer screenshot (e.g. Instapay receip
     systemInstruction = `You are an expert AI civil engineering quantity surveyor and subcontractor certificate auditor.
 Analyze this subcontractor contract, work statement, or measurement sheet (مستخلص مقاولين) and extract:
 1. subcontractor: Name of the subcontractor (اسم المقاول الباطن).
-2. project: Name of the project. Map to known projects: ${JSON.stringify(knownProjects)}.
+2. project: Name of the project. Map to known projects: ${JSON.stringify(defaultProjects)}.
 3. statementNo: Number of this statement / invoice (رقم المستخلص, e.g. '01', '02').
 4. supervisor: Name of the supervisor / supervising engineer (المهندس المشرف).
 5. accountant: Name of the accountant (المحاسب).
@@ -2571,7 +2241,7 @@ Analyze this subcontractor contract, work statement, or measurement sheet (مس�
         model: currentModel,
         contents: { parts: [documentPart, textPart] },
         config: {
-          systemInstruction,
+          systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -2595,6 +2265,98 @@ Analyze this subcontractor contract, work statement, or measurement sheet (مس�
 /**
  * POST ROUTE FOR MULTI-SECTION AI OCR & EXTRACTION
  */
+
+app.post("/api/ai/compare-delivery-receipt", upload.single("file"), async (req, res) => {
+  try {
+    const poId = req.body.poId || req.body.po_id;
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "الرجاء رفع صورة إذن الاستلام" });
+    }
+    if (!poId) {
+      return res.status(400).json({ success: false, error: "معرف أمر الشراء مفقود" });
+    }
+
+    await fetchAndSyncDbFromMongo();
+    const db = getDb();
+    const poDoc = (db.documents || []).find((d: any) => d.id === poId);
+    if (!poDoc) {
+      return res.status(404).json({ success: false, error: "أمر الشراء غير موجود" });
+    }
+
+    const { buffer, mimetype } = req.file;
+    const base64Data = buffer.toString("base64");
+
+    const systemInstruction = `You are a logistics and procurement expert. Analyze the attached Delivery Note image. Compare it with the provided Purchase Order (PO) items. For each item, determine how much was actually delivered based on the image. Return a JSON object with a comparisonResult array, and if any items are in the delivery note but NOT in the PO, put them in an unmatchedItems array.`;
+
+    const poContext = `PO Items:
+${JSON.stringify(poDoc.items, null, 2)}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: systemInstruction },
+            { text: poContext },
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType: mimetype
+              }
+            }
+          ]
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            comparisonResult: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  poItemDescription: { type: Type.STRING, description: "الصنف من أمر الشراء" },
+                  orderedQty: { type: Type.NUMBER },
+                  deliveredQty: { type: Type.NUMBER, description: "المستخرج من الصورة" },
+                  missingQty: { type: Type.NUMBER, description: "المطلوب ناقص المستلم" },
+                  status: { type: Type.STRING, description: "'received', 'partial', 'missing', 'over_received'" },
+                  aiSuggestion: { type: Type.STRING, description: "اقتراح ذكي، مثل 'تواصل مع المورد لتوريد الباقي'" }
+                }
+              }
+            },
+            unmatchedItems: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  description: { type: Type.STRING },
+                  deliveredQty: { type: Type.NUMBER }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const responseText = response.text || "{}";
+    let parsed = {};
+    try {
+      parsed = JSON.parse(responseText);
+    } catch (e) {
+      console.warn("Could not parse AI response", e);
+    }
+
+    return res.json({ success: true, result: parsed });
+  } catch (err: any) {
+    console.error("Delivery Note Compare Error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post("/api/ai/ocr", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -2607,7 +2369,7 @@ app.post("/api/ai/ocr", upload.single("file"), async (req, res) => {
     const extracted = await extractFinancialFile(buffer, mimetype, originalname, type, userInstructions);
 
     // Save temporary upload
-    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>s]/g, "_").trim();
     const tempFilename = `temp_${Date.now()}_${sanitize(originalname)}`;
     const tempDir = path.join(ORGANIZED_DIR, "temp_uploads");
     if (!fs.existsSync(tempDir)) {
@@ -2645,7 +2407,7 @@ app.post("/api/ai/organize-file", async (req, res) => {
       return res.status(404).json({ error: "الملف المؤقت غير موجود." });
     }
 
-    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>\s]/g, "_").trim();
+    const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>s]/g, "_").trim();
     const filename = path.basename(absTempPath).replace(/^temp_\d+_/, "");
     
     // Resolve date, year, month
@@ -2663,15 +2425,12 @@ app.post("/api/ai/organize-file", async (req, res) => {
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
-    const finalAbsPath = path.join(targetDir, filename);
-    fs.renameSync(absTempPath, finalAbsPath);
-    const finalRelativePath = `/data/organized/engineers_folders/${engName}/${yearStr}/${monthStr}/${filename}`;
 
-    res.json({
-      success: true,
-      path: finalRelativePath,
-      organizedPath: finalRelativePath
-    });
+    const finalPath = path.join(targetDir, filename);
+    fs.renameSync(absTempPath, finalPath);
+
+    const relativePath = `/data/organized/engineers_folders/${engName}/${yearStr}/${monthStr}/${filename}`;
+    res.json({ success: true, path: relativePath });
   } catch (err: any) {
     console.error("Organize file error:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -2813,12 +2572,14 @@ app.get("/api/documents", async (req, res) => {
     await fetchAndSyncDbFromMongo();
     await checkForUpcomingDueDates();
     const db = getDb();
+
     res.json({
       documents: db.documents || [],
       notifications: db.notifications || [],
       telegramConfig: db.telegramConfig || { botToken: "", isWebhookSet: false, botUsername: null, webhookUrl: "" },
       projects: db.projects || [],
-      suppliers: db.suppliers || []
+      suppliers: db.suppliers || [],
+      version: db.version
     });
   } catch (err: any) {
     console.error("Fetch documents error:", err);
@@ -2835,6 +2596,7 @@ app.post("/api/projects/add", async (req, res) => {
     const cleanName = name.trim();
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     const projects = db.projects || [];
     if (!projects.some((p: string) => p.toLowerCase() === cleanName.toLowerCase())) {
       db.projects = [...projects, cleanName];
@@ -2874,6 +2636,7 @@ app.post("/api/projects/rename", async (req, res) => {
     
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     // Rename in list
     if (db.projects) {
@@ -2919,6 +2682,7 @@ app.post("/api/projects/delete", async (req, res) => {
     const cleanName = name.trim();
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     // Remove from projects list
     if (db.projects) {
@@ -2977,6 +2741,7 @@ app.post("/api/suppliers/add", async (req, res) => {
     const cleanName = name.trim();
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     const suppliers = db.suppliers || [];
     if (!suppliers.some((s: string) => s.toLowerCase() === cleanName.toLowerCase())) {
       db.suppliers = [...suppliers, cleanName];
@@ -3003,6 +2768,7 @@ app.post("/api/suppliers/rename", async (req, res) => {
     
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     // Rename in suppliers list
     if (db.suppliers) {
@@ -3045,6 +2811,7 @@ app.post("/api/suppliers/delete", async (req, res) => {
     const cleanName = name.trim();
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     // Remove from suppliers list
     if (db.suppliers) {
@@ -3101,6 +2868,7 @@ app.post("/api/units/rename", async (req, res) => {
     
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     // Rename unit in all items of documents
     let updatedCount = 0;
@@ -3202,6 +2970,7 @@ app.get("/api/projects/next-po-number", async (req, res) => {
     }
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     const nextNum = await getNextPoNumberForProject(db, projectName);
     res.json({ success: true, nextPoNumber: nextNum });
   } catch (err: any) {
@@ -3263,6 +3032,7 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
   let localRole: string | null = null;
   let localRecord: any = null;
   const db = getDb();
+
   if (!db.allowed_devices) {
     db.allowed_devices = [];
   }
@@ -3476,286 +3246,30 @@ async function getDeviceStatus(fingerprint: string, ipAddress: string, deviceInf
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ success: false, error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
-    }
-
-    const lowerEmail = email.toLowerCase().trim();
-
-    // Dynamically ensure required users are verified and seeded on every login attempt
-    await seedAllRequiredUsers();
-
-    let matchedUser: any = null;
-    let authUid: string | null = null;
-    let loggedInViaSupabase = false;
-
-    // 1. Try Supabase Auth first to verify credentials and fetch UID
-    const publicClient = getSupabaseClient();
-    if (publicClient) {
-      try {
-        const { data: sbData, error: sbError } = await publicClient.auth.signInWithPassword({
-          email: lowerEmail,
-          password: password
-        });
-        if (sbError) {
-          console.warn("[Supabase Auth] signInWithPassword notice:", sbError.message);
-        } else if (sbData && sbData.user) {
-          authUid = sbData.user.id;
-          loggedInViaSupabase = true;
-          console.log("[Supabase Auth] signInWithPassword successful. UID:", authUid);
-        }
-      } catch (ex: any) {
-        console.warn("[Supabase Auth] login exception caught:", ex.message);
-      }
-    }
-
-    const db = getDb();
-    db.users = db.users || [];
-
-    // 2. Fetch matchedUser based on the source of truth
-    if (loggedInViaSupabase && authUid) {
-      // Find by exact Supabase UID
-      matchedUser = db.users.find((u: any) => u.id === authUid);
-
-      // If not found by ID but found by email, link them and update DB
-      if (!matchedUser) {
-        matchedUser = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
-        if (matchedUser) {
-          console.log(`[Auth] Matching user by email to sync ID to Supabase UID: ${authUid}`);
-          matchedUser.id = authUid;
-          await saveDb(db);
-        }
-      }
-
-      // Check MongoDB if still not found
-      if (!matchedUser && mongoose.connection.readyState === 1) {
-        try {
-          const mongoUser = await User.findOne({ $or: [{ _id: authUid }, { email: lowerEmail }] });
-          if (mongoUser) {
-            matchedUser = {
-              id: authUid,
-              name: mongoUser.name,
-              email: mongoUser.email,
-              password: mongoUser.password,
-              role: mongoUser.role || "user",
-              status: mongoUser.status || "active",
-              allowed_departments: mongoUser.allowed_departments || [],
-              createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
-            };
-            db.users.push(matchedUser);
-            await saveDb(db);
-          }
-        } catch (mongoErr) {
-          console.warn("[Login] MongoDB lookup by UID failed:", mongoErr);
-        }
-      }
-
-      // Auto-create local user entry if they are in Supabase Auth but not in our permissions DB
-      if (!matchedUser) {
-        const adminEmail = "khaled@delta.com";
-        const isKhaled = lowerEmail === adminEmail;
-        matchedUser = {
-          id: authUid,
-          name: isKhaled ? "خالد" : "موظف جديد",
-          email: lowerEmail,
-          password: await bcrypt.hash(password, 10),
-          role: isKhaled ? "admin" : "user",
-          status: "active",
-          createdAt: new Date().toISOString()
-        };
-        db.users.push(matchedUser);
-        await saveDb(db);
-        console.log(`[Auth] Auto-created database entry for authenticated user: ${lowerEmail}`);
-      }
-    } else {
-      // Fallback: Authenticate locally if Supabase Client is not initialized or failed to connect
-      matchedUser = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
-
-      // Check MongoDB if not found or to sync
-      if (!matchedUser && mongoose.connection.readyState === 1) {
-        try {
-          const mongoUser = await User.findOne({ email: lowerEmail });
-          if (mongoUser) {
-            matchedUser = {
-              id: mongoUser._id.toString(),
-              name: mongoUser.name,
-              email: mongoUser.email,
-              password: mongoUser.password,
-              role: mongoUser.role || "user",
-              status: mongoUser.status || "active",
-              allowed_departments: mongoUser.allowed_departments || [],
-              createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
-            };
-            // Sync to local db
-            db.users.push(matchedUser);
-            await saveDb(db);
-          }
-        } catch (err) {
-          console.warn("[Login] MongoDB check failed:", err);
-        }
-      }
-
-      if (!matchedUser) {
-        return res.status(401).json({ success: false, error: "عذراً، البريد الإلكتروني غير مسجل في النظام" });
-      }
-
-      // Compare passwords using bcrypt
-      const passwordIsValid = await bcrypt.compare(password, matchedUser.password);
-      if (!passwordIsValid) {
-        return res.status(401).json({ success: false, error: "كلمة المرور غير صحيحة" });
-      }
-    }
-
-    if (matchedUser.status === "blocked") {
-      return res.status(403).json({ success: false, error: "تم تعطيل حسابك من قبل الإدارة. يرجى التواصل مع المسؤول." });
-    }
-
-    // Dynamic Sync with Supabase DB (profiles) on login
-    const supabaseAdmin = getSupabaseAdminClient();
-    if (supabaseAdmin && matchedUser) {
-    }
-
-    if (matchedUser.role === 'admin') {
-      matchedUser.allowed_departments = ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'];
-    }
-
-    // Login success
-    console.log(`[Auth] User ${matchedUser.name} (${matchedUser.email}) logged in successfully as [${matchedUser.role}]`);
-    return res.json({
-      success: true,
-      user: {
-        id: matchedUser.id,
-        name: matchedUser.name,
-        email: matchedUser.email,
-        role: matchedUser.role,
-        status: matchedUser.status,
-        allowed_departments: matchedUser.role === 'admin'
-          ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
-          : matchedUser.allowed_departments || []
-      }
-    });
+    const user = await UserService.login(email, password);
+    return res.json({ success: true, user });
   } catch (err: any) {
     console.error("[Auth] Login error:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(err.message.includes("كلمة المرور") || err.message.includes("مسجل") ? 401 : (err.message.includes("تعطيل") ? 403 : 500)).json({ success: false, error: err.message });
   }
 });
 
 // Endpoint to verify the active session on app startup or navigation
 app.post("/api/auth/verify-session", async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(401).json({ success: false, error: "جلسة غير صالحة" });
-    }
-
-    const lowerEmail = email.toLowerCase().trim();
-    const db = getDb();
-    db.users = db.users || [];
-    let matchedUser = db.users.find((u: any) => u.email.toLowerCase() === lowerEmail);
-
-    if (!matchedUser && mongoose.connection.readyState === 1) {
-      try {
-        const mongoUser = await User.findOne({ email: lowerEmail });
-        if (mongoUser) {
-          matchedUser = {
-            id: mongoUser._id.toString(),
-            name: mongoUser.name,
-            email: mongoUser.email,
-            password: mongoUser.password,
-            role: mongoUser.role || "user",
-            status: mongoUser.status || "active",
-            allowed_departments: mongoUser.allowed_departments || [],
-            createdAt: mongoUser.createdAt ? mongoUser.createdAt.toISOString() : new Date().toISOString()
-          };
-          // Sync to local
-          db.users.push(matchedUser);
-          await saveDb(db);
-        }
-      } catch (err) {
-        console.warn("[Session verification] MongoDB check failed:", err);
-      }
-    }
-
-    if (!matchedUser || matchedUser.status === "blocked") {
-      return res.status(401).json({ success: false, error: "جلسة غير صالحة أو تم حظر الحساب" });
-    }
-
-    // Dynamic Sync with Supabase DB (profiles)
-    if (matchedUser.role === 'admin') {
-      matchedUser.allowed_departments = ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'];
-    }
-
-    return res.json({
-      success: true,
-      user: {
-        id: matchedUser.id,
-        name: matchedUser.name,
-        email: matchedUser.email,
-        role: matchedUser.role,
-        status: matchedUser.status,
-        allowed_departments: matchedUser.role === 'admin'
-          ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
-          : matchedUser.allowed_departments || []
-      }
-    });
+    const user = await UserService.verifySession(req.body.email);
+    return res.json({ success: true, user });
   } catch (err: any) {
     console.error("[Session verification] Error:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(401).json({ success: false, error: err.message });
   }
 });
 
 // Admin Route: Get Users List
 app.get("/api/admin/users", async (req, res) => {
   try {
-    const db = getDb();
-    let usersList = [...db.users];
-    if (mongoose.connection.readyState === 1) {
-      try {
-        const mongoUsers = await User.find({});
-        mongoUsers.forEach((mUser: any) => {
-          if (!usersList.some((u: any) => u.email.toLowerCase() === mUser.email.toLowerCase())) {
-            const mapped = {
-              id: mUser._id.toString(),
-              name: mUser.name,
-              email: mUser.email,
-              role: mUser.role || "user",
-              status: mUser.status || "active",
-              allowed_departments: (mUser.allowed_departments && mUser.allowed_departments.length > 0)
-                ? mUser.allowed_departments
-                : (mUser.allowed_departments && mUser.allowed_departments.length > 0)
-                  ? mUser.allowed_departments
-                  : [],
-              createdAt: mUser.createdAt ? mUser.createdAt.toISOString() : new Date().toISOString()
-            };
-            usersList.push(mapped);
-          } else {
-            const existing = usersList.find((u: any) => u.email.toLowerCase() === mUser.email.toLowerCase());
-            if (existing) {
-              existing.allowed_departments = (mUser.allowed_departments && mUser.allowed_departments.length > 0)
-                ? mUser.allowed_departments
-                : (mUser.allowed_departments && mUser.allowed_departments.length > 0)
-                  ? mUser.allowed_departments
-                  : existing.allowed_departments || [];
-            }
-          }
-        });
-      } catch (err) {
-        console.warn("[Users Fetch] MongoDB error:", err);
-      }
-    }
-
-    // Clean sensitive fields out of response
-    const sanitizedUsers = usersList.map((u: any) => ({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      role: u.role,
-      status: u.status,
-      allowed_departments: u.allowed_departments || [],
-      createdAt: u.createdAt
-    }));
-
-    return res.json({ success: true, users: sanitizedUsers });
+    const users = await UserService.listUsers();
+    return res.json({ success: true, users });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -3763,159 +3277,15 @@ app.get("/api/admin/users", async (req, res) => {
 
 // Admin Route: Create User
 app.post("/api/admin/users/create", async (req, res) => {
-  let createdUserId = "";
-  let supabaseAdmin: any = null;
   try {
     const { name, email, password, role, allowed_departments } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, error: "الرجاء إدخال الاسم، البريد الإلكتروني وكلمة المرور" });
     }
-
-    const lowerEmail = email.toLowerCase().trim();
-    const finalDeps = allowed_departments || [];
-
-    // Check duplicate
-    const db = getDb();
-    db.users = db.users || [];
-    const localExists = db.users.some((u: any) => u.email.toLowerCase() === lowerEmail);
-
-    let mongoExists = false;
-    if (mongoose.connection.readyState === 1) {
-      mongoExists = !!(await User.findOne({ email: lowerEmail }));
-    }
-
-    if (localExists || mongoExists) {
-      return res.status(400).json({ success: false, error: "عذراً، البريد الإلكتروني مسجل بالفعل لمستخدم آخر" });
-    }
-
-    // Validate Supabase keys configuration
-    const configCheck = checkSupabaseKeysConfig();
-    if (!configCheck.isValid) {
-      console.error("[Auth] Supabase configuration check failed:", configCheck.error);
-      return res.status(400).json({
-        success: false,
-        error: configCheck.error
-      });
-    }
-
-    // 1. Get dynamic Supabase Admin Client
-    supabaseAdmin = getSupabaseAdminClient();
-    if (!supabaseAdmin) {
-      console.error("[Auth] SUPABASE_SERVICE_ROLE_KEY is missing or invalid on the server.");
-      return res.status(500).json({ 
-        success: false, 
-        error: "فشل إنشاء الحساب: مفتاح الخدمة SUPABASE_SERVICE_ROLE_KEY غير مهيأ على السيرفر. يرجى ضبط المتغيرات البيئية للمشروع." 
-      });
-    }
-
-    // --- STEP 1: Create Supabase Auth User ---
-    const { data: sbData, error: sbError } = await supabaseAdmin.auth.admin.createUser({
-      email: lowerEmail,
-      password: password,
-      email_confirm: true,
-      user_metadata: { name, role: role || "user", allowed_departments: finalDeps }
-    });
-
-    if (sbError) {
-      console.warn("[Supabase Admin Auth] User creation failed:", sbError.message);
-      return res.status(400).json({ 
-        success: false, 
-        error: `فشل إنشاء الحساب في Supabase Auth: ${sbError.message}` 
-      });
-    }
-
-    if (!sbData || !sbData.user) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "فشل إنشاء الحساب في Supabase Auth: لم يتم إرجاع بيانات المستخدم." 
-      });
-    }
-
-    createdUserId = sbData.user.id;
-    console.log("[Supabase Admin Auth] User created successfully. UID:", createdUserId);
-
-    // --- STEP 2: Create/Update Profile (in profiles table) ---
-    console.log(`[Supabase DB] Attempting insert into 'profiles' table for UID: ${createdUserId}...`);
-    const { error: insertErr } = await supabaseAdmin
-      .from('profiles')
-      .insert([
-        { 
-          id: createdUserId, 
-          email: lowerEmail, 
-          full_name: name.trim() // Correct existing column name!
-        }
-      ]);
-
-    if (insertErr) {
-      console.error(`[Supabase DB] 'profiles' insert failed:`, insertErr.message);
-      throw new Error(`فشل إدخال الموظف في جدول profiles بالـ Supabase: ${insertErr.message}`);
-    }
-    console.log("[Supabase DB] Successfully inserted into 'profiles' table.");
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const isSystemValue = (lowerEmail === "khaled@delta.com" || lowerEmail === "user@delta.com");
-
-    // --- STEP 3: Create MongoDB User Document & Commit locally ---
-    const newUser = {
-      id: createdUserId,
-      supabaseUserId: createdUserId,
-      email: lowerEmail,
-      password: hashedPassword,
-      name: name.trim(),
-      role: role || "user",
-      status: "active",
-      allowed_departments: finalDeps,
-      isSystem: isSystemValue,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    // Save locally
-    db.users.push(newUser);
-    await saveDb(db);
-
-    // Save to MongoDB Atlas
-    if (mongoose.connection.readyState === 1) {
-      try {
-        await User.create({
-          _id: createdUserId,
-          supabaseUserId: createdUserId,
-          email: lowerEmail,
-          password: hashedPassword,
-          name: name.trim(),
-          role: role || "user",
-          status: "active",
-          allowed_departments: finalDeps,
-          isSystem: isSystemValue,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-      } catch (mongoErr: any) {
-        console.error("[Auth] Failed to write user to MongoDB:", mongoErr.message);
-        throw new Error(`فشل كتابة مستخدم MongoDB: ${mongoErr.message}`);
-      }
-    }
-
-    console.log(`[Auth] User ${name} successfully created by Admin as [${role || "user"}] with departments:`, finalDeps);
-    return res.json({ success: true, message: "تم إنشاء حساب الموظف الجديد بنجاح!" });
-
+    const result = await UserService.createUser(name, email, password, role, allowed_departments);
+    return res.json(result);
   } catch (err: any) {
-    console.error("[Auth] Create user error (Triggering Rollback):", err);
-    
-    // Rollback steps to avoid orphan records!
-    if (createdUserId && supabaseAdmin) {
-      console.log(`[ROLLBACK] Rolling back user creation for UID: ${createdUserId}...`);
-      try {
-        // Delete profile from profiles table first
-        await supabaseAdmin.from('profiles').delete().eq('id', createdUserId);
-        // Delete auth user from Supabase Auth
-        const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(createdUserId);
-        if (delErr) console.error("[ROLLBACK] Failed to delete auth user:", delErr.message);
-      } catch (rollbackEx: any) {
-        console.error("[ROLLBACK] Exception during rollback:", rollbackEx.message);
-      }
-    }
-
+    console.error("[Auth] Create user error:", err);
     return res.status(400).json({ success: false, error: err.message });
   }
 });
@@ -3927,140 +3297,10 @@ app.post("/api/admin/users/update", async (req, res) => {
     if (!email) {
       return res.status(400).json({ success: false, error: "البريد الإلكتروني للموظف مطلوب" });
     }
-
-    const lowerEmail = email.toLowerCase().trim();
-    const db = getDb();
-    db.users = db.users || [];
-
-    let userIndex = -1;
-    if (id) {
-      userIndex = db.users.findIndex((u: any) => u.id === id);
-    }
-    if (userIndex === -1) {
-      userIndex = db.users.findIndex((u: any) => u.email.toLowerCase() === lowerEmail);
-    }
-
-    if (userIndex === -1 && mongoose.connection.readyState !== 1) {
-      return res.status(404).json({ success: false, error: "الموظف غير موجود" });
-    }
-
-    let isSystemAccount = false;
-    let originalEmailVal = lowerEmail;
-
-    if (userIndex !== -1) {
-      const existingUser = db.users[userIndex];
-      originalEmailVal = existingUser.email?.toLowerCase().trim() || lowerEmail;
-      if (existingUser.isSystem) {
-        isSystemAccount = true;
-      }
-    }
-
-    const systemEmails = ["khaled@delta.com", "user@delta.com"];
-    if (systemEmails.includes(originalEmailVal)) {
-      isSystemAccount = true;
-    }
-
-    if (isSystemAccount) {
-      if (role && userIndex !== -1 && role !== db.users[userIndex].role) {
-        return res.status(403).json({
-          success: false,
-          error: "هذا الحساب محمي كـ System Account ولا يمكن تعديل صلاحياته (دور الموظف)."
-        });
-      }
-      if (status && status !== "active") {
-        return res.status(403).json({
-          success: false,
-          error: "هذا الحساب محمي كـ System Account ولا يمكن تعطيله أو إلغاء تفعيله."
-        });
-      }
-    }
-
-    let lowerNewEmail = "";
-    if (newEmail && newEmail.toLowerCase().trim() !== lowerEmail) {
-      lowerNewEmail = newEmail.toLowerCase().trim();
-      // Check if new email is already taken
-      const isTaken = db.users.some((u: any) => u.email.toLowerCase() === lowerNewEmail);
-      if (isTaken) {
-        return res.status(400).json({ success: false, error: "البريد الإلكتروني الجديد مستخدم بالفعل من قبل موظف آخر" });
-      }
-    }
-
-    let hashedPassword = "";
-    if (password && password.trim().length > 0) {
-      hashedPassword = await bcrypt.hash(password, 10);
-    }
-
-    const targetUserId = id || (userIndex !== -1 ? db.users[userIndex].id : null);
-
-    // 1. Update in Supabase Auth and Database
-    const supabaseAdmin = getSupabaseAdminClient();
-    if (supabaseAdmin && targetUserId) {
-      try {
-        const authUpdateObj: any = {};
-        if (lowerNewEmail) {
-          authUpdateObj.email = lowerNewEmail;
-          authUpdateObj.email_confirm = true;
-        }
-        if (password && password.trim().length > 0) {
-          authUpdateObj.password = password;
-        }
-        
-        authUpdateObj.user_metadata = authUpdateObj.user_metadata || {};
-        if (name) {
-          authUpdateObj.user_metadata.name = name.trim();
-        }
-        if (role) {
-          authUpdateObj.user_metadata.role = role;
-        }
-        if (allowed_departments) {
-          authUpdateObj.user_metadata.allowed_departments = allowed_departments;
-        }
-
-        console.log(`[Supabase Admin Auth] Updating user ${targetUserId} in Auth...`, authUpdateObj);
-        const { error: sbUpdateErr } = await supabaseAdmin.auth.admin.updateUserById(
-          targetUserId,
-          authUpdateObj
-        );
-        
-        let proceedToDbUpdate = true;
-        if (sbUpdateErr) {
-          console.error("[Supabase Admin Auth] Failed to update user Auth:", sbUpdateErr.message);
-        }
-      } catch (ex: any) {
-        console.error("[Supabase Admin Auth/DB] Exception updating user:", ex.message);
-      }
-    }
-
-    // 2. Update locally
-    if (userIndex !== -1) {
-      if (name) db.users[userIndex].name = name.trim();
-      if (lowerNewEmail) db.users[userIndex].email = lowerNewEmail;
-      if (role) db.users[userIndex].role = role;
-      if (status) db.users[userIndex].status = status;
-      if (hashedPassword) db.users[userIndex].password = hashedPassword;
-      if (allowed_departments) db.users[userIndex].allowed_departments = allowed_departments;
-      if (isSystemAccount) db.users[userIndex].isSystem = true;
-      await saveDb(db);
-    }
-
-    // 3. Update in MongoDB
-    if (mongoose.connection.readyState === 1) {
-      const updateData: any = {};
-      if (name) updateData.name = name.trim();
-      if (lowerNewEmail) updateData.email = lowerNewEmail;
-      if (role) updateData.role = role;
-      if (status) updateData.status = status;
-      if (hashedPassword) updateData.password = hashedPassword;
-      if (allowed_departments) updateData.allowed_departments = allowed_departments;
-      if (isSystemAccount) updateData.isSystem = true;
-
-      await User.findOneAndUpdate({ email: lowerEmail }, { $set: updateData });
-    }
-
-    return res.json({ success: true, message: "تم تحديث بيانات ورتبة الموظف بنجاح!" });
+    const result = await UserService.updateUser(id, email, name, role, status, password, newEmail, allowed_departments);
+    return res.json(result);
   } catch (err: any) {
-    console.error("[Auth] Update user error:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -4068,112 +3308,9 @@ app.post("/api/admin/users/update", async (req, res) => {
 app.post("/api/admin/users/delete", async (req, res) => {
   try {
     const { id, email } = req.body;
-    if (!id && !email) {
-      return res.status(400).json({ success: false, error: "البريد الإلكتروني أو المعرف الفريد مطلوب" });
-    }
-
-    const lowerEmail = email ? email.toLowerCase().trim() : "";
-    const db = getDb();
-    db.users = db.users || [];
-
-    // Find user details FIRST
-    let userToDelete = db.users.find((u: any) => 
-      (id && u.id === id) || 
-      (lowerEmail && u.email?.toLowerCase().trim() === lowerEmail)
-    );
-
-    let targetUserId = id || (userToDelete ? userToDelete.id : "");
-    let userEmailForDeletion = lowerEmail || (userToDelete ? userToDelete.email?.toLowerCase().trim() : "");
-
-    // Enforce isSystem protection check
-    if (userToDelete && userToDelete.isSystem) {
-      return res.status(403).json({
-        success: false,
-        error: "هذا الحساب محمي كـ System Account ولا يمكن حذفه نهائياً."
-      });
-    }
-
-    const systemEmails = ["khaled@delta.com", "user@delta.com"];
-    if (userEmailForDeletion && systemEmails.includes(userEmailForDeletion.toLowerCase())) {
-      return res.status(403).json({
-        success: false,
-        error: "هذا الحساب محمي كـ System Account ولا يمكن حذفه نهائياً."
-      });
-    }
-
-    if (mongoose.connection.readyState === 1) {
-      let mongoUser = null;
-      if (targetUserId) {
-        mongoUser = await User.findById(targetUserId);
-      } else if (userEmailForDeletion) {
-        mongoUser = await User.findOne({ email: userEmailForDeletion });
-      }
-      if (mongoUser && (mongoUser as any).isSystem) {
-        return res.status(403).json({
-          success: false,
-          error: "هذا الحساب محمي كـ System Account ولا يمكن حذفه نهائياً."
-        });
-      }
-    }
-
-    const supabaseAdmin = getSupabaseAdminClient();
-    if (!supabaseAdmin) {
-      return res.status(500).json({
-        success: false,
-        error: "فشل الحذف: مفتاح الخدمة SUPABASE_SERVICE_ROLE_KEY غير مهيأ على السيرفر."
-      });
-    }
-
-    // --- STEP 1: Delete from Supabase Auth FIRST ---
-    let authUserId = targetUserId;
-    if (!authUserId && userEmailForDeletion) {
-      console.log(`[Supabase Delete] Direct Auth lookup for: ${userEmailForDeletion}`);
-      const { data: { users: authUsers }, error: listErr } = await supabaseAdmin.auth.admin.listUsers();
-      if (!listErr && authUsers) {
-        const matchedAuthUser = authUsers.find((u: any) => u.email?.toLowerCase().trim() === userEmailForDeletion);
-        if (matchedAuthUser) {
-          authUserId = matchedAuthUser.id;
-        }
-      }
-    }
-
-    if (authUserId) {
-      console.log(`[Supabase Delete] Deleting user from Auth: ${authUserId}`);
-      const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
-      if (authDelErr) {
-        // If not found, we can proceed, otherwise fail
-        const isUserNotFound = authDelErr.message?.includes("User not found") || authDelErr.message?.includes("not found");
-        if (!isUserNotFound) {
-          console.error("[Supabase Delete Auth] Failed to delete user from Supabase Auth:", authDelErr.message);
-          return res.status(400).json({
-            success: false,
-            error: `فشل حذف الحساب من Supabase Auth: ${authDelErr.message}`
-          });
-        }
-      }
-    }
-
-    // --- STEP 2: Delete from profiles Table ---
-    if (userEmailForDeletion) {
-      const { error: profDelEmailErr } = await supabaseAdmin.from('profiles').delete().eq('email', userEmailForDeletion);
-      if (profDelEmailErr) {
-    // --- STEP 2: Deleted profiles check ---
-      } else if (userEmailForDeletion) {
-        await User.deleteOne({ email: userEmailForDeletion });
-      }
-    }
-
-    // --- STEP 4: Delete locally and save state ---
-    if (authUserId) {
-      db.users = db.users.filter((u: any) => u.id !== authUserId);
-    } else if (userEmailForDeletion) {
-      db.users = db.users.filter((u: any) => u.email.toLowerCase() !== userEmailForDeletion.toLowerCase());
-    }
-    await saveDb(db);
-
-    return res.json({ success: true, message: "تم حذف حساب الموظف بالكامل من قواعد البيانات بنجاح" });
+    const result = await UserService.deleteUser(id, email);
+    return res.json(result);
   } catch (err: any) {
-    console.error("[Auth] Delete user error:", err);
     return res.status(400).json({ success: false, error: err.message });
   }
 });
@@ -4195,81 +3332,29 @@ app.post("/api/device/check", async (req, res) => {
 
 app.post("/api/admin/verify-password", (req, res) => {
   try {
-    const { password } = req.body;
-    const currentDb = getDb();
-    const currentPassword = currentDb.adminPassword || "DeltaAdmin2026";
-    if (password === currentPassword) {
-      return res.json({ success: true });
-    } else {
-      return res.status(400).json({ success: false, error: "كلمة المرور غير صحيحة" });
-    }
+    const result = UserService.verifyPassword(req.body.password);
+    return res.json(result);
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(401).json({ success: false, error: err.message });
   }
 });
 
 app.post("/api/admin/change-password", async (req, res) => {
   try {
-    const { oldPassword, newPassword } = req.body;
-    if (!newPassword || newPassword.trim().length < 4) {
-      return res.status(400).json({ success: false, error: "كلمة المرور الجديدة يجب أن تكون من 4 أحرف أو أكثر" });
-    }
-    const currentDb = getDb();
-    const currentPassword = currentDb.adminPassword || "DeltaAdmin2026";
-    if (oldPassword !== currentPassword) {
-      return res.status(400).json({ success: false, error: "كلمة المرور القديمة غير صحيحة" });
-    }
-    currentDb.adminPassword = newPassword.trim();
-    await saveDb(currentDb);
-    return res.json({ success: true });
+    const { email, currentPassword, newPassword } = req.body;
+    const result = await UserService.changePassword(email, currentPassword, newPassword);
+    return res.json(result);
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
 app.post("/api/admin/reset", async (req, res) => {
   try {
-    const { password } = req.body;
-    if (password !== "016135") {
-      return res.status(400).json({ success: false, error: "كلمة المرور غير صحيحة" });
-    }
-    
-    await fetchAndSyncDbFromMongo();
-    const db = getDb();
-    
-    // Clear financial modules and engineers (keep users and metadata intact)
-    db.pettyCashBoxDays = [];
-    db.subcontractorContracts = [];
-    db.laborTimesheets = [];
-    db.costAnalysisEntries = [];
-    db.pendingTransactions = [];
-    db.engineerLedgers = {};
-    db.archives = [];
-    db.engineers = [];
-    db.deletedEngineerIds = [];
-    db.deletedSubcontractorIds = [];
-    db.deletedLaborTimesheetIds = [];
-    db.deletedCostAnalysisIds = [];
-    
-    await saveDb(db);
-
-    // Hard delete from live Supabase tables to keep them fully synced
-    const supabase = getSupabaseAdminClient() || getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('petty_cash_box_days').delete().neq('id', 'placeholder_force_delete_all');
-        await supabase.from('subcontractor_contracts').delete().neq('id', 'placeholder_force_delete_all');
-        await supabase.from('labor_timesheets').delete().neq('id', 'placeholder_force_delete_all');
-        await supabase.from('cost_analysis_entries').delete().neq('id', 'placeholder_force_delete_all');
-        await supabase.from('engineers').delete().neq('id', 'placeholder_force_delete_all');
-      } catch (sbErr: any) {
-        console.warn("[Admin Reset] Direct Supabase tables delete bypassed or failed:", sbErr.message);
-      }
-    }
-    
-    return res.json({ success: true, message: "تمت إعادة تعيين قاعدة البيانات والمسح نهائياً من السيرفر بنجاح" });
+    const result = await UserService.resetAdmin(req.body.secret);
+    return res.json(result);
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -4328,6 +3413,7 @@ app.get("/api/admin/devices", async (req, res) => {
     // 1. Local db.json
     try {
       const db = getDb();
+
       if (db.allowed_devices) {
         db.allowed_devices.forEach(mergeDevice);
       }
@@ -4495,6 +3581,7 @@ app.post("/api/admin/devices/update", async (req, res) => {
 
     // 3. Local JSON
     const db = getDb();
+
     if (db.deleted_devices) {
       db.deleted_devices = db.deleted_devices.filter((f: string) => f !== fingerprint);
     }
@@ -4571,6 +3658,7 @@ app.post("/api/admin/devices/delete", async (req, res) => {
     // 3. Local JSON - Complete removal from array
     try {
       const db = getDb();
+
       if (db.allowed_devices) {
         db.allowed_devices = db.allowed_devices.filter((d: any) => d.device_fingerprint !== fingerprint);
       }
@@ -4596,6 +3684,7 @@ app.post("/api/admin/devices/logout-all", async (req, res) => {
     
     // 1. Local JSON DB
     const db = getDb();
+
     if (db.allowed_devices && Array.isArray(db.allowed_devices)) {
       db.allowed_devices = db.allowed_devices.map((d: any) => {
         if (fingerprint && d.device_fingerprint === fingerprint) {
@@ -4654,6 +3743,7 @@ app.post("/api/device/request-reconnect", async (req, res) => {
 
     // 1. Remove from deleted_devices in local JSON DB
     const db = getDb();
+
     if (db.deleted_devices) {
       db.deleted_devices = db.deleted_devices.filter((f: string) => f !== fingerprint);
     }
@@ -4758,7 +3848,7 @@ Return values in JSON format matching the schema rules exactly.`;
       model: req.body.useAdvanced === "true" ? selectedAIModel : "gemini-3.5-flash",
       contents: { parts: [documentPart, textPart] },
       config: {
-        systemInstruction,
+        systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -4843,6 +3933,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     }
     
     const db = getDb();
+
     
     let resolvedDocNumber = extractedData.docNumber;
     if (extractedData.docType === 'po') {
@@ -4939,6 +4030,7 @@ app.post("/api/documents/upload-generated-pdf", upload.single("file"), async (re
     await fetchAndSyncDbFromMongo();
     const db = getDb();
 
+
     // 1. استخراج رقم الـ PO الفعلي وتحويله لرقم نظيف (مثال: 11)
     const poNo = docNumber;
     const poNumber = (poNo && poNo.toString().replace(/[^0-9]/g, '')) || '11'; 
@@ -5010,6 +4102,7 @@ app.post("/api/upload/confirm", async (req, res) => {
 
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
 
     if (action === "proceed") {
       db.documents = [proposedDocument, ...(db.documents || [])];
@@ -5180,6 +4273,8 @@ app.post("/api/documents/update", async (req, res) => {
     }
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+    if (req.body.version) db.version = req.body.version;
+
     const oldDocs = db.documents || [];
     
     const updatedDocs = await Promise.all(documents.map(async (doc: any) => {
@@ -5308,7 +4403,7 @@ app.post("/api/documents/update", async (req, res) => {
 
     db.documents = updatedDocs;
     await saveDb(db);
-    res.json({ success: true, documents: updatedDocs });
+    res.json({ success: true, documents: updatedDocs, version: db.version });
   } catch (error: any) {
     console.error("Update documents database error:", error);
     res.status(500).json({ error: error.message });
@@ -5320,6 +4415,7 @@ app.post("/api/notifications/clear", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     db.notifications = [];
     await saveDb(db);
     res.json({ success: true, notifications: [] });
@@ -5338,6 +4434,7 @@ app.get("/api/comparisons", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     db.quotation_comparisons = db.quotation_comparisons || [];
     res.json({ success: true, comparisons: db.quotation_comparisons });
   } catch (error: any) {
@@ -5361,6 +4458,7 @@ app.post("/api/comparisons/analyze", upload.array("files", 10), async (req, res)
     if (prId) {
       await fetchAndSyncDbFromMongo();
       const db = getDb();
+
       const prDoc = (db.documents || []).find((d: any) => d.id === prId);
       if (prDoc) {
         const prItems = (prDoc.items || []).map((it: any) => `- ${it.description} (الكمية: ${it.quantity} ${it.unit || ''}, الفئة: ${it.unitPrice || 0})`).join("\n");
@@ -5446,7 +4544,7 @@ ${prDetails ? `فيما يلي تفاصيل طلب الشراء الداخلي �
 
     if (useAdvanced) {
       // For OpenAI, parts must be mapped to the message content array format
-      const openaiContent = parts.map(p => {
+      const openaiContent: any = parts.map(p => {
         if (p.text) return { type: "text", text: p.text };
         if (p.inlineData) return { type: "image_url", image_url: { url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}` } };
         return { type: "text", text: "" };
@@ -5485,6 +4583,7 @@ app.post("/api/comparisons", express.json(), async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     db.quotation_comparisons = db.quotation_comparisons || [];
 
     const { id, title, poId, material, quantity, offers, notes, recommendationMemo } = req.body;
@@ -5540,6 +4639,7 @@ app.delete("/api/comparisons/:id", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     db.quotation_comparisons = db.quotation_comparisons || [];
 
     const { id } = req.params;
@@ -5566,6 +4666,7 @@ app.post("/api/engineers/delete", async (req, res) => {
     const { id, name } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     // 1. Delete engineer from engineers list
     if (db.engineers) {
@@ -5613,6 +4714,7 @@ app.post("/api/subcontractors/delete", async (req, res) => {
     const { id } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (db.subcontractorContracts) {
       db.subcontractorContracts = db.subcontractorContracts.filter((c: any) => c.id !== id);
@@ -5648,6 +4750,7 @@ app.post("/api/labor-timesheets/delete", async (req, res) => {
     const { id } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (db.laborTimesheets) {
       db.laborTimesheets = db.laborTimesheets.filter((ts: any) => ts.id !== id);
@@ -5683,6 +4786,7 @@ app.post("/api/cost-analysis/delete", async (req, res) => {
     const { id } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (db.costAnalysisEntries) {
       db.costAnalysisEntries = db.costAnalysisEntries.filter((item: any) => item.id !== id);
@@ -5721,6 +4825,7 @@ app.post("/api/cost-analysis/save-analysis", async (req, res) => {
     }
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     db.saved_analyses = db.saved_analyses || [];
     
@@ -5749,6 +4854,7 @@ app.get("/api/cost-analysis/saved-analyses", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     res.json({ success: true, savedAnalyses: db.saved_analyses || [] });
   } catch (err: any) {
     console.error("Fetch saved analyses error:", err);
@@ -5761,6 +4867,7 @@ app.post("/api/cost-analysis/delete-saved-analysis", async (req, res) => {
     const { id } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (db.saved_analyses) {
       db.saved_analyses = db.saved_analyses.filter((item: any) => item.id !== id);
@@ -5778,6 +4885,7 @@ app.post("/api/cost-analysis/clear-current", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     // Add all current entry IDs to deleted list so they aren't synced back from stale caches
     db.deletedCostAnalysisIds = db.deletedCostAnalysisIds || [];
@@ -5813,6 +4921,7 @@ app.get("/api/financial-data", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     res.json({
       success: true,
       pettyCashBoxDays: db.pettyCashBoxDays || [],
@@ -5822,7 +4931,8 @@ app.get("/api/financial-data", async (req, res) => {
       costAnalysisCategories: db.costAnalysisCategories || [],
       pendingTransactions: db.pendingTransactions || [],
       archives: db.archives || [],
-      engineers: db.engineers || []
+      engineers: db.engineers || [],
+      version: db.version
     });
   } catch (err: any) {
     console.error("Fetch financial data error:", err);
@@ -5835,6 +4945,8 @@ app.post("/api/financial-data/update", async (req, res) => {
     const { pettyCashBoxDays, subcontractorContracts, laborTimesheets, costAnalysisEntries, costAnalysisCategories, pendingTransactions, archives, engineers } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+    if (req.body.version) db.version = req.body.version;
+
 
     // Load deleted entities lists to prevent restoration of deleted items
     db.deletedEngineerIds = db.deletedEngineerIds || [];
@@ -5884,6 +4996,7 @@ app.get("/api/engineers/ledger", async (req, res) => {
     const { engineerName } = req.query;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     if (!db.engineerLedgers) db.engineerLedgers = {};
     const ledgerData = db.engineerLedgers[String(engineerName)] || [];
     res.json({ success: true, ledgerData });
@@ -5906,6 +5019,7 @@ app.post("/api/engineers/ledger", async (req, res) => {
 
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     if (!db.engineerLedgers) db.engineerLedgers = {};
     db.engineerLedgers[String(engineerName)] = ledgerData || [];
     
@@ -5941,6 +5055,7 @@ app.post("/api/engineers/ledger/approve-range", async (req, res) => {
     const { engineerName, startDate, endDate } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (!engineerName) {
       return res.status(400).json({ success: false, error: "الرجاء اختيار اسم المهندس" });
@@ -5997,6 +5112,7 @@ app.post("/api/engineers/ledger/reset", async (req, res) => {
     const { engineerName } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     if (!db.engineerLedgers) db.engineerLedgers = {};
     
     if (engineerName) {
@@ -6059,6 +5175,7 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
     } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
     if (!db.engineerLedgers) db.engineerLedgers = {};
@@ -6125,6 +5242,7 @@ app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
     const { engineerName, date, txId } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (db.pettyCashBoxDays) {
       db.pettyCashBoxDays = db.pettyCashBoxDays.map((d: any) => {
@@ -6174,6 +5292,7 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
 
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
     if (!db.engineerLedgers) db.engineerLedgers = {};
@@ -6225,6 +5344,7 @@ app.post("/api/ai/aggregate-costs", async (req, res) => {
   try {
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (!db.costAnalysisEntries) db.costAnalysisEntries = [];
     if (!db.costAnalysisCategories) db.costAnalysisCategories = ["حديد", "بوفيه", "مواد تشغيل", "نقل ومحروقات", "أجور عمالة", "مواد بناء", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى"];
@@ -6287,7 +5407,7 @@ Output the results strictly as a JSON object matching the requested schema.`;
       model: "gemini-2.5-flash",
       contents: { parts: [{ text: textContent }] },
       config: {
-        systemInstruction,
+        systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -6362,6 +5482,7 @@ app.post("/api/ai/aggregate-engineer-costs", async (req, res) => {
 
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     
     if (!db.costAnalysisEntries) db.costAnalysisEntries = [];
     if (!db.costAnalysisCategories) db.costAnalysisCategories = ["حديد", "بوفيه", "مواد تشغيل", "نقل ومحروقات", "أجور عمالة", "مواد بناء", "ضيافة وبوفيه", "أدوات ومهمات", "أخرى"];
@@ -6431,7 +5552,7 @@ Output the results strictly as a JSON object matching the requested schema.`;
       model: "gemini-3.5-flash",
       contents: { parts: [{ text: textContent }] },
       config: {
-        systemInstruction,
+        systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -6590,7 +5711,7 @@ Output the results strictly as a JSON object matching the requested schema.`;
       model: "gemini-3.5-flash",
       contents: [{ text: textContent }],
       config: {
-        systemInstruction,
+        systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -6693,6 +5814,7 @@ app.post("/api/custody/analyze-multimodal", upload.single("file"), async (req, r
 
     const db = getDb();
 
+
     // 1. Load Training templates for Few-Shot prompting
     let trainingData: any[] = db.aiTrainingTemplates || [];
     if (mongoose.connection.readyState === 1) {
@@ -6770,7 +5892,7 @@ app.post("/api/custody/analyze-multimodal", upload.single("file"), async (req, r
     }
     systemInstruction += `يجب الالتزام بالقواعد التالية أثناء استخراج البيانات:
 1. استخراج حركات العهدة وتحديد قيم المدين (inflow) والدائن (outflow).
-2. بالنسبة للتاريخ: يجب أن يكون بالتنسيق الصريح YYYY-MM-DD وأن يقع حصرياً في الشهر المستهدف: "${selectedMonth}". على سبيل المثال، إذا كان الشهر المستهدف هو "2026-07"، فيجب أن تكون كافة التواريخ بصيغة "2026-07-XX".
+2. بالنسبة للتاريخ: استخرج التواريخ المرتبطة بالشهر المستهدف حصرياً (${selectedMonth}). تجاهل واستبعد تماماً أي حركة تاريخها لا يقع في هذا الشهر. يجب أن يكون التاريخ بالتنسيق الصريح YYYY-MM-DD وأن يقع حصرياً في الشهر المستهدف: "${selectedMonth}". على سبيل المثال، إذا كان الشهر المستهدف هو "2026-07"، فيجب أن تكون كافة التواريخ بصيغة "2026-07-XX".
 3. بالنسبة للمشروع (project): يجب تحديد اسم المشروع المرتبط بكل حركة بدقة ومطابقته حصرياً من هذه القائمة المصرح بها للمشاريع:
 ${JSON.stringify(projectsList)}
 إذا لم تجد أي تطابق، استخدم قيمة "عام".
@@ -6928,6 +6050,7 @@ app.post("/api/custody/train", async (req, res) => {
 
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     db.aiTrainingTemplates = db.aiTrainingTemplates || [];
     
     const newTemplate = {
@@ -6964,6 +6087,7 @@ app.post("/api/engineers/ledger/update-tx", async (req, res) => {
     const { engineerName, date, txId, description, project, method, inflow, outflow } = req.body;
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
 
     let foundTx: any = null;
     let oldDesc = "";
@@ -7114,6 +6238,7 @@ app.post("/api/webhook/make-whatsapp", upload.single("file"), async (req, res) =
 
     await fetchAndSyncDbFromMongo();
     const db = getDb();
+
     const projectsList = db.projects || [];
 
     const imagePart = {
@@ -7382,7 +6507,7 @@ Output the results strictly as a JSON object matching the requested schema.`;
       model: "gemini-3.5-flash",
       contents: { parts: [{ text: textContent }] },
       config: {
-        systemInstruction,
+        systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

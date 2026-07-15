@@ -142,8 +142,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('selectedAIModel', model);
-    formData.append('useAdvanced', useAdvanced ? 'true' : 'false');
+    formData.append('selectedAIModel', 'gemini-2.5-pro');
+    formData.append('useAdvanced', 'false');
     formData.append('type', 'labor');
 
     try {
@@ -220,6 +220,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
     } finally {
       setIsProcessingAI(false);
       e.target.value = '';
+      
     }
   };
 
