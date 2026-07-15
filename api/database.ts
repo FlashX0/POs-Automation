@@ -572,6 +572,10 @@ export function initializeDbVersion(db: any) {
   return db;
 }
 
+export function setMemoryDb(db: any) {
+  memoryDb = db;
+}
+
 export function getDb() {
   let dbResult;
   if (memoryDb) {

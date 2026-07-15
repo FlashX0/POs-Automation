@@ -29,6 +29,7 @@ import {
   defaultSuppliers,
   defaultDb,
   getDb,
+  setMemoryDb,
   saveDb,
   fetchAndSyncDbFromMongo,
   sanitizeDeletedRecords,
@@ -4596,9 +4597,24 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
       return res.status(400).json({ success: false, error: "الرجاء تحديد قيمة رصيد أول اليوم صالحة" });
     }
 
-    await fetchAndSyncDbFromMongo(true);
-    const db = getDb();
+    const adminClient = getSupabaseAdminClient();
+    if (!adminClient) {
+      return res.status(500).json({ success: false, error: "فشل الاتصال بقاعدة بيانات Supabase" });
+    }
 
+    // 1. Fetch complete app_state directly from Supabase
+    const { data: row, error: fetchErr } = await adminClient
+      .from('app_state')
+      .select('data')
+      .eq('key', 'global_state')
+      .single();
+
+    if (fetchErr || !row) {
+      console.error("Error fetching app_state for updating starting balance:", fetchErr);
+      return res.status(500).json({ success: false, error: "تعذر قراءة قاعدة البيانات من Supabase" });
+    }
+
+    const db = row.data || {};
     
     if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
     if (!db.engineerLedgers) db.engineerLedgers = {};
@@ -4635,9 +4651,26 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
       });
     }
     
-    await saveDb(db);
-    const updatedDb = await fetchAndSyncDbFromMongo(true);
-    res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: updatedDb.pettyCashBoxDays || [] });
+    // 3. Update in Supabase immediately
+    const modifiedData = db;
+    const { error: updateErr } = await adminClient
+      .from('app_state')
+      .update({ data: modifiedData, updated_at: new Date().toISOString() })
+      .eq('key', 'global_state');
+
+    if (updateErr) {
+      // Try with ID column as well just in case
+      await adminClient
+        .from('app_state')
+        .update({ data: modifiedData, updated_at: new Date().toISOString() })
+        .eq('id', 'global_state');
+    }
+
+    // 4. Update memoryDb with the modified JSON
+    setMemoryDb(modifiedData);
+
+    // 5. Return success response with the updated data
+    res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: modifiedData.pettyCashBoxDays || [] });
   } catch (err: any) {
     console.error("Update starting balance error:", err);
     res.status(500).json({ success: false, error: err.message });

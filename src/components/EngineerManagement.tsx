@@ -228,15 +228,17 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
     setActiveTab('crud');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !project) {
       alert('الرجاء تعبئة اسم المهندس واختيار المشروع!');
       return;
     }
 
+    let updatedEngineers: Engineer[];
+
     if (editingId) {
-      const updated = engineers.map(eng => 
+      updatedEngineers = engineers.map(eng => 
         eng.id === editingId 
           ? { 
               ...eng, 
@@ -244,11 +246,11 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
               phone: phone.trim(), 
               project, 
               code: code.trim(), 
-              initialBalance: parseFloat(initialBalance) || 0 
+              initialBalance: parseFloat(initialBalance) || 0,
+              updatedAt: new Date().toISOString()
             } 
           : eng
       );
-      onSave(updated);
     } else {
       const newEngineer: Engineer = {
         id: `eng-${Date.now()}`,
@@ -259,10 +261,29 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
         initialBalance: parseFloat(initialBalance) || 0,
         updatedAt: new Date().toISOString()
       };
-      onSave([newEngineer, ...engineers]);
+      updatedEngineers = [newEngineer, ...engineers];
     }
-    handleResetForm();
-    setActiveTab('folders');
+
+    try {
+      const res = await fetch('/api/financial-data/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engineers: updatedEngineers })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert('فشل حفظ بيانات المهندس: ' + (err.error || res.statusText));
+        return;
+      }
+
+      onSave(updatedEngineers);
+      if (onRefresh) onRefresh();
+      handleResetForm();
+      setActiveTab('folders');
+    } catch (err: any) {
+      alert('حدث خطأ أثناء الحفظ: ' + (err.message || 'خطأ غير معروف'));
+    }
   };
 
   const handleDelete = async (id: string, engName: string) => {
