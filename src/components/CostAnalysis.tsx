@@ -315,7 +315,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
       if (onNotify) {
         onNotify('error', 'فشل الاتصال بالخادم', err.message || 'خطأ في الشبكة.');
       } else {
-        alert('فشل الاتصال بالخادم: ' + err.message);
+        console.error('فشل الاتصال بالخادم: ' + err.message);
       }
     } finally {
       setIsEngineerAggregating(false);
@@ -392,7 +392,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
       if (onNotify) {
         onNotify('error', 'فشل الاتصال بالخادم', err.message || 'خطأ في الشبكة.');
       } else {
-        alert('فشل الاتصال بالخادم: ' + err.message);
+        console.error('فشل الاتصال بالخادم: ' + err.message);
       }
     } finally {
       setIsAggregating(false);
@@ -582,7 +582,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
       }
     } catch (err: any) {
       console.error('Error saving analysis:', err);
-      alert('حدث خطأ أثناء الحفظ: ' + err.message);
+      console.error('حدث خطأ أثناء الحفظ: ' + err.message);
     } finally {
       setIsSavingAnalysis(false);
     }

@@ -525,11 +525,7 @@ async function seedDatabase() {
 
 
 // Run immediate background seed
-try {
-  UserService.seedAllRequiredUsers();
-} catch (err) {
-  console.error("Failed background seedAllRequiredUsers:", err);
-}
+UserService.seedAllRequiredUsers().catch(err => console.error("Failed background seedAllRequiredUsers:", err));
 
 // تشغيل الدالة بمجرد تمام الاتصال والمزامنة لضمان استرجاع كل المشاريع من أطلس
 mongoose.connection.once("open", async () => {
@@ -650,11 +646,7 @@ mongoose.connection.once("open", async () => {
   }
 
   // 5. Seed Users with Email/Password and Role (admin/user)
-  try {
-    await UserService.seedAllRequiredUsers();
-  } catch (err) {
-    console.error("Error in seedAllRequiredUsers:", err);
-  }
+  UserService.seedAllRequiredUsers().catch(err => console.error("Error in seedAllRequiredUsers:", err));
 
   try {
     const db = getDb();
@@ -699,7 +691,7 @@ try {
       fs.copyFileSync(ORIGINAL_DB_FILE, DB_FILE);
       console.log("Successfully copied original committed db.json to /tmp/db.json");
     } else {
-      fs.writeFileSync(DB_FILE, JSON.stringify(defaultDb, null, 2), "utf-8");
+      // fs.writeFileSync(DB_FILE, ...); removed
     }
   }
 } catch (e) {
@@ -750,7 +742,7 @@ function cleanDatabaseDiagnosticsInternal(db: any) {
 
     if (changed) {
       try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+        // fs.writeFileSync(DB_FILE, ...); removed
         console.log("[Auto-Clean] Database diagnostics cleaned up and mapped successfully.");
       } catch (e) {
         console.warn("Could not save auto-cleaned DB:", e);
@@ -826,15 +818,11 @@ function sanitizeDeletedRecords(db: any) {
           if (ledgerDayTime > pDayTime) {
             pDay.updatedAt = ledgerDay.updatedAt;
             pDay.transactions = ledgerDay.transactions || [];
-            if (ledgerDay.startingBalanceOverride !== undefined && ledgerDay.startingBalanceOverride !== null) {
-              pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
-            }
+            pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
           } else {
             ledgerDay.updatedAt = pDay.updatedAt;
             ledgerDay.transactions = pDay.transactions || [];
-            if (pDay.startingBalanceOverride !== undefined && pDay.startingBalanceOverride !== null) {
-              ledgerDay.startingBalanceOverride = pDay.startingBalanceOverride;
-            }
+            ledgerDay.startingBalanceOverride = pDay.startingBalanceOverride;
           }
         } else {
           // Add missing day to pettyCashBoxDays
@@ -886,7 +874,7 @@ export function getDb() {
     const usersChanged = false;
     if (usersChanged) {
       try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+        // fs.writeFileSync(DB_FILE, ...); removed
       } catch (e) {}
     }
     cleanDatabaseDiagnosticsInternal(memoryDb);
@@ -919,7 +907,7 @@ export function getDb() {
 
       if (changed) {
         try {
-          fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), "utf-8");
+          // fs.writeFileSync(DB_FILE, ...); removed
         } catch (e) {}
       }
       memoryDb = parsed;
@@ -930,7 +918,7 @@ export function getDb() {
       // ensureLocalUsersSeeded(fallback);
       memoryDb = fallback;
       try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(fallback, null, 2), "utf-8");
+        // fs.writeFileSync(DB_FILE, ...); removed
       } catch (e) {}
       cleanDatabaseDiagnosticsInternal(memoryDb);
       dbResult = initializeDbVersion(fallback);
@@ -1237,16 +1225,6 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
 
       const merged = { ...newerItem };
 
-      if (colName === "pettyCashBoxDays") {
-        merged.startingBalanceOverride = newerItem.startingBalanceOverride;
-      } else {
-        if (olderItem.startingBalanceOverride !== undefined && olderItem.startingBalanceOverride !== null) {
-          if (merged.startingBalanceOverride === undefined || merged.startingBalanceOverride === null) {
-            merged.startingBalanceOverride = olderItem.startingBalanceOverride;
-          }
-        }
-      }
-
       if (Array.isArray(olderItem.transactions) || Array.isArray(newerItem.transactions)) {
         const mergedTx = [...(olderItem.transactions || [])];
         const newerTx = newerItem.transactions || [];
@@ -1442,7 +1420,7 @@ export async function saveDb(data: any) {
       memoryDb = sanitizedData;
       addToVersionHistory(sanitizedData);
       try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(sanitizedData, null, 2), "utf-8");
+        // fs.writeFileSync(DB_FILE, ...); removed
       } catch (err) {
         console.warn("Could not save to local database file:", err);
       }
@@ -1462,7 +1440,7 @@ export async function saveDb(data: any) {
           if (verifyDoc && verifyDoc.data) {
             memoryDb = sanitizeDeletedRecords(verifyDoc.data);
             addToVersionHistory(memoryDb);
-            fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+            // fs.writeFileSync(DB_FILE, ...); removed
           }
           throw new Error(`Database integrity verification failed: version mismatch. Expected ${newVersion}, got ${verifyDoc?.data?.version}`);
         } else {
@@ -1511,7 +1489,7 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
             // Always overwrite memoryDb with MongoDB data (Single Source of Truth)
             memoryDb = parsed;
             try {
-              fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), "utf-8");
+              // fs.writeFileSync(DB_FILE, ...); removed
             } catch {}
             console.log("Successfully loaded database state from MongoDB Atlas (Primary Source of Truth)!");
             lastMongoSyncTime = Date.now();

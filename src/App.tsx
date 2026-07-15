@@ -1089,7 +1089,7 @@ export default function App() {
       setErrorMsg(null);
     } catch (err: any) {
       console.error(err);
-      if (!isPoll) setErrorMsg('خطأ في الاتصال بالخادم. تأكد من تشغيل Express Backend.');
+      if (!isPoll) setErrorMsg('السيرفر غير متاح');
     } finally {
       if (!isPoll) setLoading(false);
     }
