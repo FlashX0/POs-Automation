@@ -287,7 +287,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
         }
       } catch (err) {
         console.error('Error deleting engineer:', err);
-        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المهندس.');
+        console.error('حدث خطأ أثناء الاتصال بالسيرفر لحذف المهندس.');
       } finally {
         setIsDeleting(false);
       }

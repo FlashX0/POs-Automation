@@ -141,14 +141,14 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
         if (onNotify) {
           onNotify('error', 'خطأ في الاتصال بالخادم', 'فشل إرسال الملف إلى معالج الذكاء الاصطناعي.');
         } else {
-          alert('خطأ في الاتصال بالخادم');
+          console.error('خطأ في الاتصال بالخادم');
         }
       }
     } catch (err: any) {
       if (onNotify) {
         onNotify('error', 'فشل معالجة المستخلص', err.message || 'خطأ في الشبكة.');
       } else {
-        alert(err.message || 'خطأ في الشبكة.');
+        console.error(err.message || 'خطأ في الشبكة.');
       }
     } finally {
       setIsProcessingAI(false);
@@ -519,11 +519,11 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
             alert(`فشل حذف المستخلص: ${data.error || 'خطأ غير معروف'}`);
           }
         } else {
-          alert('فشل الاتصال بالسيرفر لحذف المستخلص.');
+          console.error('فشل الاتصال بالسيرفر لحذف المستخلص.');
         }
       } catch (err) {
         console.error('Error deleting subcontractor contract:', err);
-        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المستخلص.');
+        console.error('حدث خطأ أثناء الاتصال بالسيرفر لحذف المستخلص.');
       } finally {
         setIsDeleting(false);
       }

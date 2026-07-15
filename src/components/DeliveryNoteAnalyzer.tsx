@@ -31,11 +31,11 @@ export const DeliveryNoteAnalyzer: React.FC<DeliveryNoteAnalyzerProps> = ({ poId
       if (data.success && data.result) {
         setResult(data.result);
       } else {
-        alert(data.error || 'حدث خطأ أثناء تحليل إذن الاستلام');
+        console.error(data.error || 'حدث خطأ أثناء تحليل إذن الاستلام');
       }
     } catch (err) {
       console.error(err);
-      alert('حدث خطأ في الاتصال');
+      console.error('حدث خطأ في الاتصال', err);
     } finally {
       setIsAnalyzing(false);
       if (fileInputRef.current) {

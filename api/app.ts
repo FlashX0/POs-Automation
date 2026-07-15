@@ -525,7 +525,11 @@ async function seedDatabase() {
 
 
 // Run immediate background seed
-UserService.seedAllRequiredUsers().catch(err => console.error("Failed background seedAllRequiredUsers:", err));
+try {
+  UserService.seedAllRequiredUsers().catch((err: any) => console.error("Failed background seedAllRequiredUsers:", err));
+} catch (err) {
+  console.error("Failed background seedAllRequiredUsers:", err);
+}
 
 // تشغيل الدالة بمجرد تمام الاتصال والمزامنة لضمان استرجاع كل المشاريع من أطلس
 mongoose.connection.once("open", async () => {
@@ -646,7 +650,11 @@ mongoose.connection.once("open", async () => {
   }
 
   // 5. Seed Users with Email/Password and Role (admin/user)
-  UserService.seedAllRequiredUsers().catch(err => console.error("Error in seedAllRequiredUsers:", err));
+  try {
+      await UserService.seedAllRequiredUsers();
+    } catch (err) {
+      console.error("Error in seedAllRequiredUsers:", err);
+    }
 
   try {
     const db = getDb();

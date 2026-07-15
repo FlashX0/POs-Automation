@@ -532,11 +532,11 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
             alert(`فشل حذف القيد التحليلي: ${data.error || 'خطأ غير معروف'}`);
           }
         } else {
-          alert('فشل الاتصال بالسيرفر لحذف القيد التحليلي.');
+          console.error('فشل الاتصال بالسيرفر لحذف القيد التحليلي.');
         }
       } catch (err) {
         console.error('Error deleting cost analysis entry:', err);
-        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف القيد التحليلي.');
+        console.error('حدث خطأ أثناء الاتصال بالسيرفر لحذف القيد التحليلي.');
       } finally {
         setIsDeleting(false);
       }
@@ -578,7 +578,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           alert('فشل حفظ التحليل: ' + (data.error || 'خطأ غير معروف'));
         }
       } else {
-        alert('فشل الاتصال بالسيرفر لحفظ التحليل.');
+        console.error('فشل الاتصال بالسيرفر لحفظ التحليل.');
       }
     } catch (err: any) {
       console.error('Error saving analysis:', err);
@@ -653,7 +653,7 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           }
         } catch (err: any) {
           console.error('Error clearing cost entries:', err);
-          alert('حدث خطأ أثناء الاتصال بالخادم لتصفير البيانات: ' + err.message);
+          console.error('حدث خطأ أثناء الاتصال بالخادم لتصفير البيانات: ' + err.message);
         }
       }
     }

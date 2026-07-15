@@ -163,7 +163,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
       }
     } catch (err) {
       console.error('Error updating role:', err);
-      alert('فشل الاتصال بالخادم لتحديث الرتبة.');
+      console.error('فشل الاتصال بالخادم لتحديث الرتبة.');
     }
   };
 
@@ -184,7 +184,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
       }
     } catch (err) {
       console.error('Error updating status:', err);
-      alert('فشل الاتصال بالخادم لتحديث الحالة.');
+      console.error('فشل الاتصال بالخادم لتحديث الحالة.');
     }
   };
 
@@ -282,7 +282,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
       }
     } catch (err) {
       console.error('Error deleting user:', err);
-      alert('فشل الاتصال بالخادم لإتمام الحذف.');
+      console.error('فشل الاتصال بالخادم لإتمام الحذف.');
     }
   };
 
