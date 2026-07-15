@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AIModelSelector } from './AIModelSelector';
+import { DeliveryNoteMatcher } from './DeliveryNoteMatcher';
 import * as XLSX from 'xlsx-js-style';
 import { 
   Plus, 
@@ -20,7 +21,8 @@ import {
   Layers,
   Edit2,
   Upload,
-  Loader2
+  Loader2,
+  PackageOpen
 } from 'lucide-react';
 
 interface SupplierOffer {
@@ -55,6 +57,7 @@ interface PriceComparisonProps {
 }
 
 export const PriceComparison: React.FC<PriceComparisonProps> = ({ documents = [], onNotify }) => {
+  const [subTab, setSubTab] = useState<'prices' | 'delivery'>('prices');
   const [useAdvancedAI, setUseAdvancedAI] = useState(false);
   const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   const [comparisons, setComparisons] = useState<QuotationComparison[]>([]);
@@ -611,14 +614,16 @@ export const PriceComparison: React.FC<PriceComparisonProps> = ({ documents = []
             <span>نظام ديلتا الذكي للتحليل المالي والمشتريات • Delta Road Construction</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-100 flex items-center gap-2">
-            مقارنة عروض الأسعار وتحليل الموردين
+            {subTab === 'prices' ? 'مقارنة عروض الأسعار وتحليل الموردين' : 'مطابقة وتدقيق إذن الاستلام بالذكاء الاصطناعي'}
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            قارن عروض الأسعار لحديد التسليح والأسمنت والمواد والمستلزمات، وحدد العرض الفائز ذكياً وصدر التقارير لإدارة السيولة.
+            {subTab === 'prices' 
+              ? 'قارن عروض الأسعار لحديد التسليح والأسمنت والمواد والمستلزمات، وحدد العرض الفائز ذكياً وصدر التقارير لإدارة السيولة.'
+              : 'طابق بضائع إذن الاستلام والموردين مع بنود أمر الشراء تلقائياً بالاعتماد على الكتالوجات والذكاء الاصطناعي.'}
           </p>
         </div>
         
-        {!isEditing && (
+        {subTab === 'prices' && !isEditing && (
           <button
             onClick={startNew}
             className="flex items-center justify-center gap-2 bg-sky-650 hover:bg-sky-600 text-white font-extrabold text-xs sm:text-sm py-3 px-5 rounded-xl shadow-lg shadow-sky-950/40 transition-all cursor-pointer select-none"
@@ -630,7 +635,37 @@ export const PriceComparison: React.FC<PriceComparisonProps> = ({ documents = []
       </div>
 
       <div className="p-4 sm:p-6 lg:p-8 flex-1 flex flex-col">
-        {isEditing ? (
+        {/* SUB TABS NAVIGATION */}
+        {!isEditing && (
+          <div className="flex border-b border-slate-800 mb-6 gap-2">
+            <button
+              onClick={() => setSubTab('prices')}
+              className={`pb-3 px-4 font-bold text-xs sm:text-sm border-b-2 transition-all flex items-center gap-2 ${
+                subTab === 'prices'
+                  ? 'border-sky-500 text-sky-400'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>تحليل ومقارنة الأسعار</span>
+            </button>
+            <button
+              onClick={() => setSubTab('delivery')}
+              className={`pb-3 px-4 font-bold text-xs sm:text-sm border-b-2 transition-all flex items-center gap-2 ${
+                subTab === 'delivery'
+                  ? 'border-sky-500 text-sky-400'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <PackageOpen className="w-4 h-4" />
+              <span>مطابقة إذن الاستلام</span>
+            </button>
+          </div>
+        )}
+
+        {subTab === 'delivery' && !isEditing ? (
+          <DeliveryNoteMatcher documents={documents} onNotify={onNotify} />
+        ) : isEditing ? (
           /* ========================================================
              FORM VIEW: CREATE / EDIT COMPARISON
              ======================================================== */

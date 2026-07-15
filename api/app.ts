@@ -1285,73 +1285,64 @@ ${JSON.stringify(poDoc.items, null, 2)}`;
   }
 });
 
-app.post("/api/ai/compare-delivery-note", upload.single("file"), async (req, res) => {
+app.post("/api/ai/compare-delivery-note", upload.fields([{ name: 'deliveryNote', maxCount: 1 }, { name: 'catalog', maxCount: 1 }]), async (req, res) => {
   try {
     const poId = req.body.poId || req.body.po_id;
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: "الرجاء رفع صورة إذن الاستلام" });
+    const files = req.files as any;
+    const deliveryNoteFile = files?.["deliveryNote"]?.[0];
+    const catalogFile = files?.["catalog"]?.[0];
+
+    if (!deliveryNoteFile) {
+      return res.status(400).json({ success: false, error: "الرجاء رفع مستند إذن الاستلام (deliveryNote)" });
     }
     if (!poId) {
-      return res.status(400).json({ success: false, error: "معرف أمر الشراء مفقود" });
+      return res.status(400).json({ success: false, error: "معرف أمر الشراء (poId) مفقود" });
     }
 
     await fetchAndSyncDbFromMongo(true);
     const db = getDb();
     const poDoc = (db.documents || []).find((d: any) => d.id === poId);
     if (!poDoc) {
-      return res.status(404).json({ success: false, error: "أمر الشراء غير موجود" });
+      return res.status(404).json({ success: false, error: "أمر الشراء غير موجود في قاعدة البيانات" });
     }
 
-    const { buffer, mimetype } = req.file;
-    const base64Data = buffer.toString("base64");
+    const systemInstruction = `You are an elite procurement and logistics matching expert. 
+Your task is to compare a Delivery Note (image/pdf) against a Purchase Order (PO) items list.
+CRITICAL RULE FOR NAME MISMATCH:
+- If the item name in the Delivery Note does NOT exactly match the PO item name, DO NOT mark it as unknown immediately.
+- You must use your deep knowledge of construction/materials company catalogs (e.g., Pipelife, Georg Fischer, Banninger, Elsewedy) to find synonyms or alternative names. For example, if PO says 'PVC Pipe 110mm' and Delivery Note says 'مواسير بايبلايف 110', you must match them.
+- If a Catalog file is provided, use it as the primary reference to match ambiguous descriptions.
+- Return a strict JSON object with 4 arrays: 'matchedItems', 'missingItems', 'overReceivedItems', 'unmatchedItems'.`;
 
-    const systemInstruction = `You are an elite logistics, warehouse management, and procurement expert.
-Analyze the attached Delivery Note image or PDF (إذن استلام / إشعار تسليم).
-Compare it with the provided Purchase Order (PO) items list.
-
-For each item, perform smart visual OCR and match them together:
-1. Handle synonyms, alternative translations, and bilingual description matchings (e.g., 'كابلات' vs 'كابل', or 'Cable' vs 'كابل').
-2. Match items correctly even if they are described slightly differently.
-3. Quantities in Delivery Note must be compared with the 'quantity' in PO.
-
-You must categorize all items into exactly four arrays:
-- 'matchedItems': PO items found in the delivery note with:
-  * description: PO item description
-  * orderedQty: PO quantity
-  * deliveredQty: Delivery Note quantity
-  * status: 'received' (if deliveredQty >= orderedQty) or 'partial' (if deliveredQty < orderedQty)
-- 'missingItems': PO items that are NOT present in the Delivery Note at all with:
-  * description: PO item description
-  * orderedQty: PO quantity
-- 'overReceived': PO items where delivered quantity is greater than ordered quantity with:
-  * description: PO item description
-  * orderedQty: PO quantity
-  * deliveredQty: Delivery Note quantity
-  * excessQty: deliveredQty - orderedQty
-- 'unmatchedItems': items present in the Delivery Note that do NOT match any items in the PO at all with:
-  * description: item description in the Delivery Note
-  * deliveredQty: quantity delivered
-
-Return exactly a JSON object matching this schema. If any array is empty, return it as an empty array [] (never omit any of the four arrays).`;
-
-    const poContext = `PO Items:
+    const poContext = `PO Items (Reference):
 ${JSON.stringify(poDoc.items, null, 2)}`;
 
+    const parts: any[] = [
+      { text: systemInstruction },
+      { text: poContext },
+      {
+        inlineData: {
+          data: deliveryNoteFile.buffer.toString("base64"),
+          mimeType: deliveryNoteFile.mimetype || "image/jpeg"
+        }
+      }
+    ];
+
+    if (catalogFile) {
+      parts.push({
+        inlineData: {
+          data: catalogFile.buffer.toString("base64"),
+          mimeType: catalogFile.mimetype || "application/pdf"
+        }
+      });
+    }
+
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [
         {
           role: "user",
-          parts: [
-            { text: systemInstruction },
-            { text: poContext },
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: mimetype || "image/jpeg"
-              }
-            }
-          ]
+          parts: parts
         }
       ],
       config: {
@@ -1364,12 +1355,13 @@ ${JSON.stringify(poDoc.items, null, 2)}`;
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  description: { type: Type.STRING },
+                  poItemDescription: { type: Type.STRING },
                   orderedQty: { type: Type.NUMBER },
                   deliveredQty: { type: Type.NUMBER },
-                  status: { type: Type.STRING }
+                  matchType: { type: Type.STRING },
+                  note: { type: Type.STRING }
                 },
-                required: ["description", "orderedQty", "deliveredQty", "status"]
+                required: ["poItemDescription", "orderedQty", "deliveredQty", "matchType"]
               }
             },
             missingItems: {
@@ -1377,23 +1369,23 @@ ${JSON.stringify(poDoc.items, null, 2)}`;
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  description: { type: Type.STRING },
-                  orderedQty: { type: Type.NUMBER }
+                  poItemDescription: { type: Type.STRING },
+                  orderedQty: { type: Type.NUMBER },
+                  missingQty: { type: Type.NUMBER }
                 },
-                required: ["description", "orderedQty"]
+                required: ["poItemDescription", "orderedQty", "missingQty"]
               }
             },
-            overReceived: {
+            overReceivedItems: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  description: { type: Type.STRING },
+                  poItemDescription: { type: Type.STRING },
                   orderedQty: { type: Type.NUMBER },
-                  deliveredQty: { type: Type.NUMBER },
-                  excessQty: { type: Type.NUMBER }
+                  deliveredQty: { type: Type.NUMBER }
                 },
-                required: ["description", "orderedQty", "deliveredQty", "excessQty"]
+                required: ["poItemDescription", "orderedQty", "deliveredQty"]
               }
             },
             unmatchedItems: {
@@ -1401,14 +1393,15 @@ ${JSON.stringify(poDoc.items, null, 2)}`;
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  description: { type: Type.STRING },
-                  deliveredQty: { type: Type.NUMBER }
+                  deliveredItemDescription: { type: Type.STRING },
+                  deliveredQty: { type: Type.NUMBER },
+                  note: { type: Type.STRING }
                 },
-                required: ["description", "deliveredQty"]
+                required: ["deliveredItemDescription", "deliveredQty"]
               }
             }
           },
-          required: ["matchedItems", "missingItems", "overReceived", "unmatchedItems"]
+          required: ["matchedItems", "missingItems", "overReceivedItems", "unmatchedItems"]
         }
       }
     });
@@ -1968,50 +1961,11 @@ app.post("/api/units/rename", async (req, res) => {
 async function getNextPoNumberForProject(db: any, projectName: string): Promise<string> {
   const cleanProj = (projectName || "عام").trim();
   
-  if (supabaseClient) {
-    try {
-      let current_project_id = cleanProj;
-      if (mongoose.connection.readyState === 1) {
-        try {
-          const mongoProj = await Project.findOne({ name: cleanProj });
-          if (mongoProj) {
-            current_project_id = mongoProj._id.toString();
-          }
-        } catch (err) {
-          console.warn("[PO Serial] Error finding project ID in MongoDB:", err);
-        }
-      }
-
-      console.log(`[PO Serial] Querying Supabase 'pos_table' for project_id: "${current_project_id}"`);
-      const { data: lastPO, error: poError } = await supabaseClient
-        .from('pos_table')
-        .select('po_number')
-        .eq('project_id', current_project_id)
-        .order('po_number', { ascending: false })
-        .limit(1);
-
-      if (poError) {
-        console.warn(`[PO Serial] Supabase pos_table query error (table might not exist yet):`, poError.message);
-      } else if (lastPO && lastPO.length > 0) {
-        const lastNum = parseInt(lastPO[0].po_number, 10);
-        if (!isNaN(lastNum)) {
-          const nextPoNumber = lastNum + 1;
-          console.log(`[PO Serial] Supabase resolved next PO number: ${nextPoNumber} (last was ${lastNum})`);
-          return String(nextPoNumber);
-        }
-      } else {
-        // إذا كان هذا هو أول PO يتم إنشاؤه للمشروع على الإطلاق، يبدأ الترقيم تلقائياً من رقم 1.
-        console.log(`[PO Serial] No PO found in Supabase for project_id: "${current_project_id}". First PO, starting from 1.`);
-        return "1";
-      }
-    } catch (err: any) {
-      console.warn("[PO Serial] Exception during Supabase query:", err.message);
-    }
-  }
-
   // Fallback to local DB and MongoDB
   const projectPos = (db.documents || []).filter(
-    (d: any) => d.docType === 'po' && (d.projectName || 'عام').trim() === cleanProj
+    (d: any) => 
+      ((d.docType || d.type)?.toLowerCase() === 'po' || (d.docType || d.type) === 'أمر شراء' || d.category === 'purchase_order') && 
+      (d.projectName || 'عام').trim() === cleanProj
   );
   
   let maxNum = 0;
