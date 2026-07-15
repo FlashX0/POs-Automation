@@ -454,14 +454,33 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     }
   };
 
-  const handleUpdateStartingBalance = async () => {
+    const handleUpdateStartingBalance = async () => {
     const val = parseFloat(startingBalanceInput) || 0;
+    const engineerName = selectedEngineer || 'عام';
+    const nowStr = new Date().toISOString();
+    
+    // Optimistically update local state with timestamp
+    let updatedDays = [...boxDays];
+    let dayIndex = updatedDays.findIndex(d => d.date === selectedDate && (d.engineer || 'عام') === engineerName);
+    if (dayIndex >= 0) {
+      updatedDays[dayIndex] = { ...updatedDays[dayIndex], startingBalanceOverride: val, updatedAt: nowStr };
+    } else {
+      updatedDays.push({
+        date: selectedDate,
+        engineer: engineerName,
+        startingBalanceOverride: val,
+        transactions: [],
+        updatedAt: nowStr
+      });
+    }
+    onSave(updatedDays);
+
     try {
       const res = await fetch('/api/engineers/ledger/update-starting-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          engineerName: selectedEngineer || 'عام',
+          engineerName,
           date: selectedDate,
           startingBalanceOverride: val
         })
@@ -471,6 +490,9 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
         if (data.success && data.pettyCashBoxDays) {
           onSave(data.pettyCashBoxDays);
           onNotify("success", "تم التحديث", "تم تحديث الرصيد الافتتاحي في قاعدة البيانات!");
+          if (onResetSuccess) {
+            onResetSuccess();
+          }
         }
       }
     } catch (err) {
