@@ -29,6 +29,7 @@ interface Engineer {
   project: string;
   code: string;
   initialBalance?: number;
+  updatedAt?: string;
 }
 
 interface FileItem {
@@ -253,7 +254,8 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
         phone: phone.trim(),
         project,
         code: code.trim() || `ENG-${Math.floor(100 + Math.random() * 900)}`,
-        initialBalance: parseFloat(initialBalance) || 0
+        initialBalance: parseFloat(initialBalance) || 0,
+        updatedAt: new Date().toISOString()
       };
       onSave([newEngineer, ...engineers]);
     }

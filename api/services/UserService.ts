@@ -863,11 +863,19 @@ export class UserService {
 
     // --- STEP 2: Delete from profiles Table ---
     if (userEmailForDeletion) {
-      const { error: profDelEmailErr } = await supabaseAdmin.from('profiles').delete().eq('email', userEmailForDeletion);
-      if (profDelEmailErr) {
-    // --- STEP 2: Deleted profiles check ---
-      } else if (userEmailForDeletion) {
+      try {
+        await supabaseAdmin.from('profiles').delete().eq('email', userEmailForDeletion);
+      } catch (e) {
+        console.warn("Could not delete from profiles table:", e.message);
+      }
+    }
+
+    // --- STEP 3: Delete from MongoDB ---
+    if (mongoose.connection.readyState === 1 && userEmailForDeletion) {
+      try {
         await User.deleteOne({ email: userEmailForDeletion });
+      } catch (e) {
+        console.warn("Could not delete from MongoDB User table:", e.message);
       }
     }
 

@@ -588,12 +588,7 @@ export default function App() {
     try {
       const body: any = { version: dbVersion };
       if (partialUpdate.pettyCashBoxDays !== undefined) {
-        body.pettyCashBoxDays = partialUpdate.pettyCashBoxDays.map((day: any) => {
-          // Always ensure the frontend marks its sent state as the newest state when modifying it.
-          // Since partialUpdate only happens on user actions, we can safely bump updatedAt for all modified days.
-          // Actually, just ensuring it has a recent updatedAt is fine.
-          return { ...day, updatedAt: new Date().toISOString() };
-        });
+        body.pettyCashBoxDays = partialUpdate.pettyCashBoxDays;
       }
       if (partialUpdate.subcontractorContracts !== undefined) body.subcontractorContracts = partialUpdate.subcontractorContracts;
       if (partialUpdate.laborTimesheets !== undefined) body.laborTimesheets = partialUpdate.laborTimesheets;
@@ -1290,7 +1285,7 @@ export default function App() {
     // Poll the backend API every 4 seconds for real-time file arrival notifications!
     const interval = setInterval(() => {
       fetchData(true);
-    }, 4000);
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [audioEnabled]);
@@ -5871,11 +5866,11 @@ export default function App() {
             <div className="space-y-6 flex-1 flex flex-col select-none">
               
               {/* Projects Overview Alert info card */}
-              <div className="bg-gradient-to-r from-indigo-50/70 to-blue-50/50 border border-indigo-150 rounded-2xl p-4 flex gap-3 text-indigo-900 shadow-xs">
-                <Info className="w-5 h-5 text-indigo-650 flex-shrink-0 mt-0.5" />
+              <div className="bg-slate-800/80 border border-indigo-500/30 rounded-2xl p-4 flex gap-3 text-indigo-100 shadow-xs">
+                <Info className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" />
                 <div className="text-sm">
-                  <span className="font-extrabold text-indigo-950">مستكشف تقسيم المشاريع التلقائي (DELTA Project Explorer):</span>
-                  <p className="text-xs text-indigo-700 mt-1 leading-relaxed">
+                  <span className="font-extrabold text-indigo-300">مستكشف تقسيم المشاريع التلقائي (DELTA Project Explorer):</span>
+                  <p className="text-xs text-indigo-200/80 mt-1 leading-relaxed">
                     هذا التبويب يقوم بفصل المعاملات وعقود التوريد تلقائياً لكل مشروع إنشائي بصورة مستقلة، مع حساب الرصيد الإجمالي التراكمي وتعيين كود مسلسل مستقل للـ POs الخاص ببلان كل مشروع بالتوالي الزمني للاستلام.
                   </p>
                 </div>
@@ -6663,8 +6658,8 @@ export default function App() {
                     </div>
 
                     {/* Quick Add Supplier Input Form */}
-                    <div className="border-t border-slate-200/60 pt-3 flex flex-col sm:flex-row items-center gap-3">
-                      <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs shrink-0 self-start sm:self-center">
+                    <div className="border-t border-slate-700/60 pt-3 flex flex-col sm:flex-row items-center gap-3">
+                      <div className="flex items-center gap-1.5 text-slate-300 font-bold text-xs shrink-0 self-start sm:self-center">
                         <PlusCircle className="w-4 h-4 text-blue-600" />
                         <span>تسجيل مورد/شركة جديدة مباشرة:</span>
                       </div>
@@ -6703,7 +6698,7 @@ export default function App() {
                     );
 
                     return displayedSuppliers.length === 0 ? (
-                      <div className="bg-white rounded-2xl border-2 border-dashed border-slate-150 p-16 text-center shadow-xs">
+                      <div className="bg-slate-800/40 rounded-2xl border-2 border-dashed border-slate-700 p-16 text-center shadow-xs">
                         <Truck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                         <p className="text-sm text-slate-500 font-semibold text-center">لا توجد نتائج بحث تطابق المورد المطلوب.</p>
                         <p className="text-xs text-slate-400 mt-1 text-center font-medium">سجل المورد الآن عبر حقل الإضافة أعلاه لإدراجه كمرجع نشط ومطابق ذكي.</p>
@@ -6862,10 +6857,10 @@ export default function App() {
                 <div className="space-y-6 flex-grow flex flex-col">
                   
                   {/* Search Bar & Header & Project Creation */}
-                  <div className="flex flex-col gap-4 bg-slate-50/70 p-4 border border-slate-150 rounded-2xl" dir="rtl">
+                  <div className="flex flex-col gap-4 bg-slate-800/50 p-4 border border-slate-700 rounded-2xl" dir="rtl">
                     <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                       <div className="space-y-1 text-right">
-                        <h4 className="text-xs font-black text-slate-800">تصفح مشاريع عقود التوريد النشطة</h4>
+                        <h4 className="text-xs font-black text-slate-200">تصفح مشاريع عقود التوريد النشطة</h4>
                         <p className="text-[10px] text-slate-400">انقر على أي مجلد من المجلدات أدناه لتصفح تفاصيل المعاملات والمبالغ المفصلة لكل مشروع على حدة.</p>
                       </div>
 
@@ -6878,14 +6873,14 @@ export default function App() {
                           placeholder="البحث باسم المشروع أو بيانات البنود..."
                           value={projectSearchTerm}
                           onChange={(e) => setProjectSearchTerm(e.target.value)}
-                          className="w-full pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-xs text-slate-900 font-semibold text-right"
+                          className="w-full pl-4 pr-10 py-2 bg-slate-900/50 border border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-xs text-slate-200 font-semibold text-right"
                         />
                       </div>
                     </div>
 
                     {/* Quick Add Project Form */}
-                    <div className="border-t border-slate-200/60 pt-3 flex flex-col sm:flex-row items-center gap-3">
-                      <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs shrink-0 self-start sm:self-center">
+                    <div className="border-t border-slate-700/60 pt-3 flex flex-col sm:flex-row items-center gap-3">
+                      <div className="flex items-center gap-1.5 text-slate-300 font-bold text-xs shrink-0 self-start sm:self-center">
                         <PlusCircle className="w-4 h-4 text-blue-600" />
                         <span>إضافة مشروع جديد كمرجع:</span>
                       </div>
@@ -6901,7 +6896,7 @@ export default function App() {
                               setNewProjectInput('');
                             }
                           }}
-                          className="flex-grow px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-hidden focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-right text-slate-900 font-semibold"
+                          className="flex-grow px-3 py-1.5 bg-slate-900/50 border border-slate-700 rounded-xl text-xs outline-hidden focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-right text-slate-200 font-semibold"
                         />
                         <button
                           onClick={() => {
@@ -6917,8 +6912,8 @@ export default function App() {
                   </div>
 
                   {filteredProjectsEntries.length === 0 ? (
-                    <div className="bg-white rounded-2xl border-2 border-dashed border-slate-150 p-16 text-center shadow-xs">
-                      <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-3 animate-pulse" />
+                    <div className="bg-slate-800/40 rounded-2xl border-2 border-dashed border-slate-700 p-16 text-center shadow-xs">
+                      <Briefcase className="w-12 h-12 text-slate-600 mx-auto mb-3 animate-pulse" />
                       <p className="text-sm text-slate-500 font-semibold">لا توجد نتائج بحث تطابق استعلامك.</p>
                       <p className="text-xs text-slate-400 mt-1">تأكد من كتابة أحرف صحيحة أو إضافة مستندات جديدة مسندة لمشاريع مطابقة.</p>
                     </div>
@@ -6940,7 +6935,7 @@ export default function App() {
                           <div 
                             key={projectName} 
                             onClick={() => setSelectedFolderProject(projectName)}
-                            className="group relative bg-[#FCFDFE] hover:bg-white border border-slate-150 hover:border-sky-500 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
+                            className="group relative bg-slate-800/60 hover:bg-slate-800 border border-slate-700 hover:border-sky-500 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
                           >
                             {/* View/Edit/Delete Overlay controls in the top-left */}
                             {projectName !== 'عام' && (
@@ -6951,7 +6946,7 @@ export default function App() {
                                     e.stopPropagation();
                                     setCustomProjectRenameModal({ isOpen: true, projectName, inputValue: projectName });
                                   }}
-                                  className="p-1.5 bg-white hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg border border-slate-200 hover:border-amber-200 transition-all shadow-3xs"
+                                  className="p-1.5 bg-slate-900 hover:bg-amber-900/30 text-slate-400 hover:text-amber-400 rounded-lg border border-slate-700 hover:border-amber-700 transition-all shadow-3xs"
                                 >
                                   <Pencil className="w-3 h-3" />
                                 </button>
@@ -6961,7 +6956,7 @@ export default function App() {
                                     e.stopPropagation();
                                     setCustomProjectDeleteModal({ isOpen: true, projectName });
                                   }}
-                                  className="p-1.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 hover:border-rose-250 transition-all shadow-3xs"
+                                  className="p-1.5 bg-slate-900 hover:bg-rose-900/30 text-slate-400 hover:text-rose-400 rounded-lg border border-slate-700 hover:border-rose-700 transition-all shadow-3xs"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
@@ -6973,19 +6968,19 @@ export default function App() {
                             
                             <div className="flex items-start gap-4 mt-2">
                               {/* Glowing yellow folder icon which flips to sky on hover */}
-                              <div className="p-3 bg-amber-50 text-amber-500 group-hover:bg-sky-50 group-hover:text-sky-600 rounded-xl border border-amber-100/60 group-hover:border-sky-100 transition-colors shadow-2xs">
-                                <Folder className="w-8 h-8 fill-amber-300/40 group-hover:fill-sky-300/20" />
+                              <div className="p-3 bg-amber-900/20 text-amber-500 group-hover:bg-sky-900/20 group-hover:text-sky-400 rounded-xl border border-amber-700/30 group-hover:border-sky-700/30 transition-colors shadow-2xs">
+                                <Folder className="w-8 h-8 fill-amber-500/40 group-hover:fill-sky-500/40" />
                               </div>
 
                               <div className="flex-1 min-w-0">
-                                <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors">
+                                <h3 className="text-sm font-black text-slate-200 truncate group-hover:text-sky-400 transition-colors">
                                   {projectName}
                                 </h3>
                                 <div className="flex items-center gap-1.5 mt-1">
-                                  <span className="text-[11px] text-slate-500 font-extrabold bg-slate-100 px-1.5 py-0.5 rounded">
+                                  <span className="text-[11px] text-slate-400 font-extrabold bg-slate-900 px-1.5 py-0.5 rounded">
                                     {docs.length} مستندات
                                   </span>
-                                  <span className="text-[10px] text-slate-400 font-medium">
+                                  <span className="text-[10px] text-slate-500 font-medium">
                                     ({pos.length} أوامر / {quotes.length} عروض)
                                   </span>
                                 </div>
@@ -6993,7 +6988,7 @@ export default function App() {
                             </div>
 
                             {/* Financial Summary of folder */}
-                            <div className="mt-5 pt-3.5 border-t border-slate-100 flex flex-col gap-1.5">
+                            <div className="mt-5 pt-3.5 border-t border-slate-700/50 flex flex-col gap-1.5">
                               <span className="text-[9px] text-slate-400 font-extrabold uppercase">إجمالي عقود المجلد:</span>
                               {Object.keys(currencySums).length === 0 ? (
                                 <span className="text-[11px] text-slate-400 font-semibold font-mono">0.00 EGP</span>
@@ -7002,7 +6997,7 @@ export default function App() {
                                   {Object.entries(currencySums).map(([curr, total]) => (
                                     <span 
                                       key={curr} 
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100/70 group-hover:bg-sky-50 text-slate-700 group-hover:text-sky-700 font-black text-xs rounded-lg border border-slate-150/50 font-mono transition-colors"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-900/70 group-hover:bg-sky-900/40 text-slate-300 group-hover:text-sky-300 font-black text-xs rounded-lg border border-slate-700/50 font-mono transition-colors"
                                     >
                                       <span>{total.toLocaleString()}</span>
                                       <span className="text-[10px] text-slate-400 font-bold">{curr}</span>

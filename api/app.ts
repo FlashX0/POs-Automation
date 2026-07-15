@@ -1228,8 +1228,8 @@ function mergeDbChanges(currentDb: any, persistedState: any) {
       const dateA = itemA.updatedAt ? new Date(itemA.updatedAt).getTime() : 0;
       const dateB = itemB.updatedAt ? new Date(itemB.updatedAt).getTime() : 0;
 
-      const newerItem = dateB > dateA ? itemB : itemA;
-      const olderItem = dateB > dateA ? itemA : itemB;
+      const newerItem = dateB >= dateA ? itemB : itemA;
+      const olderItem = dateB >= dateA ? itemA : itemB;
 
       const merged = { ...newerItem };
 
@@ -2245,7 +2245,29 @@ Analyze this subcontractor contract, work statement, or measurement sheet (مس�
   }
 
   const parsedText = response?.text || "{}";
-  return JSON.parse(parsedText.trim());
+  const parsed = JSON.parse(parsedText.trim());
+  
+  if (parsed.items && Array.isArray(parsed.items)) {
+    let calculatedTotal = 0;
+    parsed.items.forEach((item: any) => {
+      if (typeof item.quantity === "number" && typeof item.unitPrice === "number") {
+        const itemTotal = item.quantity * item.unitPrice;
+        if (Math.abs((item.total || 0) - itemTotal) > 0.1) {
+          item.total = itemTotal;
+        }
+        calculatedTotal += item.total;
+      }
+    });
+    
+    // If the stated total amount is completely off or 0, trust the calculated total
+    if (!parsed.totalAmount || Math.abs(parsed.totalAmount - calculatedTotal) > 1.0) {
+      if (calculatedTotal > 0) {
+        parsed.totalAmount = calculatedTotal;
+      }
+    }
+  }
+  
+  return parsed;
 }
 
 /**
@@ -3960,6 +3982,13 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
         const nameMatch = (d.clientName || "").trim().toLowerCase() === (extractedData.clientName || "").trim().toLowerCase();
         const amountMatch = Math.abs(parseFloat(String(d.totalAmount || 0)) - parseFloat(String(extractedData.totalAmount || 0))) < 0.01;
         const dateMatch = (d.receiptDate || "").trim().substring(0, 10) === (extractedData.receiptDate || "").trim().substring(0, 10);
+        
+        const docNum1 = (d.docNumber || "").trim().toLowerCase();
+        const docNum2 = (extractedData.docNumber || "").trim().toLowerCase();
+        const docNumMatch = docNum1 && docNum2 && docNum1 !== "n/a" && docNum2 !== "n/a" && docNum1 === docNum2;
+        
+        if (docNumMatch && nameMatch) return true;
+        
         return nameMatch && amountMatch && dateMatch;
       });
 
@@ -5062,7 +5091,7 @@ app.post("/api/engineers/ledger/approve-range", async (req, res) => {
             }
             return { ...t, status: 'approved' };
           });
-          return { ...d, transactions: updatedTransactions };
+          return { ...d, transactions: updatedTransactions, updatedAt: new Date().toISOString() };
         }
         return d;
       });
@@ -5075,7 +5104,7 @@ app.post("/api/engineers/ledger/approve-range", async (req, res) => {
           const updatedTransactions = (d.transactions || []).map((t: any) => {
             return { ...t, status: 'approved' };
           });
-          return { ...d, transactions: updatedTransactions };
+          return { ...d, transactions: updatedTransactions, updatedAt: new Date().toISOString() };
         }
         return d;
       });
@@ -5109,7 +5138,7 @@ app.post("/api/engineers/ledger/reset", async (req, res) => {
       if (db.engineers) {
         db.engineers = db.engineers.map((eng: any) => {
           if (eng.name === engineerName) {
-            return { ...eng, initialBalance: 0, openingBalance: 0, opening_balance: 0 };
+            return { ...eng, initialBalance: 0, openingBalance: 0, opening_balance: 0, updatedAt: new Date().toISOString() };
           }
           return eng;
         });
@@ -5118,7 +5147,7 @@ app.post("/api/engineers/ledger/reset", async (req, res) => {
       db.engineerLedgers = {};
       db.pettyCashBoxDays = [];
       if (db.engineers) {
-        db.engineers = db.engineers.map((eng: any) => ({ ...eng, initialBalance: 0, openingBalance: 0, opening_balance: 0 }));
+        db.engineers = db.engineers.map((eng: any) => ({ ...eng, initialBalance: 0, openingBalance: 0, opening_balance: 0, updatedAt: new Date().toISOString() }));
       }
     }
     
@@ -5190,11 +5219,13 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
     if (dayObj) {
       if (!dayObj.transactions) dayObj.transactions = [];
       dayObj.transactions.push(newTx);
+      dayObj.updatedAt = new Date().toISOString();
     } else {
       dayObj = {
         date: date,
         engineer: finalEngineerName,
-        transactions: [newTx]
+        transactions: [newTx],
+        updatedAt: new Date().toISOString()
       };
       db.pettyCashBoxDays.push(dayObj);
     }
@@ -5207,10 +5238,12 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
     if (ledgerDayObj) {
       if (!ledgerDayObj.transactions) ledgerDayObj.transactions = [];
       ledgerDayObj.transactions.push(newTx);
+      ledgerDayObj.updatedAt = new Date().toISOString();
     } else {
       ledgerDayObj = {
         date: date,
-        transactions: [newTx]
+        transactions: [newTx],
+        updatedAt: new Date().toISOString()
       };
       db.engineerLedgers[finalEngineerName].push(ledgerDayObj);
     }
@@ -5235,7 +5268,8 @@ app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
         if (d.date === date && d.engineer === engineerName) {
           return {
             ...d,
-            transactions: (d.transactions || []).filter((t: any) => t.id !== txId)
+            transactions: (d.transactions || []).filter((t: any) => t.id !== txId),
+            updatedAt: new Date().toISOString()
           };
         }
         return d;
@@ -5247,7 +5281,8 @@ app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
         if (d.date === date) {
           return {
             ...d,
-            transactions: (d.transactions || []).filter((t: any) => t.id !== txId)
+            transactions: (d.transactions || []).filter((t: any) => t.id !== txId),
+            updatedAt: new Date().toISOString()
           };
         }
         return d;
@@ -6099,7 +6134,7 @@ app.post("/api/engineers/ledger/update-tx", async (req, res) => {
             }
             return t;
           });
-          return { ...d, transactions: updatedTxs };
+          return { ...d, transactions: updatedTxs, updatedAt: new Date().toISOString() };
         }
         return d;
       });
@@ -6122,7 +6157,7 @@ app.post("/api/engineers/ledger/update-tx", async (req, res) => {
             }
             return t;
           });
-          return { ...d, transactions: updatedTxs };
+          return { ...d, transactions: updatedTxs, updatedAt: new Date().toISOString() };
         }
         return d;
       });

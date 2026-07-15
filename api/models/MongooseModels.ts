@@ -24,6 +24,8 @@ const allowedDeviceSchema = new mongoose.Schema({
 export const AllowedDevice: any = mongoose.models.AllowedDevice || mongoose.model("AllowedDevice", allowedDeviceSchema);
 
 const userSchema = new mongoose.Schema({
+  _id: { type: String },
+  supabaseUserId: { type: String },
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true },
   name: { type: String, required: true },
