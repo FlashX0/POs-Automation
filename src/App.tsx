@@ -548,14 +548,18 @@ export default function App() {
         if (finRes.ok) {
           const finData = await finRes.json();
           if (finData.success) {
-            if (finData.pettyCashBoxDays) setPettyCashBoxDays(finData.pettyCashBoxDays);
-            if (finData.subcontractorContracts) setSubcontractorContracts(finData.subcontractorContracts);
-            if (finData.laborTimesheets) setLaborTimesheets(finData.laborTimesheets);
-            if (finData.costAnalysisEntries) setCostAnalysisEntries(finData.costAnalysisEntries);
-            if (finData.costAnalysisCategories) setCostAnalysisCategories(finData.costAnalysisCategories);
-            if (finData.pendingTransactions) setPendingTransactions(finData.pendingTransactions);
-            if (finData.archives) setArchives(finData.archives);
-            if (finData.engineers) setEngineers(finData.engineers);
+            console.log('[App refetchFinancialData] engineers=', finData.engineers?.length || 0, 'boxDays=', finData.pettyCashBoxDays?.length || 0);
+            
+            setPettyCashBoxDays(Array.isArray(finData.pettyCashBoxDays) ? finData.pettyCashBoxDays : []);
+            setSubcontractorContracts(Array.isArray(finData.subcontractorContracts) ? finData.subcontractorContracts : []);
+            setLaborTimesheets(Array.isArray(finData.laborTimesheets) ? finData.laborTimesheets : []);
+            setCostAnalysisEntries(Array.isArray(finData.costAnalysisEntries) ? finData.costAnalysisEntries : []);
+            setCostAnalysisCategories(Array.isArray(finData.costAnalysisCategories) ? finData.costAnalysisCategories : []);
+            setPendingTransactions(Array.isArray(finData.pendingTransactions) ? finData.pendingTransactions : []);
+            setArchives(Array.isArray(finData.archives) ? finData.archives : []);
+            setEngineers(Array.isArray(finData.engineers) ? finData.engineers : []);
+            
+            if (finData.projectsList) setProjectsList(finData.projectsList);
             if (finData.version !== undefined) setDbVersion(finData.version);
           }
         }

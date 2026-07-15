@@ -829,8 +829,49 @@ export async function saveDb(data: any) {
           console.warn('[DB_SYSTEM] Could not find row with id=global_state:', fetchErr?.message);
         }
 
+        let engineersRows: any[] = [];
+        let boxRows: any[] = [];
+        try {
+          const [engRes, boxRes] = await Promise.all([
+            adminClient.from('engineers').select('*'),
+            adminClient.from('petty_cash_box_days').select('*')
+          ]);
+          engineersRows = engRes.data || [];
+          boxRows = boxRes.data || [];
+        } catch (e: any) {
+          console.warn('[DB_SYSTEM] Failed to fetch separate tables for merge in saveDb:', e.message);
+        }
+
         if (row && row.data) {
           persistedState = row.data;
+
+          if (engineersRows.length > 0) {
+            persistedState.engineers = engineersRows.map(e => {
+              const existing = (persistedState.engineers || []).find((old: any) => old.id === e.id || old.name === e.name) || {};
+              return {
+                ...existing,
+                id: e.id,
+                name: e.name,
+                project: e.project,
+                initialBalance: e.initial_balance,
+                updatedAt: e.updated_at
+              };
+            });
+          }
+          if (boxRows.length > 0) {
+            persistedState.pettyCashBoxDays = boxRows.map(b => {
+              const existing = (persistedState.pettyCashBoxDays || []).find((old: any) => (old.id === b.id) || (old.date === b.date && old.engineer === b.engineer)) || {};
+              return {
+                ...existing,
+                id: b.id,
+                engineer: b.engineer,
+                date: b.date,
+                startingBalanceOverride: b.starting_balance,
+                transactions: typeof b.transactions === 'string' ? JSON.parse(b.transactions) : (b.transactions || []),
+                updatedAt: b.updated_at
+              };
+            });
+          }
         }
       } catch (err: any) {
         console.warn("[DB_SYSTEM] Failed to load persisted state from Supabase during saveDb:", err.message);
@@ -994,8 +1035,55 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
             console.warn('[DB_SYSTEM] Could not find row with id=global_state:', fetchErr?.message);
           }
 
+          let engineersRows: any[] = [];
+          let boxRows: any[] = [];
+          try {
+            const [engRes, boxRes] = await Promise.all([
+              adminClient.from('engineers').select('*'),
+              adminClient.from('petty_cash_box_days').select('*')
+            ]);
+            engineersRows = engRes.data || [];
+            boxRows = boxRes.data || [];
+          } catch (e: any) {
+            console.warn('[DB_SYSTEM] Failed to fetch engineers/pettyCashBoxDays separate tables:', e.message);
+          }
+
           if (row && row.data) {
             const parsed = sanitizeDeletedRecords(row.data);
+            
+            console.log('[DB READ] engineers rows:', engineersRows?.length || 0);
+            console.log('[DB READ] petty_cash_box_days rows:', boxRows?.length || 0);
+            console.log('[DB READ] app_state engineers:', parsed?.engineers?.length || 0);
+
+            // Merge separate tables if they exist
+            if (engineersRows.length > 0) {
+              parsed.engineers = engineersRows.map(e => {
+                const existing = (parsed.engineers || []).find((old: any) => old.id === e.id || old.name === e.name) || {};
+                return {
+                  ...existing,
+                  id: e.id,
+                  name: e.name,
+                  project: e.project,
+                  initialBalance: e.initial_balance,
+                  updatedAt: e.updated_at
+                };
+              });
+            }
+            if (boxRows.length > 0) {
+              parsed.pettyCashBoxDays = boxRows.map(b => {
+                const existing = (parsed.pettyCashBoxDays || []).find((old: any) => (old.id === b.id) || (old.date === b.date && old.engineer === b.engineer)) || {};
+                return {
+                  ...existing,
+                  id: b.id,
+                  engineer: b.engineer,
+                  date: b.date,
+                  startingBalanceOverride: b.starting_balance,
+                  transactions: typeof b.transactions === 'string' ? JSON.parse(b.transactions) : (b.transactions || []),
+                  updatedAt: b.updated_at
+                };
+              });
+            }
+
             memoryDb = parsed;
             try {
               fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), "utf-8");

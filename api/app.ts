@@ -3955,6 +3955,9 @@ app.get("/api/financial-data", async (req, res) => {
     await fetchAndSyncDbFromMongo(true);
     const db = getDb();
 
+    console.log('[API financial-data] engineers=', db.engineers?.length || 0);
+    console.log('[API financial-data] pettyCashBoxDays=', db.pettyCashBoxDays?.length || 0);
+
     res.json({
       success: true,
       pettyCashBoxDays: db.pettyCashBoxDays || [],
@@ -3965,6 +3968,7 @@ app.get("/api/financial-data", async (req, res) => {
       pendingTransactions: db.pendingTransactions || [],
       archives: db.archives || [],
       engineers: db.engineers || [],
+      projectsList: db.projects || [],
       version: db.version
     });
   } catch (err: any) {
@@ -4651,23 +4655,12 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
       });
     }
     
-    // 3. Update in Supabase immediately
-    const modifiedData = db;
-    const { error: updateErr } = await adminClient
-      .from('app_state')
-      .update({ data: modifiedData, updated_at: new Date().toISOString() })
-      .eq('id', 'global_state');
-
-    if (updateErr) {
-      console.error("Error updating starting balance in Supabase app_state:", updateErr);
-      return res.status(500).json({ success: false, error: "فشل تحديث البيانات في Supabase" });
-    }
-
-    // 4. Update memoryDb with the modified JSON
-    setMemoryDb(modifiedData);
+    // 3. Save db which correctly updates all Supabase tables
+    await saveDb(db);
+    setMemoryDb(db);
 
     // 5. Return success response with the updated data
-    res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: modifiedData.pettyCashBoxDays || [] });
+    res.json({ success: true, message: "تم تحديث الرصيد الافتتاحي بنجاح", pettyCashBoxDays: db.pettyCashBoxDays || [] });
   } catch (err: any) {
     console.error("Update starting balance error:", err);
     res.status(500).json({ success: false, error: err.message });
