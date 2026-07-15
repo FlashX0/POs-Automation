@@ -908,7 +908,11 @@ export default function App() {
       const allowed = currentUser.role === 'admin'
         ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
         : (currentUser.allowed_departments || []);
-      if (allowed.length > 0 && !allowed.includes(selectedDepartment)) {
+      if (allowed.length === 1) {
+        if (selectedDepartment !== allowed[0]) {
+          setSelectedDepartment(allowed[0] as any);
+        }
+      } else if (allowed.length > 0 && !allowed.includes(selectedDepartment)) {
         if (allowed.includes('procurement')) {
           setSelectedDepartment('procurement');
         } else if (allowed.includes('petty_cash')) {
@@ -1876,6 +1880,13 @@ export default function App() {
 
   // Trigger local utility toast
   const triggerNotificationToast = (type: 'success' | 'info' | 'error', title: string, message: string) => {
+    if (
+      (message && (message.includes("Failed to fetch") || message.includes("TypeError: Failed to fetch") || message.includes("فشل الاتصال"))) ||
+      (title && (title.includes("Failed to fetch") || title.includes("فشل الاتصال")))
+    ) {
+      console.warn(`[Network Warning suppressed toast]: ${title} - ${message}`);
+      return;
+    }
     const notif: AppNotification = {
       id: `toast_${Date.now()}`,
       type,
@@ -4622,8 +4633,16 @@ export default function App() {
         onLoginSuccess={(user: any) => {
           setCurrentUser(user);
           localStorage.setItem('logged_in_user', JSON.stringify(user));
+          const allowed = user.role === 'admin'
+            ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+            : (user.allowed_departments || []);
+
           if (user.role === 'admin') {
             navigateTo('/admin');
+          } else if (allowed.length === 1) {
+            setSelectedDepartment(allowed[0] as any);
+            navigateTo('/');
+            setActiveTab('spreadsheet');
           } else {
             navigateTo('/');
             setActiveTab('spreadsheet');

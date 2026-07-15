@@ -488,6 +488,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.pettyCashBoxDays) {
+          // Explicitly save the newly returned petty cash box days from the server to local state
           onSave(data.pettyCashBoxDays);
           onNotify("success", "تم التحديث", "تم تحديث الرصيد الافتتاحي في قاعدة البيانات!");
           if (onResetSuccess) {
@@ -505,6 +506,11 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const [isSavingLedger, setIsSavingLedger] = useState(false);
 
   const syncAndLoadFromDb = async () => {
+    // Prevent automated sync if the user is currently editing the starting balance
+    if (editingStartingBalance) {
+      console.log("[Sync Guard] Bypassing automatic DB synchronization because starting balance edit is active.");
+      return;
+    }
     try {
       // Fetch latest global financial data
       const finRes = await fetch('/api/financial-data');
@@ -520,8 +526,10 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   };
 
   useEffect(() => {
-    syncAndLoadFromDb();
-  }, [selectedEngineer, selectedDate]);
+    if (!editingStartingBalance) {
+      syncAndLoadFromDb();
+    }
+  }, [selectedEngineer, selectedDate, editingStartingBalance]);
 
   const handleConfirmLedgerRange = async () => {
     if (!selectedEngineer) {

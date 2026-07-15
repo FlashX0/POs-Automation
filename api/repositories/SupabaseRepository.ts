@@ -1,4 +1,4 @@
-import { getSupabaseClient, getSupabaseAdminClient } from "../app.js";
+import { getSupabaseClient, getSupabaseAdminClient } from "../database.js";
 
 export class SupabaseRepository {
   public static getClient() {

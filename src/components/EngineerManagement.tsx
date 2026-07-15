@@ -197,12 +197,14 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
       totalInflow += tx.inflow || 0;
       totalOutflow += tx.outflow || 0;
     });
+    const eng = engineers.find((e: any) => e.name === selectedEngineerFolder?.name);
+    const initBal = eng ? (eng.initialBalance || 0) : 0;
     return {
       totalInflow,
       totalOutflow,
-      balance: totalInflow - totalOutflow
+      balance: initBal + totalInflow - totalOutflow
     };
-  }, [engineerTransactions]);
+  }, [engineerTransactions, engineers, selectedEngineerFolder]);
 
   // CRUD Handlers
   const handleResetForm = () => {
