@@ -7138,10 +7138,10 @@ export default function App() {
           engineers={engineers}
           projectsList={projectsList}
           boxDays={pettyCashBoxDays}
+          dbVersion={dbVersion}
           onRefresh={refetchFinancialData}
-          onSave={(updated) => {
-            setEngineers(updated);
-            syncFinancialsWithBackend({ engineers: updated });
+          onSave={(updatedEngineers) => {
+            setEngineers(updatedEngineers);
           }}
         />
       </main>

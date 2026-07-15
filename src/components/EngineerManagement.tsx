@@ -45,11 +45,12 @@ interface EngineerManagementProps {
   engineers: Engineer[];
   projectsList: string[];
   boxDays?: any[];
+  dbVersion?: number;
   onSave: (updatedEngineers: Engineer[]) => void;
   onRefresh?: () => void;
 }
 
-export default function EngineerManagement({ engineers, projectsList, boxDays = [], onSave, onRefresh }: EngineerManagementProps) {
+export default function EngineerManagement({ engineers, projectsList, boxDays = [], dbVersion, onSave, onRefresh }: EngineerManagementProps) {
   const [useAdvancedAI, setUseAdvancedAI] = useState(false);
   const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   // Navigation tabs
@@ -268,7 +269,10 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
       const res = await fetch('/api/financial-data/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ engineers: updatedEngineers })
+        body: JSON.stringify({ 
+          engineers: updatedEngineers,
+          version: dbVersion || 0
+        })
       });
 
       if (!res.ok) {
