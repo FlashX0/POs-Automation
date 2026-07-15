@@ -4606,7 +4606,7 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
     const { data: row, error: fetchErr } = await adminClient
       .from('app_state')
       .select('data')
-      .eq('key', 'global_state')
+      .eq('id', 'global_state')
       .single();
 
     if (fetchErr || !row) {
@@ -4656,14 +4656,11 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
     const { error: updateErr } = await adminClient
       .from('app_state')
       .update({ data: modifiedData, updated_at: new Date().toISOString() })
-      .eq('key', 'global_state');
+      .eq('id', 'global_state');
 
     if (updateErr) {
-      // Try with ID column as well just in case
-      await adminClient
-        .from('app_state')
-        .update({ data: modifiedData, updated_at: new Date().toISOString() })
-        .eq('id', 'global_state');
+      console.error("Error updating starting balance in Supabase app_state:", updateErr);
+      return res.status(500).json({ success: false, error: "فشل تحديث البيانات في Supabase" });
     }
 
     // 4. Update memoryDb with the modified JSON

@@ -826,14 +826,7 @@ export async function saveDb(data: any) {
           .maybeSingle();
 
         if (fetchErr || !row) {
-          const { data: rowKey } = await adminClient
-            .from('app_state')
-            .select('data')
-            .eq('key', 'global_state')
-            .maybeSingle();
-          if (rowKey) {
-            row = rowKey;
-          }
+          console.warn('[DB_SYSTEM] Could not find row with id=global_state:', fetchErr?.message);
         }
 
         if (row && row.data) {
@@ -891,10 +884,10 @@ export async function saveDb(data: any) {
     // 2. Save to Supabase (Single Source of Truth)
     if (adminClient) {
       try {
-        // A. Upsert global state to app_state supporting both id and key column fields
+        // A. Upsert global state to app_state
         const { error: upsertErr } = await adminClient
           .from('app_state')
-          .upsert({ id: 'global_state', key: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() });
+          .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' });
 
         if (upsertErr) {
           throw upsertErr;
@@ -998,14 +991,7 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
             .maybeSingle();
 
           if (fetchErr || !row) {
-            const { data: rowKey } = await adminClient
-              .from('app_state')
-              .select('data')
-              .eq('key', 'global_state')
-              .maybeSingle();
-            if (rowKey) {
-              row = rowKey;
-            }
+            console.warn('[DB_SYSTEM] Could not find row with id=global_state:', fetchErr?.message);
           }
 
           if (row && row.data) {
@@ -1024,7 +1010,7 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
             if (localDb) {
               await adminClient
                 .from('app_state')
-                .upsert({ id: 'global_state', key: 'global_state', data: localDb, updated_at: new Date().toISOString() });
+                .upsert({ id: 'global_state', data: localDb, updated_at: new Date().toISOString() }, { onConflict: 'id' });
               console.log("Seeded empty Supabase app_state with active local db data!");
               memoryDb = sanitizeDeletedRecords(localDb);
               lastMongoSyncTime = Date.now();
