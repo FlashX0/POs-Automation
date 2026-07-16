@@ -3,7 +3,7 @@ import { getSupabaseClient } from '../lib/supabaseClient';
 import { 
   Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, 
   Clock, Users, User, Folder, FolderOpen, FileSpreadsheet, 
-  FileText, ArrowRight, Upload, Sparkles, AlertCircle, Printer 
+  FileText, ArrowRight, Upload, Sparkles, AlertCircle, Printer, X, Zap 
 } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 
@@ -129,139 +129,68 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   const [printBorderThickness, setPrintBorderThickness] = useState<'light' | 'sharp'>('sharp');
   const [printFixPageBreak, setPrintFixPageBreak] = useState<boolean>(true);
 
-  const handleLaborOCR = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsProcessingAI(true);
+  const handleAiSubmit = async () => {
+    if (!aiFile) {
+      alert('الرجاء اختيار ملف أو صورة أولاً.');
+      return;
+    }
+    setIsAiLoading(true);
     if (onNotify) {
-      onNotify('info', 'جاري قراءة كشف الحضور بالذكاء الاصطناعي 🤖', 'يتم رفع وتحليل كشف العمالة والأسماء وتوزيع اليوميات بالكامل...');
-    } else {
-      alert('جاري قراءة كشف الحضور بالذكاء الاصطناعي...');
+      onNotify('info', 'جاري تحليل المستند بالذكاء الاصطناعي 🤖', 'يتم استخراج البيانات وتوزيع اليوميات...');
     }
 
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('selectedAIModel', 'gemini-2.5-pro');
-    formData.append('useAdvanced', 'false');
+    formData.append('file', aiFile);
+    formData.append('selectedAIModel', aiSelectedModel);
     formData.append('type', 'labor');
+    if (aiInstructions) {
+      formData.append('userInstructions', aiInstructions);
+    }
 
     try {
       const res = await fetch('/api/ai/ocr', {
         method: 'POST',
         body: formData,
       });
-
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data) {
-          setIsAIModalOpen(false);
           const ext = data.data;
           
+          if (ext.workerName) setNewWorker(ext.workerName);
+          else if (ext.names && ext.names.length > 0) setNewWorker(ext.names[0]);
+          
+          if (ext.weekStartDate || ext.startDate) setNewStart(ext.weekStartDate || ext.startDate);
+          if (ext.endDate) setNewEnd(ext.endDate);
+          
+          if (ext.dailyRate) setNewDailyRate(ext.dailyRate.toString());
+          if (ext.overtimeRate) setNewOvertimeRate(ext.overtimeRate.toString());
+          if (ext.sohraRate) setNewSohraRate(ext.sohraRate.toString());
+          
+          if (ext.previousTotal) setNewPrevTotal(ext.previousTotal.toString());
+          if (ext.previousPaid) setNewPrevPaid(ext.previousPaid.toString());
+
+          if (ext.days && ext.days.length > 0) {
+            setAiExtractedDays(ext.days);
+          }
+          
+          setShowAiModal(false);
+          setShowCreateForm(true);
+          setAiFile(null);
+          
           if (onNotify) {
-            onNotify('success', 'تم استخراج بيانات كشف العمالة بنجاح 🎉', 'تم ملء بيانات العامل ويوميات الحضور تلقائياً بالكامل.');
-          } else {
-            alert('تم استخراج بيانات كشف العمالة بنجاح 🎉');
+            onNotify('success', 'تم استخراج بيانات كشف العمالة بنجاح 🎉', 'يرجى مراجعة البيانات ثم الضغط على توليد الكشف.');
           }
-
-          
-          // Parse AI extraction and directly create the timesheet for user review
-          if (ext.workerName) {
-            setNewWorker(ext.workerName);
-          } else if (ext.names && ext.names.length > 0) {
-            setNewWorker(ext.names[0]);
-          }
-
-          let extractedDays = ext.days || [];
-
-          // Create new timesheet directly so user can review the days in the main grid
-          const prevTotalVal = parseFloat(ext.previousTotal || ext.previous_total) || 0;
-          const prevPaidVal = parseFloat(ext.previousPaid || ext.previous_paid) || 0;
-          
-          let stDate = ext.weekStartDate || ext.startDate || (ext.dates && ext.dates.length > 0 ? ext.dates[0] : null);
-          let enDate = ext.endDate || null;
-          
-          if (!stDate && extractedDays.length > 0) {
-            stDate = extractedDays[0].date;
-          }
-          if (stDate && !enDate) {
-            try {
-              const d = new Date(stDate);
-              d.setDate(d.getDate() + 6);
-              enDate = d.toISOString().split('T')[0];
-            } catch(e) {}
-          }
-          
-          if (!stDate) stDate = newStart;
-          if (!enDate) enDate = newEnd;
-
-          // Process the days array from AI
-          const processedDays = [];
-          if (extractedDays.length > 0) {
-            extractedDays.forEach((dDay: any) => {
-              const pName = dDay.project || 'الساحل';
-              const pVals = {};
-              projectsList.forEach(p => { pVals[p] = { daily: 0, overtime: 0, sohra: 0 }; });
-              if (!pVals[pName]) pVals[pName] = { daily: 0, overtime: 0, sohra: 0 };
-              pVals[pName] = {
-                daily: parseFloat(dDay.attendance || dDay.daily || 0),
-                overtime: parseFloat(dDay.overtime || 0),
-                sohra: parseFloat(dDay.sohra || 0)
-              };
-              processedDays.push({
-                dayName: dDay.dayName || 'يوم',
-                date: dDay.date || stDate,
-                projectValues: pVals
-              });
-            });
-          }
-
-          const newSheet = {
-            id: `timesheet-${Date.now()}`,
-            workerName: ext.workerName || ext.names?.[0] || 'عامل جديد',
-            startDate: stDate,
-            endDate: enDate,
-            previousTotal: prevTotalVal,
-            previousPaid: prevPaidVal,
-            dailyRate: parseFloat(ext.dailyRate || ext.amounts?.[0]) || 300,
-            overtimeRate: parseFloat(ext.overtimeRate) || 300,
-            sohraRate: parseFloat(ext.sohraRate) || 45,
-            days: processedDays,
-            projects: projectsList,
-            currentPaid: 0,
-            status: 'draft'
-          };
-          
-          if (processedDays.length > 0) {
-            onSave([newSheet, ...timesheets]);
-            setSelectedSheetId(newSheet.id);
-            if (onNotify) onNotify('success', 'تم إنشاء الكشف بنجاح', 'يمكنك الآن مراجعة اليوميات في الجدول.');
-          }
-
         } else {
-          if (onNotify) {
-            onNotify('error', 'فشل تحليل المستند', data.error || 'حدث خطأ في قراءة الكشف بالذكاء الاصطناعي.');
-          } else {
-            alert(data.error || 'حدث خطأ في قراءة الكشف بالذكاء الاصطناعي.');
-          }
+          if (onNotify) onNotify('error', 'فشل تحليل المستند', data.error || 'حدث خطأ.');
         }
       } else {
-        if (onNotify) {
-          onNotify('error', 'خطأ في الاتصال بالخادم', 'فشل إرسال الملف إلى معالج الذكاء الاصطناعي.');
-        } else {
-          alert('خطأ في الاتصال بالخادم');
-        }
+        if (onNotify) onNotify('error', 'خطأ اتصال', 'فشل الإرسال للخادم.');
       }
     } catch (err: any) {
-      if (onNotify) {
-        onNotify('error', 'فشل معالجة الكشف', err.message || 'خطأ في الشبكة.');
-      } else {
-        alert(err.message || 'خطأ في الشبكة.');
-      }
+      if (onNotify) onNotify('error', 'خطأ في المعالجة', err.message);
     } finally {
-      setIsProcessingAI(false);
-      e.target.value = '';
-      
+      setIsAiLoading(false);
     }
   };
 
@@ -273,8 +202,10 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [showAiModal, setShowAiModal] = useState<boolean>(false);
+  const [aiExtractedDays, setAiExtractedDays] = useState<any[] | null>(null);
   const [aiFile, setAiFile] = useState<File | null>(null);
   const [aiInstructions, setAiInstructions] = useState<string>('');
+  const [aiSelectedModel, setAiSelectedModel] = useState<string>('gemini-2.5-pro');
   const [newWorker, setNewWorker] = useState<string>('');
   const [newStart, setNewStart] = useState<string>('2026-06-24');
   const [newEnd, setNewEnd] = useState<string>('2026-06-30');
@@ -664,6 +595,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
     setSelectedSheetId(newSheet.id);
     setShowCreateForm(false);
     setNewWorker('');
+    setAiExtractedDays(null);
   };
 
   const handleDeleteTimesheet = async () => {
@@ -1060,6 +992,90 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
 
   return (
     <div className="space-y-6">
+
+      {/* AI Extraction Modal */}
+      {showAiModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#0B1120] border border-slate-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+              <h3 className="font-bold text-white flex items-center gap-2">
+                <span>⚡ تفريغ شيت بالذكاء الاصطناعي</span>
+              </h3>
+              <button onClick={() => setShowAiModal(false)} className="text-slate-400 hover:text-white transition-colors cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 flex flex-col gap-5 overflow-y-auto max-h-[80vh]">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-2">اختر الصورة أو الملف (WhatsApp/PDF) *</label>
+                <div className="border-2 border-dashed border-slate-700 bg-slate-800/30 rounded-xl p-6 text-center hover:bg-slate-800/50 hover:border-indigo-500 transition-all cursor-pointer relative">
+                  <input 
+                    type="file" 
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                    accept="image/*,application/pdf"
+                    onChange={(e) => setAiFile(e.target.files?.[0] || null)}
+                  />
+                  <Upload className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
+                  <p className="text-sm text-slate-300 font-bold mb-1">
+                    {aiFile ? aiFile.name : "اضغط لاختيار ملف أو اسحب الملف هنا"}
+                  </p>
+                  <p className="text-xs text-slate-500">يدعم JPG, PNG, PDF</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-2">تعليمات إضافية (اختياري)</label>
+                <textarea 
+                  value={aiInstructions}
+                  onChange={(e) => setAiInstructions(e.target.value)}
+                  placeholder="مثال: هذا الشيت خاص بالعامل شاهر، الإضافي بـ 150 والسهرة بـ 50..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:border-indigo-500 outline-none min-h-[80px]"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-2">موديل الذكاء الاصطناعي</label>
+                <select 
+                  value={aiSelectedModel}
+                  onChange={(e) => setAiSelectedModel(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:border-indigo-500 outline-none cursor-pointer"
+                >
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (الأدق والمُفضّل)</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (سريع)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowAiModal(false)}
+                className="px-4 py-2 border border-slate-700 rounded-xl text-sm font-bold text-slate-300 hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button 
+                onClick={handleAiSubmit}
+                disabled={isAiLoading || !aiFile}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-600/50 disabled:cursor-not-allowed rounded-xl text-sm font-bold text-white transition-colors flex items-center gap-2 cursor-pointer shadow-md"
+              >
+                {isAiLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>جاري التحليل...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    <span>بدء التحليل واستخراج البيانات</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Scoped style block to force landscape print and solid professional borders */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
@@ -1421,6 +1437,13 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
               >
                 <Plus className="w-4 h-4" />
                 <span>إنشاء كشف حضور جديد 📅</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAiModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 border border-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+              >
+                <span>⚡ تفريغ شيت بالذكاء الاصطناعي (صورة/ملف)</span>
               </button>
             </div>
 
