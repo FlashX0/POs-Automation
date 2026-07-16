@@ -790,7 +790,7 @@ export async function saveDb(data: any) {
         let { data: row, error: fetchErr } = await adminClient
           .from('app_state')
           .select('data')
-          .eq('key', 'global_state')
+          .eq('id', 'global_state')
           .maybeSingle();
 
         if (fetchErr || !row) {
@@ -996,7 +996,7 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
           let { data: row, error: fetchErr } = await adminClient
             .from('app_state')
             .select('data')
-            .eq('key', 'global_state')
+            .eq('id', 'global_state')
             .maybeSingle();
 
           if (fetchErr || !row) {

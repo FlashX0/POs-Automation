@@ -1,21 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, ChevronDown } from 'lucide-react';
+import { Bot, ChevronDown, Check } from 'lucide-react';
 
-export const AI_MODELS = [
-  { group: "👑 الدقة القصوى (للملفات المعقدة جداً)", options: [
-    { value: "gpt-5.5", label: "gpt-5.5 | 👑 للصور المعقدة جداً | 🔴 استهلاك عالي جداً ($0.99/1M)" },
-    { value: "gpt-5.6-sol", label: "gpt-5.6-sol | 👑 دقة بصرية فائقة | 🔴 استهلاك عالي ($0.96/1M)" },
-    { value: "claude-opus-4-8-bynara", label: "claude-opus-4-8-bynara | 👑 لتحليل الفواتير المتداخلة | 🟠 استهلاك مرتفع ($0.50/1M)" }
-  ]},
-  { group: "👁️ الذكاء البصري المتقدم (استهلاك متوسط - متوازن)", options: [
-    { value: "gpt-5.6-luna", label: "gpt-5.6-luna | 👁️ للصور والأسكرين شوت | 🟡 استهلاك متوسط ($0.19/1M)" },
-    { value: "claude-sonnet-5-bynara", label: "claude-sonnet-5-bynara | 👁️ للجداول المصورة | 🟡 استهلاك متوسط ($0.20/1M)" }
-  ]},
-  { group: "📊 موديلات الإكسيل والنصوص (استهلاك موفر)", options: [
-    { value: "deepseek-v4-pro-bynara", label: "deepseek-v4-pro-bynara | 📊 لشيتات الإكسيل الدقيقة | 🟢 استهلاك موفر ($0.22/1M)" },
-    { value: "deepseek-v4-flash-bynara", label: "deepseek-v4-flash-bynara | ⚡ للملفات البسيطة والسريعة | 🔵 الأرخص إطلاقاً ($0.02/1M)" },
-    { value: "qwen3.7-max", label: "qwen3.7-max | 📊 للنصوص المعقدة | 🟠 استهلاك مرتفع ($0.87/1M)" }
-  ]}
+export const FREE_AI_MODELS = [
+  { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash | ⚡ سريع ومجاني (للمهام البسيطة)' },
+  { id: 'gemini-2.5-pro', label: 'gemini-2.5-pro | 🧠 دقيق ومجاني (للفواتير العادية)' },
+  { id: 'gemini-3.5-flash', label: 'gemini-3.5-flash | 🚀 سريع ومجاني (للمهام السريعة)' },
+  { id: 'gemini-3.5-pro', label: 'gemini-3.5-pro | 🎓 دقيق جداً ومجاني' }
+];
+
+export const PAID_AI_MODELS = [
+  { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna | 👁️ للصور والأسكرين شوت | 🟡 استهلاك متوسط' },
+  { id: 'claude-opus-4-8-bynara', label: 'claude-opus-4-8-bynara | 👑 للفواتير المتداخلة | 🟠 استهلاك مرتفع' },
+  { id: 'deepseek-v4-flash-bynara', label: 'deepseek-v4-flash-bynara | ⚡ رخيص وسريع | 🔵 الأرخص إطلاقاً' },
+  { id: 'qwen3.7-max', label: 'qwen3.7-max | 📊 للنصوص المعقدة | 🟠 استهلاك مرتفع' }
 ];
 
 interface AIModelSelectorProps {
@@ -26,27 +23,25 @@ interface AIModelSelectorProps {
 }
 
 export function AIModelSelector({ useAdvanced, setUseAdvanced, selectedModel, setSelectedModel }: AIModelSelectorProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'free' | 'paid'>('free');
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+    // If turning ON advanced, ensure a valid model is selected
+    if (useAdvanced) {
+       const isFree = FREE_AI_MODELS.find(m => m.id === selectedModel);
+       const isPaid = PAID_AI_MODELS.find(m => m.id === selectedModel);
+       if (!isFree && !isPaid) {
+          setSelectedModel(FREE_AI_MODELS[0].id);
+          setActiveTab('free');
+       } else if (isPaid) {
+          setActiveTab('paid');
+       } else {
+          setActiveTab('free');
+       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [useAdvanced]);
 
-  const getSelectedLabel = () => {
-    if (!AI_MODELS || !Array.isArray(AI_MODELS)) return selectedModel;
-    for (const group of AI_MODELS) {
-      const opt = group?.options?.find(o => o.value === selectedModel);
-      if (opt) return opt.label;
-    }
-    return selectedModel;
-  };
+  const currentModels = activeTab === 'free' ? FREE_AI_MODELS : PAID_AI_MODELS;
 
   return (
     <div className="flex flex-col gap-4 bg-slate-800/80 p-5 rounded-2xl border border-slate-700/60 mt-2 mb-4 shadow-sm" dir="rtl" onClick={(e) => e.stopPropagation()}>
@@ -54,8 +49,8 @@ export function AIModelSelector({ useAdvanced, setUseAdvanced, selectedModel, se
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-emerald-400" />
           <div className="text-right">
-            <h4 className={`text-sm font-bold ${useAdvanced ? 'text-black' : 'text-white'}`}>{useAdvanced ? 'تشغيل المعالج الذكى' : 'تصحيح كتابه'}</h4>
-            <p className="text-[10px] text-slate-400">تحكم في دقة وتكلفة التحليل</p>
+            <h4 className={`text-sm font-bold text-white`}>تشغيل المعالج الذكي</h4>
+            <p className="text-[10px] text-slate-400">تفعيل واستخدام الذكاء الاصطناعي</p>
           </div>
         </div>
         <label className="relative inline-flex items-center cursor-pointer" onClick={(e) => e.stopPropagation()}>
@@ -70,44 +65,39 @@ export function AIModelSelector({ useAdvanced, setUseAdvanced, selectedModel, se
       </div>
 
       {useAdvanced && (
-        <div className="space-y-3 pt-4 border-t border-slate-700/50 animate-in fade-in zoom-in-95 duration-200" ref={dropdownRef} onClick={(e) => e.stopPropagation()}>
-          <label className="text-xs font-bold text-slate-300 block text-right">الموديل المتقدم:</label>
-          
-          <div className="relative">
+        <div className="space-y-4 pt-4 border-t border-slate-700/50 animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+          <div className="flex bg-slate-900/50 rounded-xl p-1 w-full border border-slate-700/50">
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-              className="w-full bg-slate-950/80 border border-slate-600 text-white text-xs font-bold rounded-xl px-4 py-3 outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer flex justify-between items-center text-right hover:border-slate-500 transition-colors"
+              onClick={() => setActiveTab('free')}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activeTab === 'free' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              <span className="truncate">{getSelectedLabel()}</span>
-              <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              المجاني (الافتراضي)
             </button>
-            
-            {isOpen && (
-              <div className="absolute z-50 w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto custom-scrollbar">
-                {AI_MODELS?.map((group, idx) => (
-                  <div key={idx}>
-                    <div className="bg-slate-900/80 px-3 py-2 text-[10px] font-black text-slate-400 sticky top-0 z-10 border-y border-slate-700/50">
-                      {group?.group}
-                    </div>
-                    <div className="py-1">
-                      {group?.options?.map(opt => (
-                        <div
-                          key={opt?.value}
-                          onClick={() => {
-                            setSelectedModel(opt?.value);
-                            setIsOpen(false);
-                          }}
-                          className={`px-4 py-2.5 text-xs text-slate-300 hover:bg-slate-700 hover:text-white cursor-pointer transition-colors ${selectedModel === opt?.value ? 'bg-emerald-500/10 text-emerald-400 font-bold' : ''}`}
-                        >
-                          {opt?.label}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            <button
+              type="button"
+              onClick={() => setActiveTab('paid')}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activeTab === 'paid' ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              المدفوع (Nara)
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-2 mt-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+            {currentModels.map((opt) => (
+              <div
+                key={opt.id}
+                onClick={() => setSelectedModel(opt.id)}
+                className={`p-3 rounded-xl border cursor-pointer flex justify-between items-center transition-all ${
+                  selectedModel === opt.id
+                    ? activeTab === 'free' ? 'bg-indigo-500/10 border-indigo-500 text-indigo-400' : 'bg-rose-500/10 border-rose-500 text-rose-400'
+                    : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:border-slate-500'
+                }`}
+              >
+                <span className="text-xs font-semibold">{opt.label}</span>
+                {selectedModel === opt.id && <Check className="w-4 h-4" />}
               </div>
-            )}
+            ))}
           </div>
         </div>
       )}

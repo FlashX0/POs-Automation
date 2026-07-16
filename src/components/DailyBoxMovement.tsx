@@ -1334,7 +1334,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                     <thead>
                       <tr className="bg-[#D9E1F2]">
                         <th colSpan={5} className="py-3 px-4 font-black text-[#1F4E78] text-base text-center print-ledger-title-cell">
-                          حركة صندوق {selectedEngineer ? selectedEngineer : "العام"} ليوم {formattedDate}
+                          كشف حركة الصندوق ليوم {formattedDate}
                         </th>
                       </tr>
                     </thead>

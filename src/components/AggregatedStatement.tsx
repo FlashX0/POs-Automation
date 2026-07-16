@@ -280,15 +280,25 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
             const elements = clonedDocument.querySelectorAll('*');
             elements.forEach((el) => {
               const htmlEl = el as HTMLElement;
+              
+              if (htmlEl.tagName === 'TD' || htmlEl.tagName === 'TH' || htmlEl.tagName === 'TR' || htmlEl.tagName === 'DIV' || htmlEl.tagName === 'SPAN' || htmlEl.tagName === 'INPUT' || htmlEl.tagName === 'TABLE') {
+                const bg = window.getComputedStyle(htmlEl).backgroundColor;
+                if (bg && (bg.includes('rgba(15') || bg.includes('rgb(15') || htmlEl.className.includes('bg-slate-') || htmlEl.className.includes('bg-gray-') || htmlEl.className.includes('bg-[#') || htmlEl.className.includes('bg-indigo-'))) {
+                  htmlEl.style.backgroundColor = '#ffffff';
+                }
+                htmlEl.style.color = '#000000';
+                htmlEl.style.borderColor = '#d1d5db';
+              }
+              
               const computedStyle = window.getComputedStyle(htmlEl);
               if (computedStyle.backgroundColor.includes('oklch')) {
-                htmlEl.style.backgroundColor = '#ffffff'; // Fallback safe color
+                htmlEl.style.backgroundColor = '#ffffff';
               }
               if (computedStyle.color.includes('oklch')) {
-                htmlEl.style.color = '#000000'; // Fallback safe color
+                htmlEl.style.color = '#000000';
               }
               if (computedStyle.borderColor.includes('oklch')) {
-                htmlEl.style.borderColor = '#e5e7eb'; // Safe gray border
+                htmlEl.style.borderColor = '#d1d5db';
               }
             });
           }

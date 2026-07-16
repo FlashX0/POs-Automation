@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 
+
+
+
 interface DayEntry {
   dayName: string;
   date: string;
@@ -142,6 +145,7 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
     const formData = new FormData();
     formData.append('file', aiFile);
     formData.append('selectedAIModel', aiSelectedModel);
+    formData.append('useAdvanced', 'true');
     formData.append('type', 'labor');
     if (aiInstructions) {
       formData.append('userInstructions', aiInstructions);
@@ -157,21 +161,29 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
         if (data.success && data.data) {
           const ext = data.data;
           
-          if (ext.workerName) setNewWorker(ext.workerName);
-          else if (ext.names && ext.names.length > 0) setNewWorker(ext.names[0]);
+          setNewWorker(ext.workerName || (ext.names && ext.names.length > 0 ? ext.names[0] : "عامل جديد"));
           
           if (ext.weekStartDate || ext.startDate) setNewStart(ext.weekStartDate || ext.startDate);
           if (ext.endDate) setNewEnd(ext.endDate);
           
-          if (ext.dailyRate) setNewDailyRate(ext.dailyRate.toString());
-          if (ext.overtimeRate) setNewOvertimeRate(ext.overtimeRate.toString());
-          if (ext.sohraRate) setNewSohraRate(ext.sohraRate.toString());
+          setNewDailyRate(ext.dailyRate ? Number(ext.dailyRate).toString() : '300');
+          setNewOvertimeRate(ext.overtimeRate ? Number(ext.overtimeRate).toString() : '300');
+          setNewSohraRate(ext.sohraRate ? Number(ext.sohraRate).toString() : '45');
           
-          if (ext.previousTotal) setNewPrevTotal(ext.previousTotal.toString());
-          if (ext.previousPaid) setNewPrevPaid(ext.previousPaid.toString());
+          setNewPrevTotal(ext.previousTotal ? Number(ext.previousTotal).toString() : '0');
+          setNewPrevPaid(ext.previousPaid ? Number(ext.previousPaid).toString() : '0');
 
-          if (ext.days && ext.days.length > 0) {
-            setAiExtractedDays(ext.days);
+          if (ext.days && Array.isArray(ext.days) && ext.days.length > 0) {
+            setAiExtractedDays(ext.days.map((day: any) => ({
+              dayName: day.dayName || "",
+              date: day.date || "",
+              attendance: Number(day.attendance || day.daily) || 0,
+              overtime: Number(day.overtime) || 0,
+              sohra: Number(day.sohra) || 0,
+              project: day.project || "عام"
+            })));
+          } else {
+            setAiExtractedDays([]);
           }
           
           setShowAiModal(false);
@@ -205,7 +217,8 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
   const [aiExtractedDays, setAiExtractedDays] = useState<any[] | null>(null);
   const [aiFile, setAiFile] = useState<File | null>(null);
   const [aiInstructions, setAiInstructions] = useState<string>('');
-  const [aiSelectedModel, setAiSelectedModel] = useState<string>('gemini-2.5-pro');
+  const [aiSelectedModel, setAiSelectedModel] = useState<string>('gemini-2.5-flash');
+  const [aiUseAdvanced, setAiUseAdvanced] = useState<boolean>(false);
   const [newWorker, setNewWorker] = useState<string>('');
   const [newStart, setNewStart] = useState<string>('2026-06-24');
   const [newEnd, setNewEnd] = useState<string>('2026-06-30');
@@ -550,23 +563,51 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
     }
 
     const daysArr: DayEntry[] = [];
-    const activeProjects = projectsList && projectsList.length > 0 ? projectsList : [];
+    let activeProjects = projectsList && projectsList.length > 0 ? [...projectsList] : ["العام"];
+    
+    // Add any projects found in AI extraction that are missing from activeProjects
+    if (aiExtractedDays && aiExtractedDays.length > 0) {
+      aiExtractedDays.forEach(aiDay => {
+        if (aiDay.project && !activeProjects.includes(aiDay.project)) {
+          activeProjects.push(aiDay.project);
+        }
+      });
+    }
 
     for (let i = 0; i < diffDays; i++) {
       const currDate = new Date(start);
       currDate.setDate(start.getDate() + i);
+      const currDateStr = currDate.toISOString().split('T')[0];
       
-      // Get dynamic Arabic weekday name
       const dayName = currDate.toLocaleDateString('ar-EG', { weekday: 'long' });
       
+      let dayProject = "العام";
+      let dayDaily = 0;
+      let dayOvertime = 0;
+      let daySohra = 0;
+
+      if (aiExtractedDays && aiExtractedDays.length > 0) {
+        const aiDay = aiExtractedDays.find((d: any) => d.date === currDateStr) || aiExtractedDays[i];
+        if (aiDay) {
+          dayProject = aiDay.project || "العام";
+          dayDaily = Number(aiDay.attendance) || 0;
+          dayOvertime = Number(aiDay.overtime) || 0;
+          daySohra = Number(aiDay.sohra) || 0;
+        }
+      }
+
       const projectValues: { [projectName: string]: { daily: number; overtime: number; sohra: number } } = {};
-      activeProjects.forEach(p => {
-        projectValues[p] = { daily: 0, overtime: 0, sohra: 0 };
+      (activeProjects || []).forEach(p => {
+        projectValues[p] = { 
+          daily: p === dayProject ? dayDaily : 0, 
+          overtime: p === dayProject ? dayOvertime : 0, 
+          sohra: p === dayProject ? daySohra : 0 
+        };
       });
 
       daysArr.push({
         dayName: dayName,
-        date: currDate.toISOString().split('T')[0],
+        date: currDateStr,
         projectValues: projectValues
       });
     }
@@ -1034,17 +1075,12 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-2">موديل الذكاء الاصطناعي</label>
-                <select 
-                  value={aiSelectedModel}
-                  onChange={(e) => setAiSelectedModel(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:border-indigo-500 outline-none cursor-pointer"
-                >
-                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (الأدق والمُفضّل)</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (سريع)</option>
-                </select>
-              </div>
+              <AIModelSelector 
+                useAdvanced={aiUseAdvanced}
+                setUseAdvanced={setAiUseAdvanced}
+                selectedModel={aiSelectedModel}
+                setSelectedModel={setAiSelectedModel}
+              />
             </div>
 
             <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-3">
@@ -1509,7 +1545,14 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
                   <input
                     type="file"
                     accept="image/*,application/pdf"
-                    onChange={handleLaborOCR}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setAiFile(file);
+                        setShowAiModal(true);
+                        setShowCreateForm(false);
+                      }
+                    }}
                     disabled={isProcessingAI}
                     className="hidden"
                   />

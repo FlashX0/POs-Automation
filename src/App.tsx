@@ -3003,6 +3003,22 @@ export default function App() {
           clonedElement.style.backgroundColor = "#ffffff";
           clonedElement.style.boxSizing = "border-box";
           clonedElement.style.border = "3px solid #000000";
+          clonedElement.style.color = "#000000";
+          
+          // Force all elements inside the cloned table/sheet to be light mode (white bg, black text)
+          const allDescendants = clonedElement.querySelectorAll('*');
+          allDescendants.forEach(el => {
+             const htmlEl = el as HTMLElement;
+             if (htmlEl.tagName === 'TD' || htmlEl.tagName === 'TH' || htmlEl.tagName === 'TR' || htmlEl.tagName === 'DIV' || htmlEl.tagName === 'SPAN') {
+                const bg = window.getComputedStyle(htmlEl).backgroundColor;
+                // If it's a dark color, make it white
+                if (bg && (bg.includes('rgba(15') || bg.includes('rgb(15') || htmlEl.className.includes('bg-slate-') || htmlEl.className.includes('bg-gray-'))) {
+                  htmlEl.style.backgroundColor = '#ffffff';
+                }
+                htmlEl.style.color = '#000000';
+                htmlEl.style.borderColor = '#d1d5db'; // light gray border
+             }
+          });
 
           // Unhide desktop metadata grid and hide mobile responsive details specifically for PDF screenshot logic
           const desktopMetadataGrid = clonedElement.querySelector(".hidden.md\\:grid") as HTMLElement;
@@ -3952,21 +3968,12 @@ export default function App() {
                 ) : (
                   <>
                     <Download className="w-4 h-4 text-sky-200" />
-                    <span>تنزيل ملف PDF مباشر 📥</span>
+                    <span>تحميل PDF (تنسيق Excel) 📥</span>
                   </>
                 )}
               </button>
 
-              {/* Force Open in New Tab URL Anchor for sandboxed bypass */}
-              <a
-                href={`${window.location.origin}${window.location.pathname}?print=${printDoc.id}&dir=${printDirectionParam}`}
-                target="_blank"
-                rel="noopener"
-                className="px-5 py-2 bg-[#1d4ed8] hover:bg-blue-600 text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-2 hover:scale-[1.02] no-print"
-              >
-                <ExternalLink className="w-4 h-4 text-blue-200" />
-                <span>فتح في نافذة كاملة للطباعة الفورية 🌐</span>
-              </a>
+              
 
               {/* Standard printer trigger */}
               <button
@@ -3993,25 +4000,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Iframe restricted browser print warning */}
-        {isInIframe && (
-          <div className="w-full max-w-4xl mx-auto mb-6 bg-amber-950/40 border border-amber-900/40 rounded-2xl p-4 text-right no-print" dir="rtl">
-            <div className="flex items-start gap-3">
-              <span className="text-xl shrink-0">⚠️</span>
-              <div className="space-y-1 font-sans">
-                <h4 className="text-xs font-black text-amber-400">تنبيه لضمان جودة الطباعة المباشرة:</h4>
-                <p className="text-[11px] text-slate-300 leading-relaxed font-bold">
-                  أنت تتصفح الموقع حالياً من داخل إطار المعاينة لـ AI Studio (Iframe). 
-                  متصفحات الويب تمنع تشغيل أمر الطباعة المباشرة داخل الإطارات بسبب قيود الحماية.
-                </p>
-                <div className="pt-2 text-[10.5px] text-amber-300 font-medium space-y-1">
-                  <div>💡 للحصول على المستند الورقي، يرجى الضغط على زر <span className="font-extrabold text-white bg-slate-800 px-1.5 py-0.5 rounded-md text-[10px]">تنزيل ملف PDF مباشر 📥</span> بالأعلى ثم طباعته كالمعتاد.</div>
-                  <div>🔄 أو قم بفتح الموقع في نافذة مستقلة بالكامل عبر زر الانتقال بأعلى الشاشة لتشغيل ميزة الطباعة الفورية للورق!</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        
 
         {/* Dynamic User Custom Margins and @page overrider injection */}
         {(() => {

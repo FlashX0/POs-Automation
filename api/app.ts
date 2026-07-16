@@ -1254,11 +1254,15 @@ app.post("/api/ai/ocr", upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "لم يتم تحديد أي ملف للرفع." });
     }
+
     const type = req.body.type || "petty_cash"; // 'labor' | 'petty_cash' | 'subcontractor'
-    const userInstructions = req.body.instructions || "";
+    const userInstructions = req.body.instructions || req.body.userInstructions || "";
+    const selectedAIModel = req.body.selectedAIModel || "gemini-2.5-flash";
+    const useAdvanced = req.body.useAdvanced === "true";
+    
     const { buffer, mimetype, originalname } = req.file;
 
-    const extracted = await extractFinancialFile(buffer, mimetype, originalname, type, userInstructions);
+    const extracted = await extractFinancialFile(buffer, mimetype, originalname, type, userInstructions, selectedAIModel, useAdvanced);
 
     // Save temporary upload
     const sanitize = (name: string) => name.replace(/[\/\\?%*:|"<>s]/g, "_").trim();
@@ -2587,95 +2591,6 @@ app.post("/api/device/request-reconnect", async (req, res) => {
 });
 
 // AI OCR Extraction Endpoint
-app.post("/api/ai/ocr", upload.single("file"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: "لم يتم رفع أي ملف." });
-    }
-    const { buffer, mimetype, originalname } = req.file;
-    const base64Data = buffer.toString("base64");
-
-    if (!process.env.NARAROUTER_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: "يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئة"
-      });
-    }
-
-    const systemInstruction = `You are an advanced visual AI OCR engine optimized for Egyptian and Arabic construction, engineering, and petty cash documents.
-Analyze the provided document (can be an invoice, receipt, InstaPay transaction screenshot/receipt, attendance sheet, or subcontractor statement).
-Extract the following information:
-1. Names (الأسماء): Any employee names, site engineer names, subcontractor names, client/vendor names, or labor names mentioned in the document. Return as an array of strings in Arabic.
-2. Dates (التواريخ): Any official dates, transaction dates, or period dates in YYYY-MM-DD format. Return as an array of strings.
-3. Amounts (المبالغ): Any monetary amounts, totals, petty cash values, or daily wages. Extract them as standard numbers. Return as an array of numbers.
-4. Description/Statement (البيان): A concise, rich description in Arabic summarizing what this receipt/document is for (e.g., 'شراء خامات سباكة وكهرباء للموقع' or 'إيصال تحويل بنكي إنستاباي للمهندس' or 'كشف حضور وغياب العمالة اليومية').
-5. Summary (ملخص): A brief, complete visual summary of the document in professional Arabic.
-
-Return values in JSON format matching the schema rules exactly.`;
-
-    const documentPart = {
-      inlineData: {
-        mimeType: mimetype || "image/jpeg",
-        data: base64Data
-      }
-    };
-
-    const textPart = {
-      text: `Process this document "${originalname}" and extract names, dates, amounts, description, and summary in JSON format.`
-    };
-
-    const selectedAIModel = req.body.selectedAIModel || "gemini-3.5-flash";
-    const response = await ai.models.generateContent({
-      model: req.body.useAdvanced === "true" ? selectedAIModel : "gemini-3.5-flash",
-      contents: { parts: [documentPart, textPart] },
-      config: {
-        systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            names: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "All person/company/labor names found in the document."
-            },
-            dates: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "All dates found in the document, formatted as YYYY-MM-DD."
-            },
-            amounts: {
-              type: Type.ARRAY,
-              items: { type: Type.NUMBER },
-              description: "All monetary values/amounts found."
-            },
-            description: {
-              type: Type.STRING,
-              description: "Comprehensive Arabic description/statement of the document."
-            },
-            summary: {
-              type: Type.STRING,
-              description: "Short visual summary/conclusion of the document."
-            }
-          },
-          required: ["names", "dates", "amounts", "description", "summary"]
-        }
-      }
-    });
-
-    const resultText = response.text || "{}";
-    const parsed = JSON.parse(resultText.trim());
-
-    return res.json({
-      success: true,
-      data: parsed
-    });
-
-  } catch (err: any) {
-    console.error("[AI OCR] Error during Gemini extraction:", err);
-    return res.status(500).json({ success: false, error: err.message || "حدث خطأ أثناء معالجة المستند بالذكاء الاصطناعي." });
-  }
-});
 
 // 2. Direct client file upload & parsing
 app.post("/api/upload", upload.single("file"), async (req, res) => {
@@ -2687,11 +2602,13 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     await fetchAndSyncDbFromSupabase(true);
     const { buffer, mimetype, originalname } = req.file;
     const userInstructions = req.body.instructions || req.body.notes || "";
+    const selectedAIModel = req.body.selectedAIModel || "gemini-2.5-flash";
+    const useAdvanced = req.body.useAdvanced === "true";
     
     let extractedData: any;
     let extractionFailed = false;
     try {
-      extractedData = await extractDataFromDocument(buffer, mimetype, originalname, userInstructions);
+      extractedData = await extractDataFromDocument(buffer, mimetype, originalname, userInstructions, selectedAIModel, useAdvanced);
     } catch (err: any) {
       console.warn("Gemini extraction failed, creating a manual draft document instead:", err);
       extractionFailed = true;

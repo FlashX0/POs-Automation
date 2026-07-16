@@ -518,40 +518,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
 
                         {/* Allowed Departments badges */}
                         <td className="py-4 px-6 align-middle text-right">
-                          <div className="flex flex-wrap gap-1 justify-end max-w-xs">
-                            {(user.allowed_departments || []).map((dep) => {
-                              let label = "";
-                              let colorClass = "";
-                              if (dep === "procurement") {
-                                label = "المشتريات";
-                                colorClass = "bg-sky-500/10 text-sky-400 border-sky-500/20";
-                              } else if (dep === "petty_cash") {
-                                label = "العهد ومصروفات المشاريع";
-                                colorClass = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-                              } else if (dep === "subcontractors") {
-                                label = "مستخلصات المقاولين";
-                                colorClass = "bg-amber-500/10 text-amber-400 border-amber-500/20";
-                              } else if (dep === "labor_timesheet") {
-                                label = "العمالة اليومية";
-                                colorClass = "bg-indigo-500/10 text-indigo-400 border-indigo-500/20";
-                              } else if (dep === "cost_analysis") {
-                                label = "تحليل بنود المصروفات";
-                                colorClass = "bg-rose-500/10 text-rose-400 border-rose-500/20";
-                              } else if (dep === "engineers") {
-                                label = "إدارة المهندسين";
-                                colorClass = "bg-violet-500/10 text-violet-400 border-violet-500/20";
-                              } else if (dep === "aggregated_statement") {
-                                label = "البيان المجمع";
-                                colorClass = "bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/20";
-                              }
-                              if (!label) return null;
-                              return (
-                                <span key={dep} className={`text-[10px] px-2.5 py-1 rounded-lg border font-sans font-bold whitespace-nowrap ${colorClass}`}>
-                                  {label}
-                                </span>
-                              );
-                            })}
-                          </div>
+                          <span className="text-xs font-bold text-slate-300">
+                            {(user.allowed_departments || []).map(dep => {
+                              if (dep === "procurement") return "المشتريات";
+                              if (dep === "petty_cash") return "العهد ومصروفات المشاريع";
+                              if (dep === "subcontractors") return "مستخلصات المقاولين";
+                              if (dep === "labor_timesheet") return "العمالة اليومية";
+                              if (dep === "cost_analysis") return "تحليل بنود المصروفات";
+                              if (dep === "engineers") return "إدارة المهندسين";
+                              if (dep === "aggregated_statement") return "البيان المجمع";
+                              return dep;
+                            }).join(' - ')}
+                          </span>
                         </td>
 
                         {/* Email */}
@@ -698,7 +676,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">القسم المسموح له (Allowed Department) * إجباري</label>
-                <div className="space-y-2.5 bg-slate-950 border border-slate-850 p-4 rounded-xl text-right">
+                <div className="flex flex-wrap gap-3 bg-slate-950 border border-slate-850 p-4 rounded-xl text-right overflow-hidden">
                   <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
                     <input 
                       type="checkbox"
@@ -896,7 +874,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-2 mr-1">القسم المسموح له (Allowed Department) * إجباري</label>
-                <div className="space-y-2.5 bg-slate-950 border border-slate-850 p-4 rounded-xl text-right">
+                <div className="flex flex-wrap gap-3 bg-slate-950 border border-slate-850 p-4 rounded-xl text-right overflow-hidden">
                   <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-300 hover:text-white transition-all select-none">
                     <input 
                       type="checkbox"

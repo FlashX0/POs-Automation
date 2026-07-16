@@ -26,7 +26,7 @@ export function AIUploadModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [useAdvanced, setUseAdvanced] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("gpt-5.6-luna");
+  const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
 
   if (!isOpen) return null;
 
