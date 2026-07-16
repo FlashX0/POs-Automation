@@ -602,7 +602,7 @@ export default function App() {
       if (partialUpdate.archives !== undefined) body.archives = partialUpdate.archives;
       if (partialUpdate.engineers !== undefined) body.engineers = partialUpdate.engineers;
 
-      const res = await fetch('/api/financial-data/update', {
+      const res = await fetch('/api/state/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -1049,6 +1049,14 @@ export default function App() {
       setProjectsList(data.projects || []);
       setSuppliersList(data.suppliers || []);
       if (data.version !== undefined) setDbVersion(data.version);
+      
+      if (Array.isArray(data.engineers)) setEngineers(data.engineers);
+      if (Array.isArray(data.pettyCashBoxDays)) setPettyCashBoxDays(data.pettyCashBoxDays);
+      if (Array.isArray(data.subcontractorContracts)) setSubcontractorContracts(data.subcontractorContracts);
+      if (Array.isArray(data.laborTimesheets)) setLaborTimesheets(data.laborTimesheets);
+      if (Array.isArray(data.costAnalysisEntries)) setCostAnalysisEntries(data.costAnalysisEntries);
+      if (Array.isArray(data.costAnalysisCategories)) setCostAnalysisCategories(data.costAnalysisCategories);
+      if (Array.isArray(data.archives)) setArchives(data.archives);
 
       isInitialFetchCompleted.current = true;
  

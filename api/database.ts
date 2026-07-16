@@ -934,6 +934,10 @@ export async function saveDb(data: any) {
             await adminClient.from('engineers').upsert(mappedEngineers);
           }
         }
+        
+        if (sanitizedData.deletedEngineerIds && sanitizedData.deletedEngineerIds.length > 0) {
+           await adminClient.from('engineers').delete().in('id', sanitizedData.deletedEngineerIds);
+        }
 
         // D. Parallel upsert into petty_cash_box_days table
         if (sanitizedData.pettyCashBoxDays && Array.isArray(sanitizedData.pettyCashBoxDays)) {

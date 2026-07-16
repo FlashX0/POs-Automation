@@ -266,7 +266,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
     }
 
     try {
-      const res = await fetch('/api/financial-data/update', {
+      const res = await fetch('/api/state/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -294,10 +294,13 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
     if (window.confirm(`هل أنت متأكد من حذف المهندس "${engName}" وكل سجلاته؟`)) {
       setIsDeleting(true);
       try {
-        const res = await fetch('/api/engineers/delete', {
+        const res = await fetch('/api/state/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, name: engName })
+          body: JSON.stringify({ 
+            engineers: engineers.filter(eng => eng.id !== id),
+            deletedEngineerIds: [id] 
+          })
         });
         if (res.ok) {
           const data = await res.json();

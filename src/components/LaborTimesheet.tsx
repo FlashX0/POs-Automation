@@ -630,10 +630,13 @@ export const LaborTimesheet: React.FC<LaborTimesheetProps> = ({
     ) {
       setIsDeleting(true);
       try {
-        const res = await fetch('/api/labor-timesheets/delete', {
+        const res = await fetch('/api/state/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: selectedSheetId })
+          body: JSON.stringify({ 
+            laborTimesheets: timesheets.filter((ts) => ts.id !== selectedSheetId),
+            deletedLaborTimesheetIds: [selectedSheetId]
+          })
         });
         if (res.ok) {
           const data = await res.json();

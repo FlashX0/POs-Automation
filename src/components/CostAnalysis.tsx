@@ -515,10 +515,13 @@ export const CostAnalysis: React.FC<CostAnalysisProps> = ({
           if (sbErr) console.error('خطأ في حذف القيد التحليلي من السيرفر:', sbErr.message);
         }
 
-        const res = await fetch('/api/cost-analysis/delete', {
+        const res = await fetch('/api/state/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id })
+          body: JSON.stringify({ 
+            costAnalysisEntries: entries.filter(item => item.id !== id),
+            deletedCostAnalysisIds: [id]
+          })
         });
         if (res.ok) {
           const data = await res.json();

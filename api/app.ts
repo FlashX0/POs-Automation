@@ -1644,11 +1644,53 @@ app.get("/api/documents", async (req, res) => {
       telegramConfig: db.telegramConfig || { botToken: "", isWebhookSet: false, botUsername: null, webhookUrl: "" },
       projects: db.projects || [],
       suppliers: db.suppliers || [],
-      version: db.version
+      version: db.version,
+      engineers: db.engineers || [],
+      pettyCashBoxDays: db.pettyCashBoxDays || [],
+      engineerLedgers: db.engineerLedgers || {},
+      subcontractorContracts: db.subcontractorContracts || [],
+      laborTimesheets: db.laborTimesheets || [],
+      costAnalysisEntries: db.costAnalysisEntries || [],
+      deletedEngineerIds: db.deletedEngineerIds || []
     });
   } catch (err: any) {
     console.error("Fetch documents error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/state/sync", async (req, res) => {
+  try {
+    const state = req.body;
+    await fetchAndSyncDbFromMongo(true);
+    const db = getDb();
+    
+    if (state.engineers) db.engineers = state.engineers;
+    if (state.pettyCashBoxDays) db.pettyCashBoxDays = state.pettyCashBoxDays;
+    if (state.engineerLedgers) db.engineerLedgers = state.engineerLedgers;
+    if (state.subcontractorContracts) db.subcontractorContracts = state.subcontractorContracts;
+    if (state.laborTimesheets) db.laborTimesheets = state.laborTimesheets;
+    if (state.costAnalysisEntries) db.costAnalysisEntries = state.costAnalysisEntries;
+    if (state.costAnalysisCategories) db.costAnalysisCategories = state.costAnalysisCategories;
+    
+    if (state.deletedEngineerIds) {
+      db.deletedEngineerIds = [...new Set([...(db.deletedEngineerIds || []), ...state.deletedEngineerIds])];
+    }
+    if (state.deletedSubcontractorIds) {
+      db.deletedSubcontractorIds = [...new Set([...(db.deletedSubcontractorIds || []), ...state.deletedSubcontractorIds])];
+    }
+    if (state.deletedLaborTimesheetIds) {
+      db.deletedLaborTimesheetIds = [...new Set([...(db.deletedLaborTimesheetIds || []), ...state.deletedLaborTimesheetIds])];
+    }
+    if (state.deletedCostAnalysisIds) {
+      db.deletedCostAnalysisIds = [...new Set([...(db.deletedCostAnalysisIds || []), ...state.deletedCostAnalysisIds])];
+    }
+
+    await saveDb(db);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("State sync error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -500,10 +500,13 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
     if (confirm('هل أنت متأكد من رغبتك في حذف هذا المستخلص بالكامل؟')) {
       setIsDeleting(true);
       try {
-        const res = await fetch('/api/subcontractors/delete', {
+        const res = await fetch('/api/state/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: selectedContractId })
+          body: JSON.stringify({ 
+            subcontractorContracts: contracts.filter((c) => c.id !== selectedContractId),
+            deletedSubcontractorIds: [selectedContractId]
+          })
         });
         if (res.ok) {
           const data = await res.json();
