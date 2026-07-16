@@ -398,7 +398,7 @@ export function sanitizeAndExtractBrands(docs: any[]): any[] {
   });
 }
 
-export let lastMongoSyncTime = 0;
+export let lastSupabaseSyncTime = 0;
 export let syncInProgress = false;
 export let currentSyncPromise: Promise<any> | null = null;
 
@@ -892,16 +892,10 @@ export async function saveDb(data: any) {
         // A. Upsert global state to app_state
         let { error: upsertErr } = await adminClient
           .from('app_state')
-          .upsert({ key: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-          
+          .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+        
         if (upsertErr) {
-           console.warn("Upsert with key failed, trying with id...", upsertErr.message);
-           const { error: idUpsertErr } = await adminClient
-             .from('app_state')
-             .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-           if (idUpsertErr) {
-              throw idUpsertErr;
-           }
+           console.warn("Upsert with id failed:", upsertErr.message);
         }
 
         // B. Parallel upsert into users table
@@ -974,12 +968,12 @@ export async function saveDb(data: any) {
       }
     }
 
-    lastMongoSyncTime = Date.now() + 1000;
+    lastSupabaseSyncTime = Date.now() + 1000;
     return sanitizedData;
   });
 }
 
-export async function fetchAndSyncDbFromMongo(force: boolean = false) {
+export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
   const shouldForce = force;
 
   if (syncInProgress) {
@@ -1072,17 +1066,19 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
               fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), "utf-8");
             } catch {}
             console.log("Successfully loaded database state from Supabase (Primary Source of Truth)!");
-            lastMongoSyncTime = Date.now();
+            lastSupabaseSyncTime = Date.now();
             structuredLog("sync", "SUCCESS", "Database synchronization completed successfully from Supabase.");
             return memoryDb;
+
           } else {
-            // First run: Do NOT write to Supabase. Just initialize memoryDb with default data.
+            // First run: No data in Supabase.
             console.log("No data found in Supabase. Using defaultDb without writing it back.");
             const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
             memoryDb = fallback;
-            lastMongoSyncTime = Date.now();
+            lastSupabaseSyncTime = Date.now();
             return memoryDb;
           }
+
         } catch (err: any) {
           console.warn("Could not load AppState from Supabase, using default fallback:", err.message);
         }

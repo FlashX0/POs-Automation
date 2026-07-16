@@ -4,7 +4,7 @@ import { Save, CheckCircle, Download, Printer, Plus, Trash2, Calendar } from 'lu
 import * as XLSX from 'xlsx-js-style';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { parseSafePrecisionNumber } from '../../api/utils'; // if available, else local
+
 import { motion } from 'motion/react';
 
 // Use a simple local parse if utility isn't available
@@ -342,7 +342,7 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
           </div>
         </div>
         
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button onClick={handleAddRow} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20">
             <Plus className="w-4 h-4" />
             إضافة صف
@@ -378,13 +378,13 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
           <table className="w-full text-sm text-right">
             <thead>
               <tr style={{ backgroundColor: "#1e293b", color: "#cbd5e1" }}>
-                <th className="px-4 py-3 font-semibold w-1/4">البيان</th>
-                <th className="px-4 py-3 font-semibold">رصيد سابق</th>
-                <th className="px-4 py-3 font-semibold">مصروفات تشغيل</th>
-                <th className="px-4 py-3 font-semibold" style={{ color: "#fbbf24", backgroundColor: "#fdf3c8" }}>الإجمالي المستحق</th>
-                <th className="px-4 py-3 font-semibold">عهدة تشغيل/دفعات</th>
-                <th className="px-4 py-3 font-semibold" style={{ color: "#34d399", backgroundColor: "#ecfdf5" }}>الرصيد الفعلي المتبقي</th>
-                <th className="px-4 py-3 font-semibold text-center w-16 print:hidden">إجراء</th>
+                <th className="p-4 font-bold text-center w-1/4">البيان</th>
+                <th className="p-4 font-bold text-center">رصيد سابق</th>
+                <th className="p-4 font-bold text-center">مصروفات تشغيل</th>
+                <th className="p-4 font-bold text-center" style={{ color: "#fbbf24" }}>الإجمالي المستحق</th>
+                <th className="p-4 font-bold text-center">عهدة تشغيل/دفعات</th>
+                <th className="p-4 font-bold text-center" style={{ color: "#34d399" }}>الرصيد الفعلي المتبقي</th>
+                <th className="p-4 font-semibold text-center w-16 print:hidden">إجراء</th>
               </tr>
             </thead>
             <tbody className="divide-y" style={{ borderColor: "#1e293b" }}>
@@ -394,7 +394,7 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
                 </tr>
               ) : rows.map((row) => (
                 <tr key={row.id} className="transition-colors group" style={{ borderBottomColor: "#1e293b" }}>
-                  <td className="px-4 py-3">
+                  <td className="p-4">
                     <select 
                       value={row.entityId} 
                       onChange={(e) => handleChangeRow(row.id, 'entityId', e.target.value)}
@@ -410,52 +410,52 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="p-4">
                     <input 
                       type="number" 
                       value={row.previousBalance} 
                       onChange={(e) => handleChangeRow(row.id, 'previousBalance', e.target.value)}
-                      className="w-full rounded-lg px-3 py-1.5 text-sm text-left focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" style={{ backgroundColor: "#0f172a", borderColor: "#334155", color: "#ffffff" }}
+                      className="w-full rounded-lg px-3 py-1.5 text-sm text-center focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" style={{ backgroundColor: "#0f172a", borderColor: "#334155", color: "#ffffff" }}
                       dir="ltr"
                     />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="p-4">
                     <input 
                       type="number" 
                       value={row.operatingExpenses} 
                       onChange={(e) => handleChangeRow(row.id, 'operatingExpenses', e.target.value)}
-                      className="w-full rounded-lg px-3 py-1.5 text-sm text-left focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" style={{ backgroundColor: "#0f172a", borderColor: "#334155", color: "#ffffff" }}
+                      className="w-full rounded-lg px-3 py-1.5 text-sm text-center focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" style={{ backgroundColor: "#0f172a", borderColor: "#334155", color: "#ffffff" }}
                       dir="ltr"
                     />
                   </td>
-                  <td className="px-4 py-3 font-bold" style={{ backgroundColor: "#fdf3c8", color: "#fbbf24" }}>
+                  <td className="p-4 font-bold">
                     <input 
                       type="number" 
                       value={row.totalDue} 
                       onChange={(e) => handleChangeRow(row.id, 'totalDue', e.target.value)}
-                      className="w-full border-0 px-1 py-1.5 text-sm text-left font-bold focus:ring-0" style={{ backgroundColor: "transparent", color: "#fbbf24" }}
+                      className="w-full border-0 px-1 py-1.5 text-sm text-center font-bold focus:ring-0" style={{ backgroundColor: "transparent", color: "#fbbf24" }}
                       dir="ltr"
                     />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="p-4">
                     <input 
                       type="number" 
                       value={row.paymentsReceived} 
                       onChange={(e) => handleChangeRow(row.id, 'paymentsReceived', e.target.value)}
-                      className="w-full rounded-lg px-3 py-1.5 text-sm text-left focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" style={{ backgroundColor: "#0f172a", borderColor: "#334155", color: "#ffffff" }}
+                      className="w-full rounded-lg px-3 py-1.5 text-sm text-center focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" style={{ backgroundColor: "#0f172a", borderColor: "#334155", color: "#ffffff" }}
                       dir="ltr"
                     />
                   </td>
-                  <td className="px-4 py-3 font-bold" style={{ backgroundColor: "#ecfdf5", color: "#34d399" }}>
+                  <td className="p-4 font-bold">
                     <input 
                       type="number" 
                       value={row.actualRemainingBalance} 
                       onChange={(e) => handleChangeRow(row.id, 'actualRemainingBalance', e.target.value)}
-                      className="w-full border-0 px-1 py-1.5 text-sm text-left font-bold focus:ring-0" style={{ backgroundColor: "transparent", color: "#34d399" }}
+                      className="w-full border-0 px-1 py-1.5 text-sm text-center font-bold focus:ring-0" style={{ backgroundColor: "transparent", color: "#34d399" }}
                       dir="ltr"
                     />
                   </td>
-                  <td className="px-4 py-3 text-center print:hidden">
+                  <td className="p-4 text-center print:hidden">
                     <button 
                       onClick={() => handleRemoveRow(row.id)}
                       className="text-slate-500 hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/10"
@@ -469,12 +469,12 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
             {rows.length > 0 && (
               <tfoot className="border-t" style={{ backgroundColor: "#1e293b", borderColor: "#334155" }}>
                 <tr>
-                  <td className="px-4 py-4 font-bold text-left" style={{ color: "#ffffff" }}>الإجمالي الكلي:</td>
-                  <td className="px-4 py-4 font-bold text-left" dir="ltr" style={{ color: "#ffffff" }}>{totals.previousBalance.toLocaleString()}</td>
-                  <td className="px-4 py-4 font-bold text-left" dir="ltr" style={{ color: "#ffffff" }}>{totals.operatingExpenses.toLocaleString()}</td>
-                  <td className="px-4 py-4 font-bold text-left" dir="ltr" style={{ color: "#fbbf24", backgroundColor: "#fef3c7" }}>{totals.totalDue.toLocaleString()}</td>
-                  <td className="px-4 py-4 font-bold text-left" dir="ltr" style={{ color: "#ffffff" }}>{totals.paymentsReceived.toLocaleString()}</td>
-                  <td className="px-4 py-4 font-bold text-left" dir="ltr" style={{ color: "#34d399", backgroundColor: "#d1fae5" }}>{totals.actualRemainingBalance.toLocaleString()}</td>
+                  <td className="p-4 font-bold text-center" style={{ color: "#ffffff" }}>الإجمالي الكلي:</td>
+                  <td className="p-4 font-bold text-center" dir="ltr" style={{ color: "#ffffff" }}>{totals.previousBalance.toLocaleString()}</td>
+                  <td className="p-4 font-bold text-center" dir="ltr" style={{ color: "#ffffff" }}>{totals.operatingExpenses.toLocaleString()}</td>
+                  <td className="p-4 font-bold text-center" dir="ltr" style={{ color: "#fbbf24" }}>{totals.totalDue.toLocaleString()}</td>
+                  <td className="p-4 font-bold text-center" dir="ltr" style={{ color: "#ffffff" }}>{totals.paymentsReceived.toLocaleString()}</td>
+                  <td className="p-4 font-bold text-center" dir="ltr" style={{ color: "#34d399" }}>{totals.actualRemainingBalance.toLocaleString()}</td>
                   <td className="print:hidden"></td>
                 </tr>
               </tfoot>

@@ -1,7 +1,7 @@
 # Refactoring Plan
 
 ## Phase 1: Repository Layer (COMPLETED)
-**Goal**: Isolate all database access (MongoDB, Supabase, local cache fallback) into dedicated repository classes.
+**Goal**: Isolate all database access (, Supabase, local cache fallback) into dedicated repository classes.
 
 **Files modified/created**:
 - `api/models/MongooseModels.ts` (extracted models successfully)

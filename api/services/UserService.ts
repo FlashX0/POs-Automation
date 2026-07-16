@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { getDb, saveDb, getSupabaseClient, getSupabaseAdminClient, checkSupabaseKeysConfig, fetchAndSyncDbFromMongo } from "../database.js";
+import { getDb, saveDb, getSupabaseClient, getSupabaseAdminClient, checkSupabaseKeysConfig, fetchAndSyncDbFromSupabase } from "../database.js";
 import { SupabaseRepository } from "../repositories/SupabaseRepository.js";
 
 export class UserService {
@@ -716,7 +716,7 @@ export class UserService {
         throw new Error("كلمة المرور غير صحيحة");
       }
       
-      await fetchAndSyncDbFromMongo();
+      await fetchAndSyncDbFromSupabase();
       const db = getDb();
 
       db.pettyCashBoxDays = [];
