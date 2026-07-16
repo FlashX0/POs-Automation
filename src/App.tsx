@@ -65,7 +65,8 @@ import {
   EyeOff,
   Menu,
   ChevronDown,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon,
+  Layers
 } from 'lucide-react';
 // @ts-ignore
 import * as XLSX from 'xlsx-js-style';
@@ -83,6 +84,7 @@ import { SubcontractorCertificates } from './components/SubcontractorCertificate
 import { LaborTimesheet } from './components/LaborTimesheet';
 import { CostAnalysis } from './components/CostAnalysis';
 import EngineerManagement from './components/EngineerManagement';
+import AggregatedStatement from './components/AggregatedStatement';
 
 // Helper function to convert OKLCH & OKLAB color strings (used by Tailwind v4) to standard RGB/RGBA.
 // This prevents html2canvas from failing with the: "Attempting to parse an unsupported color function" error.
@@ -492,10 +494,10 @@ export default function App() {
     return 'spreadsheet';
   });
 
-  const [selectedDepartment, setSelectedDepartment] = useState<'procurement' | 'petty_cash' | 'subcontractors' | 'labor_timesheet' | 'cost_analysis' | 'engineers'>(() => {
+  const [selectedDepartment, setSelectedDepartment] = useState<'procurement' | 'petty_cash' | 'subcontractors' | 'labor_timesheet' | 'cost_analysis' | 'engineers' | 'aggregated_statement'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('selectedDepartment');
-      if (saved && ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers'].includes(saved)) {
+      if (saved && ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers', 'aggregated_statement'].includes(saved)) {
         return saved as any;
       }
     }
@@ -532,6 +534,8 @@ export default function App() {
 
   const [pendingTransactions, setPendingTransactions] = useState<any[]>([]);
   const [archives, setArchives] = useState<any[]>([]);
+  const [draftAggregatedStatement, setDraftAggregatedStatement] = useState<any[]>([]);
+  const [archivedAggregatedStatements, setArchivedAggregatedStatements] = useState<any[]>([]);
 
   // --- Financial State Sync Wrappers ---
   const supabaseChannelRef = useRef<any>(null);
@@ -558,6 +562,8 @@ export default function App() {
             setPendingTransactions(Array.isArray(finData.pendingTransactions) ? finData.pendingTransactions : []);
             setArchives(Array.isArray(finData.archives) ? finData.archives : []);
             setEngineers(Array.isArray(finData.engineers) ? finData.engineers : []);
+            setDraftAggregatedStatement(Array.isArray(finData.draftAggregatedStatement) ? finData.draftAggregatedStatement : []);
+            setArchivedAggregatedStatements(Array.isArray(finData.archivedAggregatedStatements) ? finData.archivedAggregatedStatements : []);
             
             if (finData.projectsList) setProjectsList(finData.projectsList);
             if (finData.version !== undefined) setDbVersion(finData.version);
@@ -588,6 +594,8 @@ export default function App() {
     pendingTransactions?: any[];
     archives?: any[];
     engineers?: any[];
+    draftAggregatedStatement?: any[];
+    archivedAggregatedStatements?: any[];
   }) => {
     try {
       const body: any = { version: dbVersion };
@@ -601,6 +609,8 @@ export default function App() {
       if (partialUpdate.pendingTransactions !== undefined) body.pendingTransactions = partialUpdate.pendingTransactions;
       if (partialUpdate.archives !== undefined) body.archives = partialUpdate.archives;
       if (partialUpdate.engineers !== undefined) body.engineers = partialUpdate.engineers;
+      if (partialUpdate.draftAggregatedStatement !== undefined) body.draftAggregatedStatement = partialUpdate.draftAggregatedStatement;
+      if (partialUpdate.archivedAggregatedStatements !== undefined) body.archivedAggregatedStatements = partialUpdate.archivedAggregatedStatements;
 
       const res = await fetch('/api/state/sync', {
         method: 'POST',
@@ -918,7 +928,7 @@ export default function App() {
     if (isVerifyingSession) return;
     if (currentUser) {
       const allowed = currentUser.role === 'admin'
-        ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+        ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers', 'aggregated_statement']
         : (currentUser.allowed_departments || []);
       if (allowed.length === 1) {
         if (selectedDepartment !== allowed[0]) {
@@ -937,6 +947,8 @@ export default function App() {
           setSelectedDepartment('cost_analysis');
         } else if (allowed.includes('engineers')) {
           setSelectedDepartment('engineers');
+        } else if (allowed.includes('aggregated_statement')) {
+          setSelectedDepartment('aggregated_statement');
         }
       }
     }
@@ -1057,6 +1069,8 @@ export default function App() {
       if (Array.isArray(data.costAnalysisEntries)) setCostAnalysisEntries(data.costAnalysisEntries);
       if (Array.isArray(data.costAnalysisCategories)) setCostAnalysisCategories(data.costAnalysisCategories);
       if (Array.isArray(data.archives)) setArchives(data.archives);
+      if (Array.isArray(data.draftAggregatedStatement)) setDraftAggregatedStatement(data.draftAggregatedStatement);
+      if (Array.isArray(data.archivedAggregatedStatements)) setArchivedAggregatedStatements(data.archivedAggregatedStatements);
 
       isInitialFetchCompleted.current = true;
  
@@ -4656,7 +4670,7 @@ export default function App() {
           localStorage.setItem('delta_user_session', JSON.stringify(user));
           localStorage.setItem('delta_user', JSON.stringify(user));
           const allowed = user.role === 'admin'
-            ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+            ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers', 'aggregated_statement']
             : (user.allowed_departments || []);
 
           if (user.role === 'admin') {
@@ -4702,7 +4716,7 @@ export default function App() {
   }
 
   const allowedDepts = currentUser?.role === 'admin'
-    ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']
+    ? ['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers', 'aggregated_statement']
     : (currentUser?.allowed_departments || []);
 
   return (
@@ -4900,6 +4914,27 @@ export default function App() {
                               <div className="flex-1">
                                 <span className="text-xs font-bold block text-white">لوحة إدارة المهندسين</span>
                                 <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Engineers CRUD</span>
+                              </div>
+                            </button>
+                          )}
+                          {allowedDepts.includes('aggregated_statement') && (
+                            <button
+                              onClick={() => {
+                                setSelectedDepartment('aggregated_statement');
+                                setIsDeptDropdownOpen(false);
+                              }}
+                              className={`w-full text-right flex items-center gap-3 p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                selectedDepartment === 'aggregated_statement'
+                                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/25 font-bold'
+                                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-transparent'
+                              }`}
+                            >
+                              <div className={`p-1.5 rounded-lg shrink-0 ${selectedDepartment === 'aggregated_statement' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-450'}`}>
+                                <Layers className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-xs font-bold block text-white">البيان المجمع</span>
+                                <span className="text-[9px] text-slate-500 font-medium block mt-0.5">Aggregated Statement</span>
                               </div>
                             </button>
                           )}
@@ -7155,6 +7190,35 @@ export default function App() {
           onSave={(updatedEngineers) => {
             setEngineers(updatedEngineers);
           }}
+        />
+      </main>
+    )}
+
+    {/* Department 7: Aggregated Statement */}
+    {selectedDepartment === 'aggregated_statement' && (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col w-full text-right" dir="rtl">
+        <AggregatedStatement
+          engineers={engineers}
+          subcontractorContracts={subcontractorContracts}
+          laborTimesheets={laborTimesheets}
+          pettyCashBoxDays={pettyCashBoxDays}
+          draftAggregatedStatement={draftAggregatedStatement}
+          archivedAggregatedStatements={archivedAggregatedStatements}
+          onSaveDraft={(updatedDraft) => {
+            setDraftAggregatedStatement(updatedDraft);
+            syncFinancialsWithBackend({ draftAggregatedStatement: updatedDraft });
+          }}
+          onApprove={(newArchiveEntry) => {
+            const newArchives = [...archivedAggregatedStatements, newArchiveEntry];
+            setArchivedAggregatedStatements(newArchives);
+            setDraftAggregatedStatement([]);
+            syncFinancialsWithBackend({ 
+              archivedAggregatedStatements: newArchives, 
+              draftAggregatedStatement: [] 
+            });
+            triggerNotificationToast('success', 'تم الاعتماد بنجاح', 'تم أرشفة البيان المجمع وتفريغ المسودة لبدء فترة جديدة.');
+          }}
+          currentUser={currentUser}
         />
       </main>
     )}

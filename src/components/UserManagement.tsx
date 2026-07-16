@@ -45,7 +45,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'user'>('user');
-  const [newUserDepartments, setNewUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']);
+  const [newUserDepartments, setNewUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers', 'aggregated_statement']);
   const [creatingUser, setCreatingUser] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -56,7 +56,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
   const [editUserNewEmail, setEditUserNewEmail] = useState('');
   const [editUserName, setEditUserName] = useState('');
   const [editPassword, setEditPassword] = useState('');
-  const [editUserDepartments, setEditUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']);
+  const [editUserDepartments, setEditUserDepartments] = useState<string[]>(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers', 'aggregated_statement']);
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState('');
 
@@ -131,7 +131,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
         setNewUserEmail('');
         setNewUserPassword('');
         setNewUserRole('user');
-        setNewUserDepartments(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers']);
+        setNewUserDepartments(['procurement', 'petty_cash', 'subcontractors', 'labor_timesheet', 'cost_analysis', 'engineers', 'aggregated_statement']);
         setCreateModalOpen(false);
         fetchUsers();
         setTimeout(() => setSuccess(''), 4000);
@@ -540,6 +540,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                               } else if (dep === "engineers") {
                                 label = "إدارة المهندسين";
                                 colorClass = "bg-violet-500/10 text-violet-400 border-violet-500/20";
+                              } else if (dep === "aggregated_statement") {
+                                label = "البيان المجمع";
+                                colorClass = "bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/20";
                               }
                               if (!label) return null;
                               return (
@@ -792,6 +795,23 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                     <span>لوحة إدارة المهندسين (Engineers CRUD)</span>
                   </label>
                 </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+                    <input 
+                      type="checkbox"
+                      checked={newUserDepartments.includes('aggregated_statement')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewUserDepartments([...newUserDepartments, 'aggregated_statement']);
+                        } else {
+                          setNewUserDepartments(newUserDepartments.filter(d => d !== 'aggregated_statement'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-sky-500 focus:ring-sky-500 h-4 w-4 bg-slate-900 accent-sky-500"
+                    />
+                    <span>البيان المجمع (Aggregated Statement)</span>
+                  </label>
+                </div>
               </div>
 
               {createError && (
@@ -971,6 +991,23 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onU
                       className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
                     />
                     <span>لوحة إدارة المهندسين (Engineers CRUD)</span>
+                  </label>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+                    <input 
+                      type="checkbox"
+                      checked={editUserDepartments.includes('aggregated_statement')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditUserDepartments([...editUserDepartments, 'aggregated_statement']);
+                        } else {
+                          setEditUserDepartments(editUserDepartments.filter(d => d !== 'aggregated_statement'));
+                        }
+                      }}
+                      className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 h-4 w-4 bg-slate-900 accent-amber-500"
+                    />
+                    <span>البيان المجمع (Aggregated Statement)</span>
                   </label>
                 </div>
               </div>

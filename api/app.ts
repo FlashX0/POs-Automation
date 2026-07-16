@@ -1651,7 +1651,9 @@ app.get("/api/documents", async (req, res) => {
       subcontractorContracts: db.subcontractorContracts || [],
       laborTimesheets: db.laborTimesheets || [],
       costAnalysisEntries: db.costAnalysisEntries || [],
-      deletedEngineerIds: db.deletedEngineerIds || []
+      deletedEngineerIds: db.deletedEngineerIds || [],
+      draftAggregatedStatement: db.draftAggregatedStatement || [],
+      archivedAggregatedStatements: db.archivedAggregatedStatements || []
     });
   } catch (err: any) {
     console.error("Fetch documents error:", err);
@@ -1672,6 +1674,8 @@ app.post("/api/state/sync", async (req, res) => {
     if (state.laborTimesheets) db.laborTimesheets = state.laborTimesheets;
     if (state.costAnalysisEntries) db.costAnalysisEntries = state.costAnalysisEntries;
     if (state.costAnalysisCategories) db.costAnalysisCategories = state.costAnalysisCategories;
+    if (state.draftAggregatedStatement) db.draftAggregatedStatement = state.draftAggregatedStatement;
+    if (state.archivedAggregatedStatements) db.archivedAggregatedStatements = state.archivedAggregatedStatements;
     
     if (state.deletedEngineerIds) {
       db.deletedEngineerIds = [...new Set([...(db.deletedEngineerIds || []), ...state.deletedEngineerIds])];
