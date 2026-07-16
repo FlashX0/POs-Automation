@@ -2969,12 +2969,27 @@ export default function App() {
         allowTaint: false,
         scrollY: 0,
         letterRendering: true,
-        onclone: (clonedDoc) => {
+                onclone: (clonedDoc) => {
           // Clean all <style> tags inside the cloned document before html2canvas parses them
           const clonedStyles = clonedDoc.getElementsByTagName("style");
           Array.from(clonedStyles).forEach((styleEl: any) => {
             if (styleEl.textContent && (styleEl.textContent.includes('oklch') || styleEl.textContent.includes('oklab'))) {
               styleEl.textContent = convertOklToRgb(styleEl.textContent);
+            }
+          });
+          
+          const elements = clonedDoc.querySelectorAll('*');
+          elements.forEach((el) => {
+            const htmlEl = el as HTMLElement;
+            const computedStyle = window.getComputedStyle(htmlEl);
+            if (computedStyle.backgroundColor.includes('oklch')) {
+              htmlEl.style.backgroundColor = '#ffffff'; // Fallback safe color
+            }
+            if (computedStyle.color.includes('oklch')) {
+              htmlEl.style.color = '#000000'; // Fallback safe color
+            }
+            if (computedStyle.borderColor.includes('oklch')) {
+              htmlEl.style.borderColor = '#e5e7eb'; // Safe gray border
             }
           });
 
