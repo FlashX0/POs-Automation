@@ -582,42 +582,10 @@ export function getDb() {
     cleanDatabaseDiagnosticsInternal(memoryDb);
     dbResult = initializeDbVersion(memoryDb);
   } else {
-    try {
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, "utf-8");
-        const parsed = JSON.parse(raw);
-        let changed = false;
-        if (!parsed.projects) {
-          parsed.projects = [...defaultProjects];
-          changed = true;
-        } else {
-          for (const p of defaultProjects) {
-            if (!parsed.projects.includes(p)) {
-              parsed.projects.push(p);
-              changed = true;
-            }
-          }
-        }
-        if (!parsed.suppliers) {
-          parsed.suppliers = [...defaultSuppliers];
-          changed = true;
-        }
-
-        memoryDb = parsed;
-        cleanDatabaseDiagnosticsInternal(memoryDb);
-        dbResult = initializeDbVersion(parsed);
-      } else {
-        const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
-        memoryDb = fallback;
-        cleanDatabaseDiagnosticsInternal(memoryDb);
-        dbResult = initializeDbVersion(fallback);
-      }
-    } catch (err) {
-      const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
-      memoryDb = fallback;
-      cleanDatabaseDiagnosticsInternal(memoryDb);
-      dbResult = initializeDbVersion(fallback);
-    }
+    const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
+    memoryDb = fallback;
+    cleanDatabaseDiagnosticsInternal(memoryDb);
+    dbResult = initializeDbVersion(fallback);
   }
   return JSON.parse(JSON.stringify(dbResult));
 }
@@ -822,11 +790,20 @@ export async function saveDb(data: any) {
         let { data: row, error: fetchErr } = await adminClient
           .from('app_state')
           .select('data')
-          .eq('id', 'global_state')
+          .eq('key', 'global_state')
           .maybeSingle();
 
         if (fetchErr || !row) {
-          console.warn('[DB_SYSTEM] Could not find row with id=global_state:', fetchErr?.message);
+          const { data: row2, error: err2 } = await adminClient
+            .from('app_state')
+            .select('data')
+            .eq('id', 'global_state')
+            .maybeSingle();
+          if (row2) row = row2;
+        }
+
+        if (fetchErr && !row) {
+          console.warn('[DB_SYSTEM] Could not find row with key/id=global_state:', fetchErr?.message);
         }
 
         let engineersRows: any[] = [];
@@ -926,12 +903,18 @@ export async function saveDb(data: any) {
     if (adminClient) {
       try {
         // A. Upsert global state to app_state
-        const { error: upsertErr } = await adminClient
+        let { error: upsertErr } = await adminClient
           .from('app_state')
-          .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-
+          .upsert({ key: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+          
         if (upsertErr) {
-          throw upsertErr;
+           console.warn("Upsert with key failed, trying with id...", upsertErr.message);
+           const { error: idUpsertErr } = await adminClient
+             .from('app_state')
+             .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+           if (idUpsertErr) {
+              throw idUpsertErr;
+           }
         }
 
         // B. Parallel upsert into users table
@@ -1028,11 +1011,20 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
           let { data: row, error: fetchErr } = await adminClient
             .from('app_state')
             .select('data')
-            .eq('id', 'global_state')
+            .eq('key', 'global_state')
             .maybeSingle();
 
           if (fetchErr || !row) {
-            console.warn('[DB_SYSTEM] Could not find row with id=global_state:', fetchErr?.message);
+            const { data: row2, error: err2 } = await adminClient
+              .from('app_state')
+              .select('data')
+              .eq('id', 'global_state')
+              .maybeSingle();
+            if (row2) row = row2;
+          }
+
+          if (fetchErr && !row) {
+            console.warn('[DB_SYSTEM] Could not find row with key/id=global_state:', fetchErr?.message);
           }
 
           let engineersRows: any[] = [];
@@ -1093,30 +1085,16 @@ export async function fetchAndSyncDbFromMongo(force: boolean = false) {
             structuredLog("sync", "SUCCESS", "Database synchronization completed successfully from Supabase.");
             return memoryDb;
           } else {
-            // First run: save current local getDb state to Supabase
-            const localDb = getDb();
-            if (localDb) {
-              await adminClient
-                .from('app_state')
-                .upsert({ id: 'global_state', data: localDb, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-              console.log("Seeded empty Supabase app_state with active local db data!");
-              memoryDb = sanitizeDeletedRecords(localDb);
-              lastMongoSyncTime = Date.now();
-              structuredLog("sync", "SUCCESS", "Database synchronization completed with database seed.");
-              return memoryDb;
-            }
+            // First run: Do NOT write to Supabase. Just initialize memoryDb with default data.
+            console.log("No data found in Supabase. Using defaultDb without writing it back.");
+            const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };
+            memoryDb = fallback;
+            lastMongoSyncTime = Date.now();
+            return memoryDb;
           }
         } catch (err: any) {
-          console.warn("Could not load AppState from Supabase, using local fallback:", err.message);
+          console.warn("Could not load AppState from Supabase, using default fallback:", err.message);
         }
-      }
-
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, "utf-8");
-        const parsed = sanitizeDeletedRecords(JSON.parse(raw));
-        memoryDb = parsed;
-        structuredLog("sync", "SUCCESS", "Database synchronization completed using local fallback storage.");
-        return memoryDb;
       }
 
       const fallback = { ...defaultDb, projects: [...defaultProjects], suppliers: [...defaultSuppliers] };

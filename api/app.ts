@@ -4607,13 +4607,22 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
     }
 
     // 1. Fetch complete app_state directly from Supabase
-    const { data: row, error: fetchErr } = await adminClient
+    let { data: row, error: fetchErr } = await adminClient
       .from('app_state')
       .select('data')
-      .eq('id', 'global_state')
-      .single();
+      .eq('key', 'global_state')
+      .maybeSingle();
 
     if (fetchErr || !row) {
+      const { data: row2 } = await adminClient
+        .from('app_state')
+        .select('data')
+        .eq('id', 'global_state')
+        .maybeSingle();
+      if (row2) row = row2;
+    }
+
+    if (!row) {
       console.error("Error fetching app_state for updating starting balance:", fetchErr);
       return res.status(500).json({ success: false, error: "تعذر قراءة قاعدة البيانات من Supabase" });
     }
