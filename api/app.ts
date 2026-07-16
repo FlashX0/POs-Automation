@@ -850,7 +850,9 @@ async function extractFinancialFile(fileBuffer: Buffer, mimeType: string, filena
 
   if (type === 'labor') {
     systemInstruction = `You are an expert AI accountant and timesheet/attendance processor.
-Analyze the provided document (which is a timesheet, labor attendance sheet, or manual log in Arabic or English) and extract worker details.
+Analyze the provided document (which is a timesheet, labor attendance sheet, or manual log in Arabic or English, including WhatsApp screenshots) and extract worker details.
+CRITICAL INSTRUCTION FOR EGYPTIAN WHATSAPP/MESSAGES: 
+إذا قرأت (12 ساعة إضافي)، فهذا يعني أن الحضور = 1 (يومية عمل عادية)، والإضافي = 4 ساعات (بافتراض أن يوم العمل الطبيعي 8 ساعات، وما زاد فهو إضافي)، أو اتبع تعليمات المستخدم الحرفية إذا ذكر غير ذلك. التفريق بين (الإضافي) و (السهرة) ضروري.
 Extract:
 1. weekStartDate: The start date of the week in YYYY-MM-DD.
 2. workerName: The daily wage worker's name (اسم العامل).

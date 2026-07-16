@@ -1027,6 +1027,7 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
 
           if (row && row.data) {
             const parsed = sanitizeDeletedRecords(row.data);
+            parsed.projects = Array.from(new Set([...defaultProjects, ...(parsed.projects || [])]));
             
             console.log('[DB READ] engineers rows:', engineersRows?.length || 0);
             console.log('[DB READ] petty_cash_box_days rows:', boxRows?.length || 0);
