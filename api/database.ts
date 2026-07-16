@@ -866,30 +866,17 @@ export async function saveDb(data: any) {
       data.version = 1;
     }
 
-    let mergedData = data;
-    const baseVer = data.version;
-    const hasHistory = dbVersionHistory.has(baseVer);
-
-    if (persistedState.version > data.version) {
-      if (hasHistory) {
-        try {
-          structuredLog("update", "INFO", `Concurrent write detected (persisted: ${persistedState.version}, request: ${data.version}). Attempting automatic merge...`);
-          mergedData = mergeDbChanges(data, persistedState);
-          structuredLog("update", "SUCCESS", "Automatic merge succeeded. No conflicts on same document.");
-        } catch (mergeErr: any) {
-          structuredLog("update", "WARN", {
-            message: "Optimistic locking conflict on concurrent write.",
-            currentPersistedVersion: persistedState.version,
-            requestVersion: data.version,
-            error: mergeErr.message
-          });
-          throw new Error(`Optimistic locking conflict: database has been modified by another process. Please refresh and try again. (${mergeErr.message})`);
-        }
-      } else {
-        structuredLog("update", "INFO", `No history found for version ${data.version} (persisted is ${persistedState.version}). Accepting write directly.`);
-        mergedData = data;
-      }
-    }
+    let mergedData = { ...persistedState, ...data };
+    
+    // Protect critical arrays from being accidentally wiped by empty arrays from the client
+    if (data.engineers && data.engineers.length > 0) mergedData.engineers = data.engineers;
+    else mergedData.engineers = persistedState.engineers || data.engineers || [];
+    
+    if (data.pettyCashBoxDays && data.pettyCashBoxDays.length > 0) mergedData.pettyCashBoxDays = data.pettyCashBoxDays;
+    else mergedData.pettyCashBoxDays = persistedState.pettyCashBoxDays || data.pettyCashBoxDays || [];
+    
+    // Accept write directly without complex version merging
+    structuredLog("update", "INFO", `Accepting write directly to Supabase. Version moving from ${persistedState.version || 1} to next.`);
 
     const newVersion = (persistedState?.version || 1) + 1;
     mergedData.version = newVersion;

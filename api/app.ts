@@ -3991,7 +3991,7 @@ app.post("/api/financial-data/update", async (req, res) => {
     db.deletedLaborTimesheetIds = db.deletedLaborTimesheetIds || [];
     db.deletedCostAnalysisIds = db.deletedCostAnalysisIds || [];
     
-    if (pettyCashBoxDays !== undefined) db.pettyCashBoxDays = pettyCashBoxDays;
+    if (pettyCashBoxDays !== undefined && pettyCashBoxDays.length > 0) db.pettyCashBoxDays = pettyCashBoxDays;
     if (subcontractorContracts !== undefined) {
       db.subcontractorContracts = subcontractorContracts.filter((c: any) => !db.deletedSubcontractorIds.includes(c.id));
     }
@@ -4004,7 +4004,7 @@ app.post("/api/financial-data/update", async (req, res) => {
     if (costAnalysisCategories !== undefined) db.costAnalysisCategories = costAnalysisCategories;
     if (pendingTransactions !== undefined) db.pendingTransactions = pendingTransactions;
     if (archives !== undefined) db.archives = archives;
-    if (engineers !== undefined) {
+    if (engineers !== undefined && engineers.length > 0) {
       db.engineers = engineers.filter((eng: any) => !db.deletedEngineerIds.includes(eng.id));
     }
     
