@@ -255,7 +255,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
       );
     } else {
       const newEngineer: Engineer = {
-        id: `eng-${Date.now()}`,
+        id: crypto.randomUUID(),
         name: name.trim(),
         phone: phone.trim(),
         project,
@@ -292,34 +292,34 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
   };
 
   const handleDelete = async (id: string, engName: string) => {
-    if (window.confirm(`هل أنت متأكد من حذف المهندس "${engName}" وكل سجلاته؟`)) {
-      setIsDeleting(true);
-      try {
-        const res = await fetch('/api/engineers/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, name: engName })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            const updated = engineers.filter(eng => eng.id !== id);
-            onSave(updated, [id]);
-            if (onRefresh) onRefresh();
-          } else {
-            alert(`فشل حذف المهندس: ${data.error || 'خطأ غير معروف'}`);
-          }
+  if (window.confirm(`هل أنت متأكد من حذف المهندس "${engName}" وكل سجلاته؟`)) {
+    setIsDeleting(true);
+    try {
+      const res = await fetch('/api/engineers/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name: engName })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          const updated = engineers.filter(eng => eng.id !== id);
+          onSave(updated, [id]);
+          if (onRefresh) onRefresh();
         } else {
-          alert('فشل الاتصال بالسيرفر لحذف المهندس.');
+          alert(`فشل حذف المهندس: ${data.error || 'خطأ غير معروف'}`);
         }
-      } catch (err) {
-        console.error('Error deleting engineer:', err);
-        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المهندس.');
-      } finally {
-        setIsDeleting(false);
+      } else {
+        alert('فشل الاتصال بالسيرفر لحذف المهندس.');
       }
+    } catch (err) {
+      console.error('Error deleting engineer:', err);
+      alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المهندس.');
+    } finally {
+      setIsDeleting(false);
     }
-  };
+  }
+};
 
   const filteredEngineers = engineers.filter(eng => 
     eng.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

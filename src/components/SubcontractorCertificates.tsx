@@ -193,7 +193,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
   const [newProj, setNewProj] = useState<string>('');
   const [newStatementNo, setNewStatementNo] = useState<string>('01');
   const [newSupervisor, setNewSupervisor] = useState<string>('');
-  const [newAccountant, setNewAccountant] = useState<string>('أ. محمد إبراهيم');
+  const [newAccountant, setNewAccountant] = useState<string>('');
   const [newPrevBalance, setNewPrevBalance] = useState<string>('0');
 
   // Trigger automatic previous remaining carry-over for subcontractor
@@ -1181,12 +1181,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 
               <div>
                 <label className="text-xs text-slate-400 font-bold block mb-1">المهندس المشرف</label>
-                <select
-                  value={newSupervisor}
-                  onChange={(e) => setNewSupervisor(e.target.value)}
-                  required
-                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-amber-500 cursor-pointer font-bold"
-                >
+                <select value={newSupervisor} onChange={(e) => setNewSupervisor(e.target.value)} required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white">
                   <option value="">-- اختر المهندس المشرف --</option>
                   {engineers.map(eng => (
                     <option key={eng.id} value={eng.name}>{eng.name}</option>

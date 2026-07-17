@@ -1340,7 +1340,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
 
               return (
-                <div key={day.date + '-' + dayIdx} className="break-inside-avoid text-black bg-white p-0 overflow-hidden print-ledger-box">
+                <div key={day.date} className="break-inside-avoid text-black bg-white p-0 overflow-hidden print-ledger-box">
                   <table className="print-ledger-table w-full text-center border-collapse text-xs sm:text-sm font-sans" style={{ borderCollapse: 'collapse', width: '100%' }}>
                     <thead>
                       <tr className="bg-[#D9E1F2]">

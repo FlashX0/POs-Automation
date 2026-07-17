@@ -607,16 +607,16 @@ export async function saveDb(data: any) {
     if (adminClient) {
       try {
         let { data: row, error: fetchErr } = await adminClient
-          .from('app_state')
+          .from('global_state')
           .select('data')
-          .eq('id', 'global_state')
+          .eq('key', 'global_state')
           .maybeSingle();
 
         if (fetchErr || !row) {
           const { data: row2, error: err2 } = await adminClient
-            .from('app_state')
+            .from('global_state')
             .select('data')
-            .eq('id', 'global_state')
+            .eq('key', 'global_state')
             .maybeSingle();
           if (row2) row = row2;
         }
@@ -711,13 +711,13 @@ export async function saveDb(data: any) {
         // A. Upsert global state to app_state
         console.log('[DB WRITE] Target table: app_state, Payload size:', JSON.stringify(sanitizedData).length, 'bytes, PK: global_state');
         let { data: upsertData, error: upsertErr } = await adminClient
-          .from('app_state')
-          .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+          .from('global_state')
+          .upsert({ key: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'key' })
           .select();
         
         console.log('[DB WRITE RESULT] app_state, Data:', !!upsertData, 'Error:', upsertErr?.message);
         if (upsertErr) {
-           console.error("Upsert with id failed:", upsertErr.message);
+           console.error("Upsert with key failed:", upsertErr.message);
            throw upsertErr;
         }
 
@@ -878,16 +878,16 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
       if (adminClient) {
         try {
           let { data: row, error: fetchErr } = await adminClient
-            .from('app_state')
+            .from('global_state')
             .select('data')
-            .eq('id', 'global_state')
+            .eq('key', 'global_state')
             .maybeSingle();
 
           if (fetchErr || !row) {
             const { data: row2, error: err2 } = await adminClient
-              .from('app_state')
+              .from('global_state')
               .select('data')
-              .eq('id', 'global_state')
+              .eq('key', 'global_state')
               .maybeSingle();
             if (row2) row = row2;
           }

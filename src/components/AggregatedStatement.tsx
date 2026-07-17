@@ -75,113 +75,112 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
     let operatingExpenses = 0;
     let paymentsReceived = 0;
 
-    const from = fromDate ? new Date(fromDate) : new Date(0);
-    const to = toDate ? new Date(toDate) : new Date();
-    // Inclusive dates
-    to.setHours(23, 59, 59, 999);
+    try {
+      const from = fromDate ? new Date(fromDate) : new Date(0);
+      const to = toDate ? new Date(toDate) : new Date();
+      to.setHours(23, 59, 59, 999);
 
-    if (entityType === 'engineer') {
-      // Find the engineer for initial balance
-      const eng = (engineers || []).find(e => e.name === entityName);
-      previousBalance += eng ? safeNum(eng.initialBalance) : 0;
+      if (entityType === 'engineer') {
+        const eng = (engineers || []).find(e => e?.name === entityName);
+        previousBalance += eng ? safeNum(eng.initialBalance) : 0;
 
-      (pettyCashBoxDays || []).forEach(day => {
-        if (day.engineer === entityName) {
-          const dayDate = new Date(day.date);
-          if (dayDate < from) {
-            // Include in previous balance
-            const dayExpenses = (day.transactions || []).filter((t: any) => t.type === 'expense').reduce((sum: number, t: any) => sum + safeNum(t.amount), 0);
-            const dayIncomes = (day.transactions || []).filter((t: any) => t.type === 'income').reduce((sum: number, t: any) => sum + safeNum(t.amount), 0);
-            previousBalance += dayIncomes - dayExpenses;
-          } else if (dayDate >= from && dayDate <= to) {
-            const expenses = (day.transactions || []).filter((t: any) => t.type === 'expense').reduce((sum: number, t: any) => sum + safeNum(t.amount), 0);
-            const incomes = (day.transactions || []).filter((t: any) => t.type === 'income').reduce((sum: number, t: any) => sum + safeNum(t.amount), 0);
-            operatingExpenses += expenses;
-            paymentsReceived += incomes;
+        (pettyCashBoxDays || []).forEach(day => {
+          if (day?.engineer === entityName) {
+            const dayDate = new Date(day.date || 0);
+            if (dayDate < from) {
+              const dayExpenses = (day.transactions || []).filter((t: any) => t?.type === 'expense').reduce((sum: number, t: any) => sum + safeNum(t?.amount), 0);
+              const dayIncomes = (day.transactions || []).filter((t: any) => t?.type === 'income').reduce((sum: number, t: any) => sum + safeNum(t?.amount), 0);
+              previousBalance += dayIncomes - dayExpenses;
+            } else if (dayDate >= from && dayDate <= to) {
+              const expenses = (day.transactions || []).filter((t: any) => t?.type === 'expense').reduce((sum: number, t: any) => sum + safeNum(t?.amount), 0);
+              const incomes = (day.transactions || []).filter((t: any) => t?.type === 'income').reduce((sum: number, t: any) => sum + safeNum(t?.amount), 0);
+              operatingExpenses += expenses;
+              paymentsReceived += incomes;
+            }
           }
+        });
+      } else if (entityType === 'subcontractor') {
+        const contract = (subcontractorContracts || []).find(c => c?.subcontractor === entityName);
+        if (contract) {
+          (contract.certificates || []).forEach((cert: any) => {
+            const certDate = new Date(cert.date || 0);
+            if (certDate < from) {
+              previousBalance += safeNum(cert.currentNetValue);
+            } else if (certDate >= from && certDate <= to) {
+              operatingExpenses += safeNum(cert.currentNetValue);
+            }
+          });
+          (contract.payments || []).forEach((pay: any) => {
+            const payDate = new Date(pay.date || 0);
+            if (payDate < from) {
+              previousBalance -= safeNum(pay.amount);
+            } else if (payDate >= from && payDate <= to) {
+              paymentsReceived += safeNum(pay.amount);
+            }
+          });
         }
-      });
-    } else if (entityType === 'subcontractor') {
-      const contract = (subcontractorContracts || []).find(c => c.subcontractor === entityName);
-      if (contract) {
-        // We will consider previous balance based on dates
-        (contract.certificates || []).forEach((cert: any) => {
-          const certDate = new Date(cert.date);
-          if (certDate < from) {
-            previousBalance += safeNum(cert.currentNetValue);
-          } else if (certDate >= from && certDate <= to) {
-            operatingExpenses += safeNum(cert.currentNetValue);
-          }
-        });
-
-        (contract.payments || []).forEach((pay: any) => {
-          const payDate = new Date(pay.date);
-          if (payDate < from) {
-            previousBalance -= safeNum(pay.amount);
-          } else if (payDate >= from && payDate <= to) {
-            paymentsReceived += safeNum(pay.amount);
-          }
-        });
+      } else if (entityType === 'labor') {
+        const timesheet = (laborTimesheets || []).find(l => l?.workerName === entityName);
+        if (timesheet) {
+          (timesheet.records || []).forEach((rec: any) => {
+            const recDate = new Date(rec.date || 0);
+            const dailyCost = safeNum(timesheet.dailyRate) * safeNum(rec.daysCount || 0);
+            if (recDate < from) {
+              previousBalance += dailyCost;
+              previousBalance -= safeNum(rec.amountPaid || 0);
+            } else if (recDate >= from && recDate <= to) {
+              operatingExpenses += dailyCost;
+              paymentsReceived += safeNum(rec.amountPaid || 0);
+            }
+          });
+        }
       }
-    } else if (entityType === 'labor') {
-      const timesheet = (laborTimesheets || []).find(l => l.workerName === entityName);
-      if (timesheet) {
-        (timesheet.records || []).forEach((rec: any) => {
-          const recDate = new Date(rec.date);
-          const dailyCost = safeNum(timesheet.dailyRate) * safeNum(rec.daysCount || 0);
-          if (recDate < from) {
-            previousBalance += dailyCost;
-            previousBalance -= safeNum(rec.amountPaid || 0);
-          } else if (recDate >= from && recDate <= to) {
-            operatingExpenses += dailyCost;
-            paymentsReceived += safeNum(rec.amountPaid || 0);
-          }
-        });
-      }
+    } catch (err) {
+      console.error("Error in calculateEntityData:", err);
     }
-
     return { previousBalance, operatingExpenses, paymentsReceived };
   };
 
   const handleChangeRow = (id: string, field: string, value: any) => {
-    setRows(prevRows => prevRows.map(r => {
-      if (r.id === id) {
-        const updated = { ...r, [field]: value };
-        
-        if (field === 'entityId') {
-          // Determine entity type and name
-          let type = '';
-          let name = '';
-          for (const group of entityOptions) {
-            const opt = group.options.find(o => o.value === value);
-            if (opt) {
-              type = opt.type;
-              name = opt.label;
-              break;
+    try {
+      setRows(prevRows => prevRows.map(r => {
+        if (r.id === id) {
+          const updated = { ...r, [field]: value };
+          
+          if (field === 'entityId') {
+            let type = '';
+            let name = '';
+            for (const group of (entityOptions || [])) {
+              const opt = (group.options || []).find(o => o.value === value);
+              if (opt) {
+                type = opt.type;
+                name = opt.label;
+                break;
+              }
+            }
+            updated.entityType = type || '';
+            updated.entityName = name || '';
+
+            if (fromDate && toDate && type && name) {
+              const calcs = calculateEntityData(type, name);
+              updated.previousBalance = calcs?.previousBalance || 0;
+              updated.operatingExpenses = calcs?.operatingExpenses || 0;
+              updated.paymentsReceived = calcs?.paymentsReceived || 0;
             }
           }
-          updated.entityType = type;
-          updated.entityName = name;
 
-          // Recalculate if dates are set
-          if (fromDate && toDate) {
-            const calcs = calculateEntityData(type, name);
-            updated.previousBalance = calcs.previousBalance;
-            updated.operatingExpenses = calcs.operatingExpenses;
-            updated.paymentsReceived = calcs.paymentsReceived;
+          if (['previousBalance', 'operatingExpenses', 'paymentsReceived', 'entityId'].includes(field)) {
+            updated.totalDue = safeNum(updated.previousBalance) + safeNum(updated.operatingExpenses);
+            updated.actualRemainingBalance = safeNum(updated.totalDue) - safeNum(updated.paymentsReceived);
           }
-        }
 
-        // Auto calculate totals if numeric fields changed
-        if (['previousBalance', 'operatingExpenses', 'paymentsReceived', 'entityId'].includes(field)) {
-          updated.totalDue = safeNum(updated.previousBalance) + safeNum(updated.operatingExpenses);
-          updated.actualRemainingBalance = safeNum(updated.totalDue) - safeNum(updated.paymentsReceived);
+          return updated;
         }
-
-        return updated;
-      }
-      return r;
-    }));
+        return r;
+      }));
+    } catch (err) {
+      console.error("Error updating row:", err);
+    }
   };
 
   const handleRecalculateAll = () => {
