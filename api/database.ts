@@ -524,7 +524,12 @@ export function sanitizeDeletedRecords(db: any) {
           if (ledgerDayTime > pDayTime) {
             pDay.updatedAt = ledgerDay.updatedAt;
             pDay.transactions = ledgerDay.transactions || [];
-            pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
+            // BUG 3 fix: لا تمسح رصيداً صحيحاً موجوداً بقيمة واردة فارغة/صفر — احتفظ بآخر قيمة صحيحة
+            const incomingBal = parseSafePrecisionNumber(ledgerDay.startingBalanceOverride);
+            const existingBal = parseSafePrecisionNumber(pDay.startingBalanceOverride);
+            if (incomingBal > 0 || existingBal === 0) {
+              pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
+            }
           } else {
             ledgerDay.updatedAt = pDay.updatedAt;
             ledgerDay.transactions = pDay.transactions || [];
@@ -607,16 +612,16 @@ export async function saveDb(data: any) {
     if (adminClient) {
       try {
         let { data: row, error: fetchErr } = await adminClient
-          .from('global_state')
+          .from('app_state')
           .select('data')
-          .eq('key', 'global_state')
+          .eq('id', 'global_state')
           .maybeSingle();
 
         if (fetchErr || !row) {
           const { data: row2, error: err2 } = await adminClient
-            .from('global_state')
+            .from('app_state')
             .select('data')
-            .eq('key', 'global_state')
+            .eq('id', 'global_state')
             .maybeSingle();
           if (row2) row = row2;
         }
@@ -642,7 +647,11 @@ export async function saveDb(data: any) {
           persistedState = row.data;
 
           if (engineersRows.length > 0) {
-            persistedState.engineers = engineersRows.map(e => {
+            // استبعاد المهندسين المحذوفين من إعادة البناء لمنع إحيائهم
+            const deletedIds = new Set(data.deletedEngineerIds || []);
+            persistedState.engineers = engineersRows
+              .filter(e => !deletedIds.has(e.id))
+              .map(e => {
               const existing = (persistedState.engineers || []).find((old: any) => old.id === e.id || old.name === e.name) || {};
               return {
                 ...existing,
@@ -711,15 +720,15 @@ export async function saveDb(data: any) {
         // A. Upsert global state to app_state
         console.log('[DB WRITE] Target table: app_state, Payload size:', JSON.stringify(sanitizedData).length, 'bytes, PK: global_state');
         let { data: upsertData, error: upsertErr } = await adminClient
-          .from('global_state')
-          .upsert({ key: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+          .from('app_state')
+          .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' })
           .select();
         
-        console.log('[DB WRITE RESULT] app_state, Data:', !!upsertData, 'Error:', upsertErr?.message);
         if (upsertErr) {
-           console.error("Upsert with key failed:", upsertErr.message);
+           console.error('[DB WRITE FAILED] app_state:', upsertErr.message);
            throw upsertErr;
         }
+        console.log('[DB WRITE OK] app_state, rows written:', Array.isArray(upsertData) ? upsertData.length : (upsertData ? 1 : 0));
 
         // B. Parallel upsert into users table
         if (sanitizedData.users && Array.isArray(sanitizedData.users)) {
@@ -741,8 +750,11 @@ export async function saveDb(data: any) {
           if (mappedUsers.length > 0) {
             console.log('[DB WRITE] Target table: users, Rows:', mappedUsers.length);
             const { data, error } = await adminClient.from('users').upsert(mappedUsers, { onConflict: 'email' }).select();
-            console.log('[DB WRITE RESULT] users, Data length:', data?.length, 'Error:', error?.message);
-            if (error) throw error;
+            if (error) {
+              console.error('[DB WRITE FAILED] users:', error.message);
+              throw error;
+            }
+            console.log('[DB WRITE OK] users, rows written:', data?.length ?? 0);
           }
         }
 
@@ -750,7 +762,8 @@ export async function saveDb(data: any) {
         if (sanitizedData.engineers && Array.isArray(sanitizedData.engineers)) {
           const uniqueEngineersMap = new Map();
           sanitizedData.engineers.forEach((e: any) => {
-             const id = e.id || `eng_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+             // استخدم نفس ID من البيانات دائماً — لا تُنشئ ID عشوائي مختلف
+             const id = e.id || crypto.randomUUID();
              if (!uniqueEngineersMap.has(id)) {
                 uniqueEngineersMap.set(id, {
                    id,
@@ -765,16 +778,24 @@ export async function saveDb(data: any) {
           if (mappedEngineers.length > 0) {
             console.log('[DB WRITE] Target table: engineers, Rows:', mappedEngineers.length);
             const { data, error } = await adminClient.from('engineers').upsert(mappedEngineers, { onConflict: 'id' }).select();
-            console.log('[DB WRITE RESULT] engineers, Data length:', data?.length, 'Error:', error?.message);
-            if (error) throw error;
+            if (error) {
+              console.error('[DB WRITE FAILED] engineers:', error.message);
+              throw error;
+            }
+            console.log('[DB WRITE OK] engineers, rows written:', data?.length ?? 0);
           }
         }
         
         if (sanitizedData.deletedEngineerIds && sanitizedData.deletedEngineerIds.length > 0) {
            console.log('[DB WRITE] Target table: engineers (DELETE), Rows:', sanitizedData.deletedEngineerIds.length);
            const { data, error } = await adminClient.from('engineers').delete().in('id', sanitizedData.deletedEngineerIds).select();
-           console.log('[DB WRITE RESULT] engineers (DELETE), Data length:', data?.length, 'Error:', error?.message);
-           if (error) throw error;
+           if (error) {
+             console.error('[DB WRITE FAILED] engineers (DELETE):', error.message);
+             throw error;
+           }
+           console.log('[DB WRITE OK] engineers (DELETE), rows removed:', data?.length ?? 0);
+           // بعد نجاح الحذف، أفّرغ القائمة لمنع محاولة حذف صفوف غير موجودة في كل مرة
+           sanitizedData.deletedEngineerIds = [];
         }
 
         // D. Parallel upsert into petty_cash_box_days table
@@ -827,8 +848,11 @@ export async function saveDb(data: any) {
             }
             console.log('--------------------------------------');
             const { data, error } = await adminClient.from('petty_cash_box_days').upsert(mappedPettyCash, { onConflict: 'id' }).select();
-            console.log('[DB WRITE RESULT] petty_cash_box_days, Data length:', data?.length, 'Error:', error?.message);
-            if (error) throw error;
+            if (error) {
+              console.error('[DB WRITE FAILED] petty_cash_box_days:', error.message);
+              throw error;
+            }
+            console.log('[DB WRITE OK] petty_cash_box_days, rows written:', data?.length ?? 0);
           }
         }
 
@@ -878,16 +902,16 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
       if (adminClient) {
         try {
           let { data: row, error: fetchErr } = await adminClient
-            .from('global_state')
+            .from('app_state')
             .select('data')
-            .eq('key', 'global_state')
+            .eq('id', 'global_state')
             .maybeSingle();
 
           if (fetchErr || !row) {
             const { data: row2, error: err2 } = await adminClient
-              .from('global_state')
+              .from('app_state')
               .select('data')
-              .eq('key', 'global_state')
+              .eq('id', 'global_state')
               .maybeSingle();
             if (row2) row = row2;
           }
@@ -917,9 +941,12 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
             console.log('[DB READ] petty_cash_box_days rows:', boxRows?.length || 0);
             console.log('[DB READ] app_state engineers:', parsed?.engineers?.length || 0);
 
-            // Merge separate tables if they exist
+            // Merge separate tables if they exist — exclude already-deleted engineers to prevent resurrection
             if (engineersRows.length > 0) {
-              parsed.engineers = engineersRows.map(e => {
+              const deletedIds = new Set(parsed.deletedEngineerIds || []);
+              parsed.engineers = engineersRows
+                .filter(e => !deletedIds.has(e.id))
+                .map(e => {
                 const existing = (parsed.engineers || []).find((old: any) => old.id === e.id || old.name === e.name) || {};
                 return {
                   ...existing,
