@@ -590,188 +590,7 @@ export function getDb() {
   return JSON.parse(JSON.stringify(dbResult));
 }
 
-export function mergeDbChanges(currentDb: any, persistedState: any) {
-  const baseVer = currentDb.version || 1;
-  const originalDb = dbVersionHistory.get(baseVer) || currentDb;
-  
-  if (originalDb.version === persistedState.version) {
-    return currentDb;
-  }
 
-  const merged = JSON.parse(JSON.stringify(persistedState));
-  
-  function mergeObjectArray(key: string | ((item: any) => string), collectionName: string) {
-    const origList = originalDb[collectionName] || [];
-    const currList = currentDb[collectionName] || [];
-    const persList = persistedState[collectionName] || [];
-
-    const getKey = typeof key === "function" ? key : (item: any) => item[key];
-
-    const origMap = new Map(origList.map((item: any) => [getKey(item), item]));
-    const currMap = new Map(currList.map((item: any) => [getKey(item), item]));
-    const persMap = new Map(persList.map((item: any) => [getKey(item), item]));
-
-    const added: any[] = [];
-    const updated: any[] = [];
-    const deleted = new Set<any>();
-
-    for (const [id, currItem] of currMap.entries()) {
-      const origItem = origMap.get(id);
-      if (!origItem) {
-        added.push(currItem);
-      } else if (JSON.stringify(origItem) !== JSON.stringify(currItem)) {
-        updated.push(currItem);
-      }
-    }
-    for (const id of origMap.keys()) {
-      if (!currMap.has(id)) {
-        deleted.add(id);
-      }
-    }
-
-    function mergeTwoItems(itemA: any, itemB: any, colName: string = "") {
-      if (!itemA) return itemB;
-      if (!itemB) return itemA;
-
-      const dateA = itemA.updatedAt ? new Date(itemA.updatedAt).getTime() : 0;
-      const dateB = itemB.updatedAt ? new Date(itemB.updatedAt).getTime() : 0;
-
-      const newerItem = dateB >= dateA ? itemB : itemA;
-      const olderItem = dateB >= dateA ? itemA : itemB;
-
-      const merged = { ...newerItem };
-
-      if (Array.isArray(olderItem.transactions) || Array.isArray(newerItem.transactions)) {
-        const mergedTx = [...(olderItem.transactions || [])];
-        const newerTx = newerItem.transactions || [];
-        for (const nTx of newerTx) {
-          const eIdx = mergedTx.findIndex((e: any) => e.id === nTx.id);
-          if (eIdx >= 0) {
-            const date1 = nTx.updatedAt ? new Date(nTx.updatedAt).getTime() : 0;
-            const date2 = mergedTx[eIdx].updatedAt ? new Date(mergedTx[eIdx].updatedAt).getTime() : 0;
-            if (date1 >= date2) mergedTx[eIdx] = nTx;
-          } else {
-            mergedTx.push(nTx);
-          }
-        }
-        merged.transactions = mergedTx;
-      }
-      return merged;
-    }
-
-    const mergedUpdated: any[] = [];
-    for (const item of updated) {
-      const id = getKey(item);
-      const persItem = persMap.get(id);
-      const origItem = origMap.get(id);
-      if (persItem && JSON.stringify(persItem) !== JSON.stringify(origItem)) {
-        const resolved = mergeTwoItems(persItem, item, collectionName);
-        mergedUpdated.push(resolved);
-      } else {
-        mergedUpdated.push(item);
-      }
-    }
-
-    const resultList = persList.filter((x: any) => !deleted.has(getKey(x)));
-    for (const item of mergedUpdated) {
-      const idx = resultList.findIndex((x: any) => getKey(x) === getKey(item));
-      if (idx !== -1) {
-        resultList[idx] = item;
-      }
-    }
-    const filteredList = resultList.filter((x: any) => !deleted.has(getKey(x)));
-    
-    for (const item of added) {
-      if (!filteredList.some((x: any) => getKey(x) === getKey(item))) {
-        filteredList.push(item);
-      }
-    }
-
-    merged[collectionName] = filteredList;
-  }
-
-  function mergePrimitiveArray(collectionName: string) {
-    const origList: string[] = originalDb[collectionName] || [];
-    const currList: string[] = currentDb[collectionName] || [];
-    const persList: string[] = persistedState[collectionName] || [];
-
-    const origSet = new Set(origList);
-
-    const added = currList.filter(x => !origSet.has(x));
-    const deleted = origList.filter(x => !origSet.has(x));
-
-    const resultList = persList.filter(x => !deleted.includes(x));
-    for (const item of added) {
-      if (!resultList.includes(item)) {
-        resultList.push(item);
-      }
-    }
-    merged[collectionName] = resultList;
-  }
-
-  const objectCollections = [
-    { name: "documents", key: "id" },
-    { name: "users", key: "id" },
-    { name: "allowedDevices", key: "id" },
-    { name: "notifications", key: "id" },
-    { name: "subcontractorContracts", key: "id" },
-    { name: "laborTimesheets", key: "id" },
-    { name: "costAnalysisEntries", key: "id" },
-    { name: "engineers", key: "id" },
-    { name: "pendingTransactions", key: "id" },
-    { name: "archives", key: "id" },
-    { name: "pettyCashBoxDays", key: (item: any) => `${item.engineer || "عام"}_${item.date}` }
-  ];
-
-  for (const col of objectCollections) {
-    if (originalDb[col.name] || currentDb[col.name] || persistedState[col.name]) {
-      mergeObjectArray(col.key, col.name);
-    }
-  }
-
-  if (currentDb.engineerLedgers || persistedState.engineerLedgers) {
-    merged.engineerLedgers = JSON.parse(JSON.stringify(persistedState.engineerLedgers || {}));
-    const currLedger = currentDb.engineerLedgers || {};
-    for (const [engName, currDays] of Object.entries(currLedger)) {
-      if (!merged.engineerLedgers[engName]) {
-        merged.engineerLedgers[engName] = [];
-      }
-      const persDays = merged.engineerLedgers[engName];
-      for (const cDay of (currDays as any[])) {
-        const pIdx = persDays.findIndex((p: any) => p.date === cDay.date);
-        if (pIdx >= 0) {
-          const pDay = persDays[pIdx];
-          const cDate = cDay.updatedAt ? new Date(cDay.updatedAt).getTime() : 0;
-          const pDate = pDay.updatedAt ? new Date(pDay.updatedAt).getTime() : 0;
-          if (cDate > pDate) {
-            persDays[pIdx] = cDay;
-          } else if (cDate === pDate) {
-            persDays[pIdx] = cDay;
-          }
-        } else {
-          persDays.push(cDay);
-        }
-      }
-    }
-  }
-
-  const primitiveCollections = ["projects", "suppliers", "deletedEngineerIds", "deletedSubcontractorIds", "deletedLaborTimesheetIds", "deletedCostAnalysisIds", "costAnalysisCategories"];
-
-  for (const col of primitiveCollections) {
-    if (originalDb[col] || currentDb[col] || persistedState[col]) {
-      mergePrimitiveArray(col);
-    }
-  }
-
-  if (JSON.stringify(originalDb.telegramConfig) !== JSON.stringify(currentDb.telegramConfig)) {
-    if (JSON.stringify(originalDb.telegramConfig) !== JSON.stringify(persistedState.telegramConfig)) {
-      throw new Error("Conflict detected: Telegram configuration was modified by another request.");
-    }
-    merged.telegramConfig = currentDb.telegramConfig;
-  }
-
-  return merged;
-}
 
 export async function saveDb(data: any) {
   return dbWriteQueue.enqueue(async () => {
@@ -837,7 +656,7 @@ export async function saveDb(data: any) {
           }
           if (boxRows.length > 0) {
             persistedState.pettyCashBoxDays = boxRows.map(b => {
-              const existing = (persistedState.pettyCashBoxDays || []).find((old: any) => (old.id === b.id) || (old.date === b.date && old.engineer === b.engineer)) || {};
+              const existing = (persistedState.pettyCashBoxDays || []).find((old: any) => (old.id === b.id) || (old.date === b.date && (old.engineer || "عام") === (b.engineer || "عام"))) || {};
               return {
                 ...existing,
                 id: b.id,
@@ -978,6 +797,20 @@ export async function saveDb(data: any) {
             transactions: day.transactions || [],
             updated_at: day.updatedAt || new Date().toISOString()
           }));
+          
+          const idSet = new Set();
+          let hasDuplicates = false;
+          mappedPettyCash.forEach(p => {
+             if (idSet.has(p.id)) {
+                 console.error("[CRITICAL ERROR] Duplicate conflict key found for upsert payload: " + p.id);
+                 hasDuplicates = true;
+             }
+             idSet.add(p.id);
+          });
+          if (hasDuplicates) {
+             throw new Error("ABORT: duplicate conflict keys inside the same petty_cash_box_days UPSERT payload");
+          }
+
           if (mappedPettyCash.length > 0) {
             console.log('[DB WRITE] Target table: petty_cash_box_days, Rows:', mappedPettyCash.length);
             console.log('--- DEBUG PETTY CASH BEFORE UPSERT ---');
@@ -1092,7 +925,7 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
                   ...existing,
                   id: e.id,
                   name: e.name,
-                  project: e.project,
+                  project: (e.allowed_projects && e.allowed_projects.length > 0) ? e.allowed_projects[0] : "",
                   initialBalance: e.initial_balance,
                   updatedAt: e.updated_at
                 };
@@ -1106,7 +939,7 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
                   id: b.id,
                   engineer: b.engineer,
                   date: b.date,
-                  startingBalanceOverride: b.starting_balance,
+                  startingBalanceOverride: b.initial_balance,
                   transactions: typeof b.transactions === 'string' ? JSON.parse(b.transactions) : (b.transactions || []),
                   updatedAt: b.updated_at
                 };

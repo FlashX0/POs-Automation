@@ -3659,18 +3659,18 @@ app.post("/api/financial-data/update", async (req, res) => {
     db.deletedCostAnalysisIds = db.deletedCostAnalysisIds || [];
     
     if (pettyCashBoxDays !== undefined && pettyCashBoxDays.length > 0) db.pettyCashBoxDays = pettyCashBoxDays;
-    if (subcontractorContracts !== undefined) {
+    if (subcontractorContracts !== undefined && subcontractorContracts.length > 0) {
       db.subcontractorContracts = subcontractorContracts.filter((c: any) => !db.deletedSubcontractorIds.includes(c.id));
     }
-    if (laborTimesheets !== undefined) {
+    if (laborTimesheets !== undefined && laborTimesheets.length > 0) {
       db.laborTimesheets = laborTimesheets.filter((ts: any) => !db.deletedLaborTimesheetIds.includes(ts.id));
     }
-    if (costAnalysisEntries !== undefined) {
+    if (costAnalysisEntries !== undefined && costAnalysisEntries.length > 0) {
       db.costAnalysisEntries = costAnalysisEntries.filter((item: any) => !db.deletedCostAnalysisIds.includes(item.id));
     }
-    if (costAnalysisCategories !== undefined) db.costAnalysisCategories = costAnalysisCategories;
-    if (pendingTransactions !== undefined) db.pendingTransactions = pendingTransactions;
-    if (archives !== undefined) db.archives = archives;
+    if (costAnalysisCategories !== undefined && costAnalysisCategories.length > 0) db.costAnalysisCategories = costAnalysisCategories;
+    if (pendingTransactions !== undefined && pendingTransactions.length > 0) db.pendingTransactions = pendingTransactions;
+    if (archives !== undefined && archives.length > 0) db.archives = archives;
     if (engineers !== undefined && engineers.length > 0) {
       db.engineers = engineers.filter((eng: any) => !db.deletedEngineerIds.includes(eng.id));
     }
@@ -3801,7 +3801,7 @@ app.post("/api/engineers/ledger/approve-range", async (req, res) => {
     // Update transactions inside db.pettyCashBoxDays
     if (db.pettyCashBoxDays && Array.isArray(db.pettyCashBoxDays)) {
       db.pettyCashBoxDays = db.pettyCashBoxDays.map((d: any) => {
-        if (d.engineer === engineerName && d.date >= startDate && d.date <= endDate) {
+        if ((d.engineer || "عام") === (engineerName || "عام") && d.date >= startDate && d.date <= endDate) {
           const updatedTransactions = (d.transactions || []).map((t: any) => {
             if (t.status !== 'approved') {
               updatedCount++;
@@ -3834,7 +3834,7 @@ app.post("/api/engineers/ledger/approve-range", async (req, res) => {
 
     // 2. Filter and sort all days of this engineer chronologically
     const allBoxDays = (db.pettyCashBoxDays || [])
-      .filter((d: any) => d.engineer === engineerName)
+      .filter((d: any) => (d.engineer || "عام") === (engineerName || "عام"))
       .sort((a: any, b: any) => a.date.localeCompare(b.date));
 
     // 3. Compute ledger balances sequentially
@@ -4223,7 +4223,7 @@ app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
     
     if (db.pettyCashBoxDays) {
       db.pettyCashBoxDays = db.pettyCashBoxDays.map((d: any) => {
-        if (d.date === date && d.engineer === engineerName) {
+        if (d.date === date && (d.engineer || "عام") === (engineerName || "عام")) {
           return {
             ...d,
             transactions: (d.transactions || []).filter((t: any) => t.id !== txId),
@@ -4269,33 +4269,8 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
       return res.status(400).json({ success: false, error: "الرجاء تحديد قيمة رصيد أول اليوم صالحة" });
     }
 
-    const adminClient = getSupabaseAdminClient();
-    if (!adminClient) {
-      return res.status(500).json({ success: false, error: "فشل الاتصال بقاعدة بيانات Supabase" });
-    }
-
-    // 1. Fetch complete app_state directly from Supabase
-    let { data: row, error: fetchErr } = await adminClient
-      .from('app_state')
-      .select('data')
-      .eq('id', 'global_state')
-      .maybeSingle();
-
-    if (fetchErr || !row) {
-      const { data: row2 } = await adminClient
-        .from('app_state')
-        .select('data')
-        .eq('id', 'global_state')
-        .maybeSingle();
-      if (row2) row = row2;
-    }
-
-    if (!row) {
-      console.error("Error fetching app_state for updating starting balance:", fetchErr);
-      return res.status(500).json({ success: false, error: "تعذر قراءة قاعدة البيانات من Supabase" });
-    }
-
-    const db = row.data || {};
+    await fetchAndSyncDbFromSupabase(true);
+    const db = getDb();
     
     if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
     if (!db.engineerLedgers) db.engineerLedgers = {};
@@ -5082,7 +5057,7 @@ app.post("/api/engineers/ledger/update-tx", async (req, res) => {
     // 1. Update in db.pettyCashBoxDays
     if (db.pettyCashBoxDays) {
       db.pettyCashBoxDays = db.pettyCashBoxDays.map((d: any) => {
-        if (d.date === date && d.engineer === engineerName) {
+        if (d.date === date && (d.engineer || "عام") === (engineerName || "عام")) {
           const updatedTxs = (d.transactions || []).map((t: any) => {
             if (t.id === txId) {
               foundTx = { ...t };

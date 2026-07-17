@@ -34,6 +34,7 @@ interface PendingTransaction {
   project: string;
   status: string;
   date: string;
+  engineer?: string;
 }
 
 interface DailyBoxMovementProps {
@@ -288,7 +289,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   // Sort box days chronologically to compute cumulative balances
   const sortedDays = useMemo(() => {
     return [...boxDays]
-      .filter((d) => !selectedEngineer || d.engineer === selectedEngineer)
+      .filter((d) => !selectedEngineer || (d.engineer || "عام") === (selectedEngineer || "عام"))
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [boxDays, selectedEngineer]);
 
@@ -341,7 +342,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
   // Current day data
   const currentDay = useMemo(() => {
-    return boxDays.find((d) => d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer)) || {
+    return boxDays.find((d) => d.date === selectedDate && (!selectedEngineer || (d.engineer || "عام") === (selectedEngineer || "عام"))) || {
       date: selectedDate,
       engineer: selectedEngineer || "عام",
       transactions: [],
