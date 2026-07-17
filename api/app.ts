@@ -4141,7 +4141,7 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
       description, 
       method, payment_method,
       project, project_id,
-      attachment, attachmentName 
+      attachment, attachmentName, linkedSubcontractorName 
     } = req.body;
     await fetchAndSyncDbFromSupabase(true);
     const db = getDb();
@@ -4166,7 +4166,8 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
       project: finalProject,
       status: 'unapproved',
       attachment: attachment || undefined,
-      attachmentName: attachmentName || undefined
+      attachmentName: attachmentName || undefined,
+      linkedSubcontractorName: linkedSubcontractorName || undefined
     };
     
     // Update db.pettyCashBoxDays

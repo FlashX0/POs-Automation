@@ -1,4 +1,5 @@
 import { AIModelSelector } from "./AIModelSelector";
+import { SafeInput } from "./SafeInput";
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, RefreshCw, Layers, TrendingUp, TrendingDown, Upload, AlertCircle, Printer, User, FileText, Eye, ChevronDown, Settings, Check, X, Edit } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
@@ -14,6 +15,7 @@ interface Transaction {
   attachment?: string;
   attachmentName?: string;
   status?: 'unapproved' | 'approved' | 'draft';
+  linkedSubcontractorName?: string;
 }
 
 interface BoxDay {
@@ -43,6 +45,7 @@ interface DailyBoxMovementProps {
   onNotify?: (type: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
   engineers?: { id: string; name: string; project: string; initialBalance?: number }[];
   currentUser?: any;
+  subcontractorContracts?: any[];
   onResetSuccess?: () => void;
 }
 
@@ -55,6 +58,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   onNotify = (type, title, message) => {},
   engineers = [],
   currentUser,
+  subcontractorContracts = [],
   onResetSuccess,
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -247,6 +251,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const [method, setMethod] = useState<string>('انستاباي');
   const [project, setProject] = useState<string>('');
   const [editingStartingBalance, setEditingStartingBalance] = useState<boolean>(false);
+  const [linkedSubcontractor, setLinkedSubcontractor] = useState<string>('');
   const [startingBalanceInput, setStartingBalanceInput] = useState<string>('0');
 
   // Date Range Approval Modal States & Helper
@@ -407,7 +412,8 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           method: method.trim() || 'نقدي',
           project: project,
           attachment: finalAttachmentPath || undefined,
-          attachmentName: pendingAttachmentName || undefined
+          attachmentName: pendingAttachmentName || undefined,
+          linkedSubcontractorName: linkedSubcontractor || undefined
         })
       });
 
@@ -1147,7 +1153,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
           <div className="flex items-center gap-3">
             <Calendar className="text-emerald-400 w-5 h-5" />
             <span className="text-sm font-bold text-slate-300">اختر تاريخ كشف الحركة:</span>
-            <input
+            <SafeInput
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
@@ -1161,10 +1167,11 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
             <span className="text-xs text-slate-400 block font-bold">رصيد أول اليوم:</span>
             {editingStartingBalance ? (
               <div className="flex gap-2 items-center mt-1">
-                <input
+                <SafeInput
                   type="number"
                   value={startingBalanceInput}
-                  onChange={(e) => setStartingBalanceInput(e.target.value)}
+                  onChange={(e: any) => setStartingBalanceInput(e.target.value)}
+                  onBlur={handleUpdateStartingBalance}
                   className="w-28 bg-slate-900 border border-emerald-500 text-white text-xs rounded-lg px-2 py-1 outline-none text-left"
                 />
                 <button
@@ -1528,10 +1535,10 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                       </span>
                     </td>
                     <td className="py-3.5 text-center">
-                      <input
-                        type="date"
-                        value={pt.date || ''}
-                        onChange={(e) => handlePendingDateChange(pt.id, e.target.value)}
+                      <SafeInput
+    type="date"
+    defaultValue={pt.date || ''}
+    onBlur={(e) => handlePendingDateChange(pt.id, e.target.value)}
                         className="bg-slate-900 border border-amber-500/50 text-white rounded-lg px-2.5 py-1 text-xs font-bold outline-none cursor-pointer"
                       />
                     </td>
@@ -1595,7 +1602,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-slate-400 font-bold block mb-1.5">المبالغ المستلمة (المدين)</label>
-                <input
+                <SafeInput
                   type="number"
                   placeholder="0.00"
                   value={inflow}
@@ -1606,7 +1613,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
               <div>
                 <label className="text-xs text-slate-400 font-bold block mb-1.5">المصروفات المدفوعة (الدائن)</label>
-                <input
+                <SafeInput
                   type="number"
                   placeholder="0.00"
                   value={outflow}
@@ -1618,7 +1625,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
             <div>
               <label className="text-xs text-slate-400 font-bold block mb-1.5">البيان / الشرح *</label>
-              <input
+              <SafeInput
                 type="text"
                 placeholder="مثال: دفعة عمال شاهر، تحويل من إنستاباي"
                 value={description}
@@ -1630,13 +1637,27 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
 
             <div>
               <label className="text-xs text-slate-400 font-bold block mb-1.5">طريقة الدفع / التمويل</label>
-              <input
+              <SafeInput
                 type="text"
                 placeholder="انستاباي، نقدي، شيك، إلخ"
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-500"
               />
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-400 font-bold block mb-1.5">ربط بمقاول (تسميع في المستخلصات) اختياري</label>
+              <select
+                value={linkedSubcontractor}
+                onChange={(e) => setLinkedSubcontractor(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs font-bold outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="">-- بدون ربط --</option>
+                {subcontractorContracts.map((sub, i) => (
+                  <option key={sub.id || i} value={sub.subcontractor}>{sub.subcontractor}</option>
+                ))}
+              </select>
             </div>
 
             {pendingAttachmentName && (
@@ -1704,7 +1725,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                     <tr key={tx.id} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
                       <td className="py-3.5 text-center font-mono font-bold text-emerald-400">
                         {editingTxId === tx.id ? (
-                          <input
+                          <SafeInput
                             type="number"
                             value={editInflow}
                             onChange={(e) => setEditInflow(e.target.value)}
@@ -1735,7 +1756,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                       </td>
                       <td className="py-3.5 pr-2 font-bold max-w-xs truncate text-right" title={tx.description}>
                         {editingTxId === tx.id ? (
-                          <input
+                          <SafeInput
                             type="text"
                             value={editDescription}
                             onChange={(e) => setEditDescription(e.target.value)}
@@ -1747,7 +1768,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                       </td>
                       <td className="py-3.5 text-center font-mono font-bold text-rose-400">
                         {editingTxId === tx.id ? (
-                          <input
+                          <SafeInput
                             type="number"
                             value={editOutflow}
                             onChange={(e) => setEditOutflow(e.target.value)}
@@ -1916,7 +1937,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 block">من تاريخ:</label>
-                  <input
+                  <SafeInput
                     type="date"
                     value={approvalStartDate}
                     onChange={(e) => setApprovalStartDate(e.target.value)}
@@ -1925,7 +1946,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 block">إلى تاريخ:</label>
-                  <input
+                  <SafeInput
                     type="date"
                     value={approvalEndDate}
                     onChange={(e) => setApprovalEndDate(e.target.value)}

@@ -1,3 +1,4 @@
+import { AIModelSelector } from "./AIModelSelector";
 import { AIUploadModal } from "./AIUploadModal";
 import React, { useState, useMemo, useEffect } from 'react';
 import { getSupabaseClient } from '../lib/supabaseClient';
@@ -61,6 +62,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 }) => {
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
+  const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
   const [isAIModalOpen, setIsAIModalOpen] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
@@ -77,7 +79,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('selectedAIModel', 'gemini-2.5-pro');
+    formData.append('selectedAIModel', selectedAIModel);
     formData.append('useAdvanced', 'false');
     formData.append('type', 'subcontractor');
 
@@ -1122,15 +1124,17 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                   <span className="text-xs font-bold text-amber-400 block mb-0.5">🚀 هل تريد ملء بيانات المستخلص تلقائياً بالذكاء الاصطناعي؟</span>
                   <p className="text-[10px] text-slate-400">ارفع مستخلص مقاول الباطن الورقي أو الرقمي وسيقوم Gemini OCR بقراءته وتعبئة الحقول فوراً.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAIModalOpen(true)}
-                  disabled={isProcessingAI}
-                  className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>{isProcessingAI ? 'جاري معالجة المستند... ⏳' : 'رفع وتحليل بالذكاء الاصطناعي 🤖'}</span>
-                </button>
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <AIModelSelector
+                    selectedModel={selectedAIModel}
+                    onModelSelect={setSelectedAIModel}
+                  />
+                  <label className={`bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0 ${isProcessingAI ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <Upload className="w-4 h-4" />
+                    <span>{isProcessingAI ? 'جاري معالجة المستند... ⏳' : 'رفع وتحليل بالذكاء الاصطناعي 🤖'}</span>
+                    <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleSubcontractorOCR} disabled={isProcessingAI} />
+                  </label>
+                </div>
               </div>
 
               <div>

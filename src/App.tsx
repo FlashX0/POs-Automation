@@ -596,6 +596,7 @@ export default function App() {
     engineers?: any[];
     draftAggregatedStatement?: any[];
     archivedAggregatedStatements?: any[];
+    deletedEngineerIds?: string[];
   }) => {
     try {
       const body: any = { version: dbVersion };
@@ -611,6 +612,7 @@ export default function App() {
       if (partialUpdate.engineers !== undefined) body.engineers = partialUpdate.engineers;
       if (partialUpdate.draftAggregatedStatement !== undefined) body.draftAggregatedStatement = partialUpdate.draftAggregatedStatement;
       if (partialUpdate.archivedAggregatedStatements !== undefined) body.archivedAggregatedStatements = partialUpdate.archivedAggregatedStatements;
+      if (partialUpdate.deletedEngineerIds !== undefined) body.deletedEngineerIds = partialUpdate.deletedEngineerIds;
 
       const res = await fetch('/api/state/sync', {
         method: 'POST',
@@ -646,6 +648,54 @@ export default function App() {
     setLaborTimesheets(updated);
     syncFinancialsWithBackend({ laborTimesheets: updated });
   };
+
+
+  // Sync Petty Cash to Subcontractors automatically
+  useEffect(() => {
+    if (!pettyCashBoxDays || pettyCashBoxDays.length === 0 || !subcontractorContracts || subcontractorContracts.length === 0) return;
+
+    let hasChanges = false;
+    const updatedContracts = subcontractorContracts.map(contract => {
+      // Find all petty cash expenses linked to this subcontractor
+      const linkedPayments = [];
+      pettyCashBoxDays.forEach(day => {
+        (day.transactions || []).forEach(tx => {
+          if (tx.linkedSubcontractorName && tx.linkedSubcontractorName === contract.subcontractor && tx.outflow > 0) {
+            linkedPayments.push({
+              id: `petty_tx_${tx.id}`,
+              date: day.date,
+              description: `دفعة مسددة من عهدة م. ${day.engineer || 'عام'} - ${tx.description}`,
+              amount: tx.outflow
+            });
+          }
+        });
+      });
+
+      // We need to merge linkedPayments into contract.payments without duplicating.
+      // We will identify linked payments by their id starting with "petty_tx_"
+      const otherPayments = (contract.payments || []).filter(p => !p.id.toString().startsWith('petty_tx_'));
+      
+      // Check if the current linked payments are exactly the same as the newly calculated ones
+      const existingLinked = (contract.payments || []).filter(p => p.id.toString().startsWith('petty_tx_'));
+      
+      const isDifferent = existingLinked.length !== linkedPayments.length || 
+        !linkedPayments.every(lp => existingLinked.some(ep => ep.id === lp.id && ep.amount === lp.amount && ep.description === lp.description && ep.date === lp.date));
+
+      if (isDifferent) {
+        hasChanges = true;
+        // Keep non-linked payments, and append the latest linked payments
+        // Sort payments by date to maintain order
+        const allPayments = [...otherPayments, ...linkedPayments].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        return { ...contract, payments: allPayments };
+      }
+      
+      return contract;
+    });
+
+    if (hasChanges) {
+      updateSubcontractorContracts(updatedContracts);
+    }
+  }, [pettyCashBoxDays, subcontractorContracts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateCostAnalysis = (updatedEntries: any[], updatedCategories: string[]) => {
     setCostAnalysisEntries(updatedEntries);
@@ -7130,6 +7180,7 @@ export default function App() {
           onNotify={(type, title, message) => triggerNotificationToast(type, title, message)}
           engineers={engineers}
           currentUser={currentUser}
+          subcontractorContracts={subcontractorContracts}
           onResetSuccess={refetchFinancialData}
         />
       </main>
@@ -7191,8 +7242,9 @@ export default function App() {
           boxDays={pettyCashBoxDays}
           dbVersion={dbVersion}
           onRefresh={refetchFinancialData}
-          onSave={(updatedEngineers) => {
+          onSave={(updatedEngineers, deletedIds) => {
             setEngineers(updatedEngineers);
+            syncFinancialsWithBackend({ engineers: updatedEngineers, deletedEngineerIds: deletedIds });
           }}
         />
       </main>

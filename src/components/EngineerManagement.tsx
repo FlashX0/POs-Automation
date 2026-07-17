@@ -1,3 +1,4 @@
+import { SafeInput } from "./SafeInput";
 import { AIModelSelector } from "./AIModelSelector";
 import React, { useState, useEffect, useMemo } from 'react';
 import { getSupabaseClient } from '../lib/supabaseClient';
@@ -46,7 +47,7 @@ interface EngineerManagementProps {
   projectsList: string[];
   boxDays?: any[];
   dbVersion?: number;
-  onSave: (updatedEngineers: Engineer[]) => void;
+  onSave: (updatedEngineers: Engineer[], deletedIds?: string[]) => void;
   onRefresh?: () => void;
 }
 
@@ -294,32 +295,11 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
     if (window.confirm(`هل أنت متأكد من حذف المهندس "${engName}" وكل سجلاته؟`)) {
       setIsDeleting(true);
       try {
-        const res = await fetch('/api/state/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            engineers: engineers.filter(eng => eng.id !== id),
-            deletedEngineerIds: [id] 
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            // Update local state immediately before doing any refetching
-            const updated = engineers.filter(eng => eng.id !== id);
-            onSave(updated);
-            if (onRefresh) {
-              onRefresh();
-            }
-          } else {
-            alert(`فشل حذف المهندس: ${data.error || 'خطأ غير معروف'}`);
-          }
-        } else {
-          alert('فشل الاتصال بالسيرفر لحذف المهندس.');
-        }
+        const updated = engineers.filter(eng => eng.id !== id);
+        onSave(updated, [id]);
       } catch (err) {
         console.error('Error deleting engineer:', err);
-        console.error('حدث خطأ أثناء الاتصال بالسيرفر لحذف المهندس.');
+        alert('حدث خطأ أثناء الاتصال بالسيرفر لحذف المهندس.');
       } finally {
         setIsDeleting(false);
       }
@@ -389,7 +369,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                   تصفح المجلد المنظم لكل مهندس للوصول الفوري للتقارير والتحليلات:
                 </div>
                 <div className="relative w-full md:max-w-xs">
-                  <input
+                  <SafeInput
                     type="text"
                     placeholder="ابحث عن مهندس أو مشروع..."
                     value={folderSearchQuery}
@@ -499,7 +479,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                       <div>
                         <label className="text-xs text-slate-400 font-bold block mb-1.5">اسم المهندس الثلاثي *</label>
                         <div className="relative">
-                          <input
+                          <SafeInput
                             type="text"
                             required
                             placeholder="مثال: م. محمد أحمد علي"
@@ -514,7 +494,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                       <div>
                         <label className="text-xs text-slate-400 font-bold block mb-1.5">رقم الهاتف</label>
                         <div className="relative">
-                          <input
+                          <SafeInput
                             type="text"
                             placeholder="مثال: 01012345678"
                             value={phone}
@@ -549,7 +529,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                       <div>
                         <label className="text-xs text-slate-400 font-bold block mb-1.5">الرقم الوظيفي / الكود</label>
                         <div className="relative">
-                          <input
+                          <SafeInput
                             type="text"
                             placeholder="مثال: ENG-250"
                             value={code}
@@ -563,7 +543,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                       <div>
                         <label className="text-xs text-slate-400 font-bold block mb-1.5">الرصيد الافتتاحي للعهدة (EGP)</label>
                         <div className="relative">
-                          <input
+                          <SafeInput
                             type="number"
                             placeholder="مثال: 50000"
                             value={initialBalance}
@@ -607,7 +587,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                   
                   <div className="flex gap-2.5 w-full md:max-w-md justify-end">
                     <div className="relative w-full md:max-w-xs">
-                      <input
+                      <SafeInput
                         type="text"
                         placeholder="ابحث بالاسم، المشروع، أو الكود..."
                         value={searchQuery}
@@ -832,7 +812,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
 
                 <div className="pt-2">
                   <label className="border-2 border-dashed border-slate-800 hover:border-indigo-500/50 bg-slate-900/30 hover:bg-slate-900/50 rounded-2xl p-6 flex flex-col items-center justify-center text-center gap-3 cursor-pointer transition-all group">
-                    <input 
+                    <SafeInput 
                       type="file" 
                       onChange={handleFileUpload} 
                       disabled={uploading}
@@ -1032,7 +1012,7 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                   {/* Selector & Action button */}
                   <div className="flex items-center gap-3 w-full md:w-auto">
                     <div className="relative">
-                      <input 
+                      <SafeInput 
                         type="month"
                         value={monthToAnalyze}
                         onChange={(e) => setMonthToAnalyze(e.target.value)}
