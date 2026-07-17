@@ -769,7 +769,7 @@ export async function saveDb(data: any) {
                    id,
                    name: e.name,
                    allowed_projects: e.project ? [e.project] : [],
-                   initial_balance: parseSafePrecisionNumber(e.initialBalance || e.initial_balance || 0),
+                   initial_balance: parseSafePrecisionNumber(e.initialBalance !== undefined ? e.initialBalance : (e.initial_balance !== undefined ? e.initial_balance : 0)),
                    updated_at: e.updatedAt || new Date().toISOString()
                 });
              }
@@ -805,7 +805,7 @@ export async function saveDb(data: any) {
             id: day.id || `${day.engineer || "عام"}_${day.date}`,
             engineer: day.engineer || "عام",
             date: day.date,
-            initial_balance: parseSafePrecisionNumber(day.startingBalanceOverride || day.starting_balance || day.startingBalance || 0),
+            initial_balance: parseSafePrecisionNumber(day.startingBalanceOverride !== undefined ? day.startingBalanceOverride : (day.starting_balance !== undefined ? day.starting_balance : (day.startingBalance !== undefined ? day.startingBalance : 0))),
             transactions: day.transactions || [],
             updated_at: day.updatedAt || new Date().toISOString()
           }));
@@ -814,7 +814,7 @@ export async function saveDb(data: any) {
             id: day.id || `${day.engineer || "عام"}_${day.date}`,
             engineer: day.engineer || "عام",
             date: day.date,
-            initial_balance: parseSafePrecisionNumber(day.startingBalanceOverride || day.starting_balance || day.startingBalance || 0),
+            initial_balance: parseSafePrecisionNumber(day.startingBalanceOverride !== undefined ? day.startingBalanceOverride : (day.starting_balance !== undefined ? day.starting_balance : (day.startingBalance !== undefined ? day.startingBalance : 0))),
             transactions: day.transactions || [],
             updated_at: day.updatedAt || new Date().toISOString()
           }));
