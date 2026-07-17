@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { AIModelSelector } from './AIModelSelector';
 import { getSupabaseClient } from '../lib/supabaseClient';
 import { 
   Download, Plus, Trash2, Calendar, DollarSign, CheckCircle, 

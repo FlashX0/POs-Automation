@@ -790,14 +790,14 @@ export async function saveDb(data: any) {
         let { data: row, error: fetchErr } = await adminClient
           .from('app_state')
           .select('data')
-          .eq('key', 'global_state')
+          .eq('id', 'global_state')
           .maybeSingle();
 
         if (fetchErr || !row) {
           const { data: row2, error: err2 } = await adminClient
             .from('app_state')
             .select('data')
-            .eq('key', 'global_state')
+            .eq('id', 'global_state')
             .maybeSingle();
           if (row2) row = row2;
         }
@@ -829,8 +829,8 @@ export async function saveDb(data: any) {
                 ...existing,
                 id: e.id,
                 name: e.name,
-                project: e.project,
-                initialBalance: e.initial_balance,
+                project: (e.allowed_projects && e.allowed_projects.length > 0) ? e.allowed_projects[0] : "",
+                  initialBalance: e.initial_balance,
                 updatedAt: e.updated_at
               };
             });
@@ -843,7 +843,7 @@ export async function saveDb(data: any) {
                 id: b.id,
                 engineer: b.engineer,
                 date: b.date,
-                startingBalanceOverride: b.starting_balance,
+                startingBalanceOverride: b.initial_balance,
                 transactions: typeof b.transactions === 'string' ? JSON.parse(b.transactions) : (b.transactions || []),
                 updatedAt: b.updated_at
               };
@@ -890,61 +890,112 @@ export async function saveDb(data: any) {
     if (adminClient) {
       try {
         // A. Upsert global state to app_state
-        let { error: upsertErr } = await adminClient
+        console.log('[DB WRITE] Target table: app_state, Payload size:', JSON.stringify(sanitizedData).length, 'bytes, PK: global_state');
+        let { data: upsertData, error: upsertErr } = await adminClient
           .from('app_state')
-          .upsert({ key: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+          .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+          .select();
         
+        console.log('[DB WRITE RESULT] app_state, Data:', !!upsertData, 'Error:', upsertErr?.message);
         if (upsertErr) {
-           console.warn("Upsert with id failed:", upsertErr.message);
+           console.error("Upsert with id failed:", upsertErr.message);
+           throw upsertErr;
         }
 
         // B. Parallel upsert into users table
         if (sanitizedData.users && Array.isArray(sanitizedData.users)) {
-          const mappedUsers = sanitizedData.users.map((u: any) => ({
-            id: u.id || `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-            email: u.email,
-            name: u.name,
-            role: u.role || "user",
-            status: u.status || "active",
-            allowed_departments: u.allowed_departments || [],
-            is_system: u.isSystem || u.is_system || false,
-            updated_at: u.createdAt || new Date().toISOString()
-          }));
+          const uniqueUsersMap = new Map();
+          sanitizedData.users.forEach((u: any) => {
+             if (u.email && !uniqueUsersMap.has(u.email)) {
+                uniqueUsersMap.set(u.email, {
+                   id: u.id && u.id.length === 36 ? u.id : globalThis.crypto.randomUUID(),
+                   email: u.email,
+                   name: u.name,
+                   role: u.role || "user",
+                   status: u.status || "active",
+                   allowed_departments: u.allowed_departments || [],
+                   updated_at: u.createdAt || new Date().toISOString()
+                });
+             }
+          });
+          const mappedUsers = Array.from(uniqueUsersMap.values());
           if (mappedUsers.length > 0) {
-            await adminClient.from('users').upsert(mappedUsers, { onConflict: 'email' });
+            console.log('[DB WRITE] Target table: users, Rows:', mappedUsers.length);
+            const { data, error } = await adminClient.from('users').upsert(mappedUsers, { onConflict: 'email' }).select();
+            console.log('[DB WRITE RESULT] users, Data length:', data?.length, 'Error:', error?.message);
+            if (error) throw error;
           }
         }
 
         // C. Parallel upsert into engineers table
         if (sanitizedData.engineers && Array.isArray(sanitizedData.engineers)) {
-          const mappedEngineers = sanitizedData.engineers.map((e: any) => ({
-            id: e.id || `eng_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-            name: e.name,
-            project: e.project || "",
-            initial_balance: parseSafePrecisionNumber(e.initialBalance || e.initial_balance || 0),
-            updated_at: e.updatedAt || new Date().toISOString()
-          }));
+          const uniqueEngineersMap = new Map();
+          sanitizedData.engineers.forEach((e: any) => {
+             const id = e.id || `eng_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+             if (!uniqueEngineersMap.has(id)) {
+                uniqueEngineersMap.set(id, {
+                   id,
+                   name: e.name,
+                   allowed_projects: e.project ? [e.project] : [],
+                   initial_balance: parseSafePrecisionNumber(e.initialBalance || e.initial_balance || 0),
+                   updated_at: e.updatedAt || new Date().toISOString()
+                });
+             }
+          });
+          const mappedEngineers = Array.from(uniqueEngineersMap.values());
           if (mappedEngineers.length > 0) {
-            await adminClient.from('engineers').upsert(mappedEngineers);
+            console.log('[DB WRITE] Target table: engineers, Rows:', mappedEngineers.length);
+            const { data, error } = await adminClient.from('engineers').upsert(mappedEngineers, { onConflict: 'id' }).select();
+            console.log('[DB WRITE RESULT] engineers, Data length:', data?.length, 'Error:', error?.message);
+            if (error) throw error;
           }
         }
         
         if (sanitizedData.deletedEngineerIds && sanitizedData.deletedEngineerIds.length > 0) {
-           await adminClient.from('engineers').delete().in('id', sanitizedData.deletedEngineerIds);
+           console.log('[DB WRITE] Target table: engineers (DELETE), Rows:', sanitizedData.deletedEngineerIds.length);
+           const { data, error } = await adminClient.from('engineers').delete().in('id', sanitizedData.deletedEngineerIds).select();
+           console.log('[DB WRITE RESULT] engineers (DELETE), Data length:', data?.length, 'Error:', error?.message);
+           if (error) throw error;
         }
 
         // D. Parallel upsert into petty_cash_box_days table
         if (sanitizedData.pettyCashBoxDays && Array.isArray(sanitizedData.pettyCashBoxDays)) {
+          
           const mappedPettyCash = sanitizedData.pettyCashBoxDays.map((day: any) => ({
-            id: `${day.engineer || "عام"}_${day.date}`,
+            id: day.id || `${day.engineer || "عام"}_${day.date}`,
             engineer: day.engineer || "عام",
             date: day.date,
-            starting_balance: parseSafePrecisionNumber(day.startingBalanceOverride || day.starting_balance || day.startingBalance || 0),
+            initial_balance: parseSafePrecisionNumber(day.startingBalanceOverride || day.starting_balance || day.startingBalance || 0),
+            transactions: day.transactions || [],
+            updated_at: day.updatedAt || new Date().toISOString()
+          }));
+          const _ignored = sanitizedData.pettyCashBoxDays.map((day: any) => ({
+  
+            id: day.id || `${day.engineer || "عام"}_${day.date}`,
+            engineer: day.engineer || "عام",
+            date: day.date,
+            initial_balance: parseSafePrecisionNumber(day.startingBalanceOverride || day.starting_balance || day.startingBalance || 0),
             transactions: day.transactions || [],
             updated_at: day.updatedAt || new Date().toISOString()
           }));
           if (mappedPettyCash.length > 0) {
-            await adminClient.from('petty_cash_box_days').upsert(mappedPettyCash, { onConflict: 'key' });
+            console.log('[DB WRITE] Target table: petty_cash_box_days, Rows:', mappedPettyCash.length);
+            console.log('--- DEBUG PETTY CASH BEFORE UPSERT ---');
+            mappedPettyCash.forEach(p => {
+               console.log(`ID: ${p.id} | Engineer: ${p.engineer} | Date: ${p.date} | Bal: ${p.initial_balance} | Tx: ${p.transactions.length}`);
+            });
+            const dupCheck = new Set();
+            for (let p of mappedPettyCash) {
+              if (dupCheck.has(p.id)) {
+                 console.log(`ABORTING: DUPLICATE ID FOUND IN MAPPED ARRAY: ${p.id}`);
+                 throw new Error("Duplicate ID in petty_cash_box_days: " + p.id);
+              }
+              dupCheck.add(p.id);
+            }
+            console.log('--------------------------------------');
+            const { data, error } = await adminClient.from('petty_cash_box_days').upsert(mappedPettyCash, { onConflict: 'id' }).select();
+            console.log('[DB WRITE RESULT] petty_cash_box_days, Data length:', data?.length, 'Error:', error?.message);
+            if (error) throw error;
           }
         }
 
@@ -996,14 +1047,14 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
           let { data: row, error: fetchErr } = await adminClient
             .from('app_state')
             .select('data')
-            .eq('key', 'global_state')
+            .eq('id', 'global_state')
             .maybeSingle();
 
           if (fetchErr || !row) {
             const { data: row2, error: err2 } = await adminClient
               .from('app_state')
               .select('data')
-              .eq('key', 'global_state')
+              .eq('id', 'global_state')
               .maybeSingle();
             if (row2) row = row2;
           }
@@ -1049,7 +1100,7 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
             }
             if (boxRows.length > 0) {
               parsed.pettyCashBoxDays = boxRows.map(b => {
-                const existing = (parsed.pettyCashBoxDays || []).find((old: any) => (old.id === b.id) || (old.date === b.date && old.engineer === b.engineer)) || {};
+                const existing = (parsed.pettyCashBoxDays || []).find((old: any) => (old.id === b.id) || (old.date === b.date && (old.engineer || "عام") === (b.engineer || "عام"))) || {};
                 return {
                   ...existing,
                   id: b.id,

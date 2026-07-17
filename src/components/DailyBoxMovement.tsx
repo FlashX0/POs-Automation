@@ -343,7 +343,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
   const currentDay = useMemo(() => {
     return boxDays.find((d) => d.date === selectedDate && (!selectedEngineer || d.engineer === selectedEngineer)) || {
       date: selectedDate,
-      engineer: selectedEngineer,
+      engineer: selectedEngineer || "عام",
       transactions: [],
     };
   }, [boxDays, selectedDate, selectedEngineer]);
@@ -1041,7 +1041,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     };
 
     let updatedBoxDays = [...boxDays];
-    const dayIdx = updatedBoxDays.findIndex((d) => d.date === pendingTx.date);
+    const dayIdx = updatedBoxDays.findIndex((d) => d.date === pendingTx.date && (d.engineer || "عام") === (pendingTx.engineer || "عام"));
 
     if (dayIdx > -1) {
       updatedBoxDays[dayIdx] = {
@@ -1052,6 +1052,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     } else {
       updatedBoxDays.push({
         date: pendingTx.date,
+        engineer: pendingTx.engineer || "عام",
         transactions: [cleanTx],
         updatedAt: new Date().toISOString(),
       });

@@ -62,7 +62,8 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
 }) => {
   const [activeTab, setActiveTab] = useState<'entry' | 'archive'>('entry');
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
-  const [selectedAIModel, setSelectedAIModel] = useState("gpt-5.6-luna");
+  const [selectedAIModel, setSelectedAIModel] = useState("gemini-2.5-flash");
+  const [aiUseAdvanced, setAiUseAdvanced] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
@@ -80,7 +81,7 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
     const formData = new FormData();
     formData.append('file', file);
     formData.append('selectedAIModel', selectedAIModel);
-    formData.append('useAdvanced', 'false');
+    formData.append('useAdvanced', aiUseAdvanced ? 'true' : 'false');
     formData.append('type', 'subcontractor');
 
     try {
@@ -1126,8 +1127,10 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-2">
                   <AIModelSelector
+                    useAdvanced={aiUseAdvanced}
+                    setUseAdvanced={setAiUseAdvanced}
                     selectedModel={selectedAIModel}
-                    onModelSelect={setSelectedAIModel}
+                    setSelectedModel={setSelectedAIModel}
                   />
                   <label className={`bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0 ${isProcessingAI ? 'opacity-50 cursor-not-allowed' : ''}`}>
                     <Upload className="w-4 h-4" />

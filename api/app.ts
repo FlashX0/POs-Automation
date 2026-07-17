@@ -3736,7 +3736,7 @@ app.post("/api/engineers/ledger", async (req, res) => {
       ledgerData.forEach((day: any) => {
         db.pettyCashBoxDays.push({
           ...day,
-          engineer: engineerName
+          engineer: engineerName || "عام"
         });
       });
     }
@@ -4173,7 +4173,7 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
     };
     
     // Update db.pettyCashBoxDays
-    let dayObj = db.pettyCashBoxDays.find((d: any) => d.date === date && d.engineer === finalEngineerName);
+    let dayObj = db.pettyCashBoxDays.find((d: any) => d.date === date && (d.engineer || "عام") === (finalEngineerName || "عام"));
     if (dayObj) {
       if (!dayObj.transactions) dayObj.transactions = [];
       dayObj.transactions.push(newTx);
@@ -4181,7 +4181,7 @@ app.post("/api/engineers/ledger/insert", async (req, res) => {
     } else {
       dayObj = {
         date: date,
-        engineer: finalEngineerName,
+        engineer: finalEngineerName || "عام",
         transactions: [newTx],
         updatedAt: new Date().toISOString()
       };
@@ -4278,14 +4278,14 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
     let { data: row, error: fetchErr } = await adminClient
       .from('app_state')
       .select('data')
-      .eq('key', 'global_state')
+      .eq('id', 'global_state')
       .maybeSingle();
 
     if (fetchErr || !row) {
       const { data: row2 } = await adminClient
         .from('app_state')
         .select('data')
-        .eq('key', 'global_state')
+        .eq('id', 'global_state')
         .maybeSingle();
       if (row2) row = row2;
     }
@@ -4310,7 +4310,7 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
     } else {
       db.pettyCashBoxDays.push({
         date,
-        engineer: engineerName,
+        engineer: engineerName || "عام",
         startingBalanceOverride: parseFloat(startingBalanceOverride),
         transactions: [],
         updatedAt: nowStr
@@ -4514,7 +4514,7 @@ app.post("/api/ai/aggregate-engineer-costs", async (req, res) => {
                   project: tx.project || "عام",
                   amount: outflow,
                   description: tx.description || "",
-                  engineer: engineerName
+                  engineer: engineerName || "عام"
                 });
               }
             });
@@ -4597,7 +4597,7 @@ Output the results strictly as a JSON object matching the requested schema.`;
       amount: entry.amount,
       date: `${month}-01`, // first day of target month
       description: entry.description,
-      engineer: engineerName
+      engineer: engineerName || "عام"
     }));
 
     // Filter out previous AI-aggregated entries for this specific engineer and month to avoid duplication
@@ -4990,14 +4990,14 @@ Return the structured transactions strictly in JSON format.`;
       };
 
       // 1. Update in db.pettyCashBoxDays
-      let dayObj = db.pettyCashBoxDays.find((d: any) => d.date === dateVal && d.engineer === finalEngineerName);
+      let dayObj = db.pettyCashBoxDays.find((d: any) => d.date === dateVal && (d.engineer || "عام") === (finalEngineerName || "عام"));
       if (dayObj) {
         if (!dayObj.transactions) dayObj.transactions = [];
         dayObj.transactions.push(newTx);
       } else {
         dayObj = {
           date: dateVal,
-          engineer: finalEngineerName,
+          engineer: finalEngineerName || "عام",
           transactions: [newTx]
         };
         db.pettyCashBoxDays.push(dayObj);
@@ -5295,14 +5295,11 @@ ${JSON.stringify(projectsList, null, 2)}
 
       if (tx.date && tx.date.trim() !== "") {
         const targetDate = tx.date.trim();
-        let existingDay = db.pettyCashBoxDays.find((d: any) => d.date === targetDate);
+        let existingDay = db.pettyCashBoxDays.find((d: any) => d.date === targetDate && (d.engineer || "عام") === "عام");
         if (existingDay) {
           existingDay.transactions.push(cleanTx);
         } else {
-          db.pettyCashBoxDays.push({
-            date: targetDate,
-            transactions: [cleanTx]
-          });
+          db.pettyCashBoxDays.push({ date: targetDate, engineer: "عام", transactions: [cleanTx] });
         }
         autoProcessed.push({ ...cleanTx, date: targetDate });
       } else {
