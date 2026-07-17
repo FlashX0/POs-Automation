@@ -121,14 +121,7 @@ async function getEnglishSlug(arabicName: any): Promise<string> {
       console.log(`[Translation] Translating "${trimmed}" to English using Gemini...`);
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `You are an expert translator translating Arabic company, vendor, and project names to their professional, direct English counterparts.
-Translate the following Arabic name to its proper English business or project name equivalent:
-"${trimmed}"
-
-Guidelines:
-- Do NOT use phonetic transliteration (e.g. do NOT write 'Rwad' for 'رواد'). Instead, write the actual English meaning/equivalent (e.g. 'Rowad Commercial Agencies').
-- Ensure it sounds professional and standard.
-- Return ONLY the clean translated English name. No markdown, no explanations, no punctuation.`,
+        contents: `Translate this Arabic project name or text to a very short, clean English slug (no spaces, use hyphens). Only output the slug, nothing else. Text: "${trimmed}"`
       });
 
       const text = response.text || "";

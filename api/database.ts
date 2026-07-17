@@ -788,14 +788,14 @@ export async function saveDb(data: any) {
     if (adminClient) {
       try {
         let { data: row, error: fetchErr } = await adminClient
-          .from('app_state')
+          .from('global_state')
           .select('data')
           .eq('id', 'global_state')
           .maybeSingle();
 
         if (fetchErr || !row) {
           const { data: row2, error: err2 } = await adminClient
-            .from('app_state')
+            .from('global_state')
             .select('data')
             .eq('id', 'global_state')
             .maybeSingle();
@@ -891,7 +891,7 @@ export async function saveDb(data: any) {
       try {
         // A. Upsert global state to app_state
         let { error: upsertErr } = await adminClient
-          .from('app_state')
+          .from('global_state')
           .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' });
         
         if (upsertErr) {
@@ -994,14 +994,14 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
       if (adminClient) {
         try {
           let { data: row, error: fetchErr } = await adminClient
-            .from('app_state')
+            .from('global_state')
             .select('data')
             .eq('id', 'global_state')
             .maybeSingle();
 
           if (fetchErr || !row) {
             const { data: row2, error: err2 } = await adminClient
-              .from('app_state')
+              .from('global_state')
               .select('data')
               .eq('id', 'global_state')
               .maybeSingle();

@@ -387,13 +387,13 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-right">
             <thead>
-              <tr style={{ backgroundColor: "#1e293b", color: "#cbd5e1" }}>
+              <tr className="bg-slate-800 text-white">
                 <th className="p-4 font-bold text-center w-1/4">البيان</th>
                 <th className="p-4 font-bold text-center">رصيد سابق</th>
                 <th className="p-4 font-bold text-center">مصروفات تشغيل</th>
-                <th className="p-4 font-bold text-center" style={{ color: "#fbbf24" }}>الإجمالي المستحق</th>
+                <th className="p-4 font-bold text-center">الإجمالي المستحق</th>
                 <th className="p-4 font-bold text-center">عهدة تشغيل/دفعات</th>
-                <th className="p-4 font-bold text-center" style={{ color: "#34d399" }}>الرصيد الفعلي المتبقي</th>
+                <th className="p-4 font-bold text-center">الرصيد الفعلي المتبقي</th>
                 <th className="p-4 font-semibold text-center w-16 print:hidden">إجراء</th>
               </tr>
             </thead>
