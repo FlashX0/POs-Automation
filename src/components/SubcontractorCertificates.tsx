@@ -1188,7 +1188,6 @@ export const SubcontractorCertificates: React.FC<SubcontractorCertificatesProps>
                   {engineers.map(eng => (
                     <option key={eng.id} value={eng.name}>{eng.name}</option>
                   ))}
-                  <option value="م. محمد حمدي">م. محمد حمدي (افتراضي)</option>
                 </select>
               </div>
 

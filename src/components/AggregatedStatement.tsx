@@ -47,14 +47,14 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
 
   // Derived options for dropdown
   const entityOptions = [
-    { label: 'مهندسين', options: engineers.map(e => ({ value: `eng_${e.name}`, label: e.name, type: 'engineer' })) },
-    { label: 'مقاولين', options: subcontractorContracts.map(c => ({ value: `sub_${c.subcontractorName}`, label: c.subcontractorName, type: 'subcontractor' })) },
-    { label: 'عمالة', options: laborTimesheets.map(l => ({ value: `lab_${l.workerName}`, label: l.workerName, type: 'labor' })) }
+    { label: 'مهندسين', options: (engineers || []).map(e => ({ value: `eng_${e.name}`, label: e.name, type: 'engineer' })) },
+    { label: 'مقاولين', options: (subcontractorContracts || []).map(c => ({ value: `sub_${c.subcontractor}`, label: c.subcontractor, type: 'subcontractor' })) },
+    { label: 'عمالة', options: (laborTimesheets || []).map(l => ({ value: `lab_${l.workerName}`, label: l.workerName, type: 'labor' })) }
   ];
 
   const handleAddRow = () => {
-    setRows([...rows, { 
-      id: Date.now().toString(), 
+    setRows(prev => [...prev, { 
+      id: Date.now().toString() + Math.random().toString(), 
       entityId: '', 
       entityName: '', 
       entityType: '', 
@@ -67,7 +67,7 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
   };
 
   const handleRemoveRow = (id: string) => {
-    setRows(rows.filter(r => r.id !== id));
+    setRows(prev => prev.filter(r => r.id !== id));
   };
 
   const calculateEntityData = (entityType: string, entityName: string) => {
@@ -82,10 +82,10 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
 
     if (entityType === 'engineer') {
       // Find the engineer for initial balance
-      const eng = engineers.find(e => e.name === entityName);
+      const eng = (engineers || []).find(e => e.name === entityName);
       previousBalance += eng ? safeNum(eng.initialBalance) : 0;
 
-      pettyCashBoxDays.forEach(day => {
+      (pettyCashBoxDays || []).forEach(day => {
         if (day.engineer === entityName) {
           const dayDate = new Date(day.date);
           if (dayDate < from) {
@@ -102,7 +102,7 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
         }
       });
     } else if (entityType === 'subcontractor') {
-      const contract = subcontractorContracts.find(c => c.subcontractorName === entityName);
+      const contract = (subcontractorContracts || []).find(c => c.subcontractor === entityName);
       if (contract) {
         // We will consider previous balance based on dates
         (contract.certificates || []).forEach((cert: any) => {
@@ -124,7 +124,7 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
         });
       }
     } else if (entityType === 'labor') {
-      const timesheet = laborTimesheets.find(l => l.workerName === entityName);
+      const timesheet = (laborTimesheets || []).find(l => l.workerName === entityName);
       if (timesheet) {
         (timesheet.records || []).forEach((rec: any) => {
           const recDate = new Date(rec.date);
@@ -144,7 +144,7 @@ const AggregatedStatement: React.FC<AggregatedStatementProps> = ({
   };
 
   const handleChangeRow = (id: string, field: string, value: any) => {
-    setRows(rows.map(r => {
+    setRows(prevRows => prevRows.map(r => {
       if (r.id === id) {
         const updated = { ...r, [field]: value };
         

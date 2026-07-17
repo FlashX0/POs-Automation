@@ -460,8 +460,10 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
     }
   };
 
-    const handleUpdateStartingBalance = async () => {
-    const val = parseFloat(startingBalanceInput) || 0;
+    const handleUpdateStartingBalance = async (e?: any) => {
+    const rawVal = e && e.target ? e.target.value : startingBalanceInput;
+    const val = parseFloat(rawVal) || 0;
+    if (e && e.target) setStartingBalanceInput(rawVal);
     const engineerName = selectedEngineer || 'عام';
     const nowStr = new Date().toISOString();
     

@@ -8,7 +8,7 @@ export const SafeInput = ({ value, onChange, type = "text", className, placehold
   }, [value]);
   
   const handleBlur = () => { 
-    if (localVal !== value) onChange(localVal); 
+    if (localVal !== value) onChange({ target: { value: localVal } }); 
   };
   
   const handleKeyDown = (e: any) => { 
@@ -20,11 +20,20 @@ export const SafeInput = ({ value, onChange, type = "text", className, placehold
       type={type} 
       value={localVal || ''} 
       onChange={(e) => setLocalVal(e.target.value)} 
-      onBlur={handleBlur} 
-      onKeyDown={handleKeyDown} 
+      onBlur={(e) => {
+        handleBlur();
+        if (props.onBlur) props.onBlur(e);
+      }} 
+      onKeyDown={(e) => {
+        handleKeyDown(e);
+        if (props.onKeyDown) props.onKeyDown(e);
+      }} 
       className={className} 
       placeholder={placeholder} 
-      {...props} 
+      {...Object.keys(props).reduce((acc, key) => {
+        if (key !== 'onBlur' && key !== 'onKeyDown') acc[key] = props[key];
+        return acc;
+      }, {})} 
     />
   );
 };

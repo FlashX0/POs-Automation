@@ -1492,6 +1492,8 @@ app.post("/api/state/sync", async (req, res) => {
     const db = getDb();
     
     if (state.engineers) db.engineers = state.engineers;
+    if (state.projectsList) db.projects = state.projectsList;
+    if (state.projects) db.projects = state.projects;
     if (state.pettyCashBoxDays) db.pettyCashBoxDays = state.pettyCashBoxDays;
     if (state.engineerLedgers) db.engineerLedgers = state.engineerLedgers;
     if (state.subcontractorContracts) db.subcontractorContracts = state.subcontractorContracts;
@@ -4283,7 +4285,7 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
       const { data: row2 } = await adminClient
         .from('app_state')
         .select('data')
-        .eq('id', 'global_state')
+        .eq('key', 'global_state')
         .maybeSingle();
       if (row2) row = row2;
     }

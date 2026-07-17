@@ -597,6 +597,7 @@ export default function App() {
     draftAggregatedStatement?: any[];
     archivedAggregatedStatements?: any[];
     deletedEngineerIds?: string[];
+    projectsList?: string[];
   }) => {
     try {
       const body: any = { version: dbVersion };
@@ -613,6 +614,8 @@ export default function App() {
       if (partialUpdate.draftAggregatedStatement !== undefined) body.draftAggregatedStatement = partialUpdate.draftAggregatedStatement;
       if (partialUpdate.archivedAggregatedStatements !== undefined) body.archivedAggregatedStatements = partialUpdate.archivedAggregatedStatements;
       if (partialUpdate.deletedEngineerIds !== undefined) body.deletedEngineerIds = partialUpdate.deletedEngineerIds;
+      if (partialUpdate.projectsList !== undefined) body.projectsList = partialUpdate.projectsList;
+      if (partialUpdate.projectsList !== undefined) body.projects = partialUpdate.projectsList;
 
       const res = await fetch('/api/state/sync', {
         method: 'POST',

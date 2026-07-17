@@ -788,16 +788,16 @@ export async function saveDb(data: any) {
     if (adminClient) {
       try {
         let { data: row, error: fetchErr } = await adminClient
-          .from('global_state')
+          .from('app_state')
           .select('data')
-          .eq('id', 'global_state')
+          .eq('key', 'global_state')
           .maybeSingle();
 
         if (fetchErr || !row) {
           const { data: row2, error: err2 } = await adminClient
-            .from('global_state')
+            .from('app_state')
             .select('data')
-            .eq('id', 'global_state')
+            .eq('key', 'global_state')
             .maybeSingle();
           if (row2) row = row2;
         }
@@ -891,8 +891,8 @@ export async function saveDb(data: any) {
       try {
         // A. Upsert global state to app_state
         let { error: upsertErr } = await adminClient
-          .from('global_state')
-          .upsert({ id: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+          .from('app_state')
+          .upsert({ key: 'global_state', data: sanitizedData, updated_at: new Date().toISOString() }, { onConflict: 'key' });
         
         if (upsertErr) {
            console.warn("Upsert with id failed:", upsertErr.message);
@@ -944,7 +944,7 @@ export async function saveDb(data: any) {
             updated_at: day.updatedAt || new Date().toISOString()
           }));
           if (mappedPettyCash.length > 0) {
-            await adminClient.from('petty_cash_box_days').upsert(mappedPettyCash, { onConflict: 'id' });
+            await adminClient.from('petty_cash_box_days').upsert(mappedPettyCash, { onConflict: 'key' });
           }
         }
 
@@ -994,16 +994,16 @@ export async function fetchAndSyncDbFromSupabase(force: boolean = false) {
       if (adminClient) {
         try {
           let { data: row, error: fetchErr } = await adminClient
-            .from('global_state')
+            .from('app_state')
             .select('data')
-            .eq('id', 'global_state')
+            .eq('key', 'global_state')
             .maybeSingle();
 
           if (fetchErr || !row) {
             const { data: row2, error: err2 } = await adminClient
-              .from('global_state')
+              .from('app_state')
               .select('data')
-              .eq('id', 'global_state')
+              .eq('key', 'global_state')
               .maybeSingle();
             if (row2) row = row2;
           }
