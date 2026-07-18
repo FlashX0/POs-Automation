@@ -957,8 +957,8 @@ export default function EngineerManagement({ engineers, projectsList, boxDays = 
                         </td>
                       </tr>
                     ) : (
-                      engineerTransactions.map((tx) => (
-                        <tr key={tx.id} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
+                      engineerTransactions.map((tx, idx) => (
+                        <tr key={tx.id || String(idx)} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
                           <td className="py-3.5 font-mono text-slate-400 whitespace-nowrap">
                             {tx.date}
                           </td>

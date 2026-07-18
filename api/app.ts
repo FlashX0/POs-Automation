@@ -552,9 +552,7 @@ async function checkForUpcomingDueDates() {
  * CORE SERVICE: Extract structured data from any Quote or PO document using Gemini API.
  */
 async function extractDataFromDocument(fileBuffer: Buffer, mimeType: string, filename: string, userInstructions?: string, selectedAIModel?: string, useAdvanced?: boolean): Promise<any> {
-  if (!process.env.NARAROUTER_API_KEY) {
-    throw new Error("يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئة");
-  }
+  
 
   let learnedSuppliers: string[] = [];
   let learnedItems: string[] = [];
@@ -821,9 +819,7 @@ If any extracted term matches or strongly resembles a known term, use its EXACT 
  * SPECIALIZED FINANCIAL DOCUMENT EXTRACTION HELPER
  */
 async function extractFinancialFile(fileBuffer: Buffer, mimeType: string, filename: string, type: 'labor' | 'petty_cash' | 'subcontractor', userInstructions?: string, selectedAIModel?: string, useAdvanced?: boolean): Promise<any> {
-  if (!process.env.NARAROUTER_API_KEY) {
-    throw new Error("يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئة");
-  }
+  
 
   const base64Data = fileBuffer.toString("base64");
   const todayStr = new Date().toISOString().split('T')[0];
@@ -3391,17 +3387,6 @@ app.post("/api/engineers/delete", async (req, res) => {
     
     await saveDb(db);
     
-    // Try to delete from Supabase Database if tables exist
-    const supabase = getSupabaseAdminClient() || getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('petty_cash_box_days').delete().eq('engineer', name);
-        await supabase.from('engineers').delete().eq('id', id);
-      } catch (sbErr) {
-        console.warn("[Supabase Table Sync] Skip direct table delete because tables might not exist:", sbErr);
-      }
-    }
-    
     res.json({ success: true, message: "تم حذف المهندس وكافة سجلاته وحركاته المالية بنجاح بالتبعية (Cascade Delete)" });
   } catch (err: any) {
     console.error("Delete engineer error:", err);
@@ -4365,12 +4350,7 @@ app.post("/api/ai/aggregate-costs", async (req, res) => {
       });
     }
 
-    if (!process.env.NARAROUTER_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: "يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئةلتفعيل التجميع الذكي."
-      });
-    }
+    
 
     const systemInstruction = `You are an expert Senior Construction Financial Analyst and Forensic Accountant.
 Analyze the list of raw daily petty cash transactions and aggregate them monthly (by YYYY-MM) per unique combination of (Project, Standard Clean Accounting Category).
@@ -4507,12 +4487,7 @@ app.post("/api/ai/aggregate-engineer-costs", async (req, res) => {
       });
     }
 
-    if (!process.env.NARAROUTER_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: "يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئةلتفعيل التجميع الذكي."
-      });
-    }
+    
 
     const systemInstruction = `You are an expert Senior Construction Financial Analyst and Forensic Accountant.
 Analyze the list of raw daily petty cash transactions of the engineer (${engineerName}) for the month (${month}) and aggregate them by unique combination of (Project, Standard Clean Accounting Category).
@@ -4664,12 +4639,7 @@ app.post("/api/ai/excel-analysis", upload.single("file"), async (req, res) => {
       return res.status(400).json({ success: false, error: "ملف الإكسيل فارغ ولا يحتوي على أي بيانات." });
     }
 
-    if (!process.env.NARAROUTER_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: "يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئة"
-      });
-    }
+    
 
     const systemInstruction = `You are an expert Construction Auditor and AI Accounting Assistant.
 Analyze the provided raw rows from an uploaded Excel sheet.
@@ -4767,9 +4737,7 @@ app.get("/api/ai/verify", async (req, res) => {
 });
 app.get("/api/ai/models", async (req, res) => {
   try {
-    if (!process.env.NARAROUTER_API_KEY) {
-      return res.status(500).json({ error: "يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئة" });
-    }
+    
     const models = await aiClient.models.list();
     return res.json({ success: true, models: models.data });
   } catch (err: any) {
@@ -4787,12 +4755,7 @@ app.post("/api/custody/analyze-multimodal", upload.single("file"), async (req, r
     const selectedAIModel = req.body.selectedAIModel || "gpt-5.6-luna";
     const useMemory = req.body.useMemory === "true";
 
-    if (!process.env.NARAROUTER_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: "يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئة"
-      });
-    }
+    
 
     const db = getDb();
 
@@ -5412,12 +5375,7 @@ app.post("/api/ai/parse-excel-expenses", async (req, res) => {
       return res.status(400).json({ success: false, error: "لم يتم تزويد قائمة مصروفات صالحة للتحليل والتصنيف." });
     }
 
-    if (!process.env.NARAROUTER_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: "يرجى إعداد مفتاح API الخاص بـ NaraRouter في متغيرات البيئة"
-      });
-    }
+    
 
     const categoriesList = approvedCategories || ["مواد تشغيل", "بوفيه وضيافة", "منتجات أسمنتية", "حديد تسليح", "أدوات ومهمات"];
 

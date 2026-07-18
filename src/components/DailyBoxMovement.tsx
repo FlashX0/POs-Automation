@@ -1340,7 +1340,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
               const formattedDate = dateParts.length === 3 ? `${dateParts[2]} - ${dateParts[1]} - ${dateParts[0].slice(2)}` : day.date;
 
               return (
-                <div key={day.date} className="break-inside-avoid text-black bg-white p-0 overflow-hidden print-ledger-box">
+                <div key={day.date + '-' + dayIdx} className="break-inside-avoid text-black bg-white p-0 overflow-hidden print-ledger-box">
                   <table className="print-ledger-table w-full text-center border-collapse text-xs sm:text-sm font-sans" style={{ borderCollapse: 'collapse', width: '100%' }}>
                     <thead>
                       <tr className="bg-[#D9E1F2]">
@@ -1371,8 +1371,8 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                           </td>
                         </tr>
                       ) : (
-                        dayTransactions.map((tx) => (
-                          <tr key={tx.id} className="bg-white text-black print-ledger-row">
+                        dayTransactions.map((tx, tIdx) => (
+                          <tr key={tx.id || String(tIdx)} className="bg-white text-black print-ledger-row">
                             <td className="py-2.5 px-3 font-mono font-black text-emerald-700 text-center print-ledger-cell">
                               {tx.inflow > 0 ? formatPrintCurrency(tx.inflow) : '-'}
                             </td>
@@ -1725,8 +1725,8 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  transactions.map((tx) => (
-                    <tr key={tx.id} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
+                  transactions.map((tx, tIdx) => (
+                    <tr key={tx.id || String(tIdx)} className="border-b border-slate-850 text-slate-300 text-xs hover:bg-slate-900/30 transition-all">
                       <td className="py-3.5 text-center font-mono font-bold text-emerald-400">
                         {editingTxId === tx.id ? (
                           <SafeInput

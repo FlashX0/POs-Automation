@@ -524,12 +524,7 @@ export function sanitizeDeletedRecords(db: any) {
           if (ledgerDayTime > pDayTime) {
             pDay.updatedAt = ledgerDay.updatedAt;
             pDay.transactions = ledgerDay.transactions || [];
-            // BUG 3 fix: لا تمسح رصيداً صحيحاً موجوداً بقيمة واردة فارغة/صفر — احتفظ بآخر قيمة صحيحة
-            const incomingBal = parseSafePrecisionNumber(ledgerDay.startingBalanceOverride);
-            const existingBal = parseSafePrecisionNumber(pDay.startingBalanceOverride);
-            if (incomingBal > 0 || existingBal === 0) {
-              pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
-            }
+            pDay.startingBalanceOverride = ledgerDay.startingBalanceOverride;
           } else {
             ledgerDay.updatedAt = pDay.updatedAt;
             ledgerDay.transactions = pDay.transactions || [];
@@ -696,12 +691,83 @@ export async function saveDb(data: any) {
 
     let mergedData = { ...persistedState, ...data };
     
-    // Protect critical arrays from being accidentally wiped by empty arrays from the client
-    if (data.engineers && data.engineers.length > 0) mergedData.engineers = data.engineers;
-    else mergedData.engineers = persistedState.engineers || data.engineers || [];
-    
-    if (data.pettyCashBoxDays && data.pettyCashBoxDays.length > 0) mergedData.pettyCashBoxDays = data.pettyCashBoxDays;
-    else mergedData.pettyCashBoxDays = persistedState.pettyCashBoxDays || data.pettyCashBoxDays || [];
+    // Protect arrays from stale overwrites (Timestamp Protection)
+    if (data.engineers && Array.isArray(data.engineers)) {
+      const oldEngineers = persistedState.engineers || [];
+      mergedData.engineers = data.engineers.map((newEng: any) => {
+        const oldEng = oldEngineers.find((e: any) => e.id === newEng.id);
+        if (oldEng) {
+          const oldTime = new Date(oldEng.updatedAt || 0).getTime();
+          const newTime = new Date(newEng.updatedAt || 0).getTime();
+          if (newTime < oldTime) return oldEng;
+        }
+        return newEng;
+      });
+    }
+
+    if (data.pettyCashBoxDays && Array.isArray(data.pettyCashBoxDays)) {
+      const oldDays = persistedState.pettyCashBoxDays || [];
+      mergedData.pettyCashBoxDays = data.pettyCashBoxDays.map((newDay: any) => {
+        const oldDay = oldDays.find((d: any) => 
+          (d.id && d.id === newDay.id) || (d.date === newDay.date && (d.engineer || "عام") === (newDay.engineer || "عام"))
+        );
+        if (oldDay) {
+          const oldTime = new Date(oldDay.updatedAt || 0).getTime();
+          const newTime = new Date(newDay.updatedAt || 0).getTime();
+          if (newTime < oldTime) return oldDay;
+        }
+        return newDay;
+      });
+    }
+
+    if (data.laborTimesheets && Array.isArray(data.laborTimesheets)) {
+      const oldTs = persistedState.laborTimesheets || [];
+      mergedData.laborTimesheets = data.laborTimesheets.map((newTs: any) => {
+        const oldT = oldTs.find((t: any) => t.id === newTs.id);
+        if (oldT) {
+          const oldTime = new Date(oldT.updatedAt || 0).getTime();
+          const newTime = new Date(newTs.updatedAt || 0).getTime();
+          if (newTime < oldTime) return oldT;
+        }
+        return newTs;
+      });
+    }
+
+    if (data.subcontractorContracts && Array.isArray(data.subcontractorContracts)) {
+      const oldCont = persistedState.subcontractorContracts || [];
+      mergedData.subcontractorContracts = data.subcontractorContracts.map((newCont: any) => {
+        const oldC = oldCont.find((c: any) => c.id === newCont.id);
+        if (oldC) {
+          const oldTime = new Date(oldC.updatedAt || 0).getTime();
+          const newTime = new Date(newCont.updatedAt || 0).getTime();
+          if (newTime < oldTime) return oldC;
+        }
+        return newCont;
+      });
+    }
+
+    if (data.costAnalysisEntries && Array.isArray(data.costAnalysisEntries)) {
+      const oldEntries = persistedState.costAnalysisEntries || [];
+      mergedData.costAnalysisEntries = data.costAnalysisEntries.map((newEntry: any) => {
+        const oldE = oldEntries.find((e: any) => e.id === newEntry.id);
+        if (oldE) {
+          const oldTime = new Date(oldE.updatedAt || 0).getTime();
+          const newTime = new Date(newEntry.updatedAt || 0).getTime();
+          if (newTime < oldTime) return oldE;
+        }
+        return newEntry;
+      });
+    }
+
+    mergedData.deletedEngineerIds = [...new Set([...(persistedState.deletedEngineerIds || []), ...(data.deletedEngineerIds || [])])];
+    mergedData.deletedSubcontractorIds = [...new Set([...(persistedState.deletedSubcontractorIds || []), ...(data.deletedSubcontractorIds || [])])];
+    mergedData.deletedLaborTimesheetIds = [...new Set([...(persistedState.deletedLaborTimesheetIds || []), ...(data.deletedLaborTimesheetIds || [])])];
+    mergedData.deletedCostAnalysisIds = [...new Set([...(persistedState.deletedCostAnalysisIds || []), ...(data.deletedCostAnalysisIds || [])])];
+
+    if (mergedData.engineers) mergedData.engineers = mergedData.engineers.filter((eng: any) => !mergedData.deletedEngineerIds.includes(eng.id));
+    if (mergedData.subcontractorContracts) mergedData.subcontractorContracts = mergedData.subcontractorContracts.filter((c: any) => !mergedData.deletedSubcontractorIds.includes(c.id));
+    if (mergedData.laborTimesheets) mergedData.laborTimesheets = mergedData.laborTimesheets.filter((ts: any) => !mergedData.deletedLaborTimesheetIds.includes(ts.id));
+    if (mergedData.costAnalysisEntries) mergedData.costAnalysisEntries = mergedData.costAnalysisEntries.filter((item: any) => !mergedData.deletedCostAnalysisIds.includes(item.id));
     
     // Accept write directly without complex version merging
     structuredLog("update", "INFO", `Accepting write directly to Supabase. Version moving from ${persistedState.version || 1} to next.`);
