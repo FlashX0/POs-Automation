@@ -1383,6 +1383,16 @@ export default function App() {
 
   // Supabase Realtime Sync setup
   useEffect(() => {
+    let debounceTimer: any = null;
+    const handleRealtimeUpdate = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        console.log('[Supabase Realtime] Debounced refetching now...');
+        refetchFinancialData();
+      }, 2000); // 2 second debounce to allow the current save sequence to finish
+    };
+    window.addEventListener('supabase-realtime-update', handleRealtimeUpdate);
+
     let activeChannel: any = null;
     const initSupabaseRealtime = async () => {
       try {
@@ -1398,20 +1408,20 @@ export default function App() {
           // Setup subscription channel
           const channel = supabase.channel('postgres-db-changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'engineers' }, () => {
-              console.log('[Supabase Realtime] Engineers table changed. Refetching...');
-              refetchFinancialData();
+              console.log('[Supabase Realtime] Engineers table changed. Refetching in 2s...');
+              window.dispatchEvent(new CustomEvent('supabase-realtime-update'));
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'petty_cash_box_days' }, () => {
-              console.log('[Supabase Realtime] Box days table changed. Refetching...');
-              refetchFinancialData();
+              console.log('[Supabase Realtime] Box days table changed. Refetching in 2s...');
+              window.dispatchEvent(new CustomEvent('supabase-realtime-update'));
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'subcontractor_contracts' }, () => {
-              console.log('[Supabase Realtime] Subcontractor contracts table changed. Refetching...');
-              refetchFinancialData();
+              console.log('[Supabase Realtime] Subcontractor contracts table changed. Refetching in 2s...');
+              window.dispatchEvent(new CustomEvent('supabase-realtime-update'));
             })
             .on('broadcast', { event: 'db-update' }, (payload: any) => {
               console.log('[Supabase Realtime] Received broadcast update from other instance, refetching...');
-              refetchFinancialData();
+              window.dispatchEvent(new CustomEvent('supabase-realtime-update'));
             });
             
           channel.subscribe((status) => {
@@ -1430,6 +1440,8 @@ export default function App() {
     initSupabaseRealtime();
     
     return () => {
+      window.removeEventListener('supabase-realtime-update', handleRealtimeUpdate as EventListener);
+      if (debounceTimer) clearTimeout(debounceTimer);
       if (activeChannel) {
         activeChannel.unsubscribe();
       }

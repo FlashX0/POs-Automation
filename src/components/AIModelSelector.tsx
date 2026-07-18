@@ -4,13 +4,13 @@ import { Bot, ChevronDown, Check } from 'lucide-react';
 export const FREE_AI_MODELS = [
   { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash | ⚡ سريع ومجاني (للمهام البسيطة)' },
   { id: 'gemini-2.5-pro', label: 'gemini-2.5-pro | 🧠 دقيق ومجاني (للفواتير العادية)' },
-  { id: 'gemini-3.5-pro', label: 'gemini-3.5-pro | 🎓 تفكير موسع وحل المشاكل المعقدة' }
+  { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro | 🎓 تفكير موسع وحل المشاكل المعقدة' }
 ];
 
 export const PAID_AI_MODELS = [
-  { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna | 👁️ للصور والأسكرين شوت' },
-  { id: 'claude-opus-4-8-bynara', label: 'claude-opus-4-8-bynara | 👑 للفواتير المتداخلة' },
-  { id: 'deepseek-v4-flash-bynara', label: 'deepseek-v4-flash-bynara | ⚡ الأرخص والأسرع' }
+  { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro | 👁️ للصور والأسكرين شوت الدقيقة' },
+  { id: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp | 👑 للتفكير العميق (Experimental)' },
+  { id: 'gemini-1.5-flash-8b', label: 'gemini-1.5-flash-8b | ⚡ الأسرع' }
 ];
 
 interface AIModelSelectorProps {

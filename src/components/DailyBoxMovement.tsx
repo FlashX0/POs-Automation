@@ -482,7 +482,7 @@ export const DailyBoxMovement: React.FC<DailyBoxMovementProps> = ({
         updatedAt: nowStr
       });
     }
-    onSave(updatedDays);
+    // onSave(updatedDays); // Removed optimistic save to avoid overwriting newer data
 
     try {
       const res = await fetch('/api/engineers/ledger/update-starting-balance', {

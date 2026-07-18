@@ -486,6 +486,17 @@ export function sanitizeDeletedRecords(db: any) {
   }
 
   db.pettyCashBoxDays = db.pettyCashBoxDays || [];
+  
+  if (db.pettyCashBoxDays && db.engineers) {
+      // Clean up petty cash days for deleted engineers
+      const validEngineers = new Set(db.engineers.map((e: any) => e.name));
+      validEngineers.add('عام'); // Always keep general
+      const originalCount = db.pettyCashBoxDays.length;
+      db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => validEngineers.has(d.engineer));
+      if (db.pettyCashBoxDays.length !== originalCount) {
+          console.log(`[SANITIZER] Removed ${originalCount - db.pettyCashBoxDays.length} petty cash days for deleted engineers.`);
+      }
+  }
   db.engineerLedgers = db.engineerLedgers || {};
 
   const nowStr = new Date().toISOString();
@@ -691,72 +702,125 @@ export async function saveDb(data: any) {
 
     let mergedData = { ...persistedState, ...data };
     
-    // Protect arrays from stale overwrites (Timestamp Protection)
+    // Protect arrays from stale overwrites and merge correctly (Timestamp Protection)
     if (data.engineers && Array.isArray(data.engineers)) {
-      const oldEngineers = persistedState.engineers || [];
-      mergedData.engineers = data.engineers.map((newEng: any) => {
-        const oldEng = oldEngineers.find((e: any) => e.id === newEng.id);
+      const oldMap = new Map<string, any>((persistedState.engineers || []).map((e: any) => [e.id, e]));
+      const newMap = new Map();
+      data.engineers.forEach((newEng: any) => {
+        const oldEng = oldMap.get(newEng.id);
         if (oldEng) {
           const oldTime = new Date(oldEng.updatedAt || 0).getTime();
           const newTime = new Date(newEng.updatedAt || 0).getTime();
-          if (newTime < oldTime) return oldEng;
+          newMap.set(newEng.id, newTime >= oldTime ? newEng : oldEng);
+        } else {
+          newMap.set(newEng.id, newEng);
         }
-        return newEng;
       });
+      oldMap.forEach((oldEng, id) => {
+        if (!newMap.has(id)) newMap.set(id, oldEng);
+      });
+      mergedData.engineers = Array.from(newMap.values());
     }
 
     if (data.pettyCashBoxDays && Array.isArray(data.pettyCashBoxDays)) {
-      const oldDays = persistedState.pettyCashBoxDays || [];
-      mergedData.pettyCashBoxDays = data.pettyCashBoxDays.map((newDay: any) => {
-        const oldDay = oldDays.find((d: any) => 
-          (d.id && d.id === newDay.id) || (d.date === newDay.date && (d.engineer || "عام") === (newDay.engineer || "عام"))
-        );
+      const oldMap = new Map<string, any>((persistedState.pettyCashBoxDays || []).map((d: any) => {
+        const key = d.id || `${d.engineer || "عام"}_${d.date}`;
+        return [key, d];
+      }));
+      const newMap = new Map();
+      data.pettyCashBoxDays.forEach((newDay: any) => {
+        const key = newDay.id || `${newDay.engineer || "عام"}_${newDay.date}`;
+        newDay.id = key;
+        
+        const existingInNew = newMap.get(key);
+        const oldDay: any = existingInNew || oldMap.get(key);
+        
         if (oldDay) {
           const oldTime = new Date(oldDay.updatedAt || 0).getTime();
           const newTime = new Date(newDay.updatedAt || 0).getTime();
-          if (newTime < oldTime) return oldDay;
+          
+          if (newTime > oldTime) {
+            newMap.set(key, newDay);
+          } else if (newTime === oldTime) {
+             // If same timestamp (likely same payload duplicates), merge transactions safely
+             const merged = { ...oldDay };
+             const allTx = [...(oldDay.transactions || []), ...(newDay.transactions || [])];
+             const txMap = new Map();
+             allTx.forEach(tx => { if(tx.id) txMap.set(tx.id, tx); });
+             merged.transactions = Array.from(txMap.values());
+             // Prefer newest starting balance if it exists
+             if (newDay.startingBalanceOverride !== undefined) {
+                 merged.startingBalanceOverride = newDay.startingBalanceOverride;
+             }
+             newMap.set(key, merged);
+          } else {
+            newMap.set(key, oldDay);
+          }
+        } else {
+          newMap.set(key, newDay);
         }
-        return newDay;
       });
+      oldMap.forEach((oldDay, key) => {
+        if (!newMap.has(key)) newMap.set(key, oldDay);
+      });
+      mergedData.pettyCashBoxDays = Array.from(newMap.values());
     }
 
     if (data.laborTimesheets && Array.isArray(data.laborTimesheets)) {
-      const oldTs = persistedState.laborTimesheets || [];
-      mergedData.laborTimesheets = data.laborTimesheets.map((newTs: any) => {
-        const oldT = oldTs.find((t: any) => t.id === newTs.id);
-        if (oldT) {
-          const oldTime = new Date(oldT.updatedAt || 0).getTime();
+      const oldMap = new Map<string, any>((persistedState.laborTimesheets || []).map((ts: any) => [ts.id, ts]));
+      const newMap = new Map();
+      data.laborTimesheets.forEach((newTs: any) => {
+        const oldTs = oldMap.get(newTs.id);
+        if (oldTs) {
+          const oldTime = new Date(oldTs.updatedAt || 0).getTime();
           const newTime = new Date(newTs.updatedAt || 0).getTime();
-          if (newTime < oldTime) return oldT;
+          newMap.set(newTs.id, newTime >= oldTime ? newTs : oldTs);
+        } else {
+          newMap.set(newTs.id, newTs);
         }
-        return newTs;
       });
+      oldMap.forEach((oldTs, id) => {
+        if (!newMap.has(id)) newMap.set(id, oldTs);
+      });
+      mergedData.laborTimesheets = Array.from(newMap.values());
     }
 
     if (data.subcontractorContracts && Array.isArray(data.subcontractorContracts)) {
-      const oldCont = persistedState.subcontractorContracts || [];
-      mergedData.subcontractorContracts = data.subcontractorContracts.map((newCont: any) => {
-        const oldC = oldCont.find((c: any) => c.id === newCont.id);
-        if (oldC) {
-          const oldTime = new Date(oldC.updatedAt || 0).getTime();
+      const oldMap = new Map<string, any>((persistedState.subcontractorContracts || []).map((c: any) => [c.id, c]));
+      const newMap = new Map();
+      data.subcontractorContracts.forEach((newCont: any) => {
+        const oldCont = oldMap.get(newCont.id);
+        if (oldCont) {
+          const oldTime = new Date(oldCont.updatedAt || 0).getTime();
           const newTime = new Date(newCont.updatedAt || 0).getTime();
-          if (newTime < oldTime) return oldC;
+          newMap.set(newCont.id, newTime >= oldTime ? newCont : oldCont);
+        } else {
+          newMap.set(newCont.id, newCont);
         }
-        return newCont;
       });
+      oldMap.forEach((oldCont, id) => {
+        if (!newMap.has(id)) newMap.set(id, oldCont);
+      });
+      mergedData.subcontractorContracts = Array.from(newMap.values());
     }
 
     if (data.costAnalysisEntries && Array.isArray(data.costAnalysisEntries)) {
-      const oldEntries = persistedState.costAnalysisEntries || [];
-      mergedData.costAnalysisEntries = data.costAnalysisEntries.map((newEntry: any) => {
-        const oldE = oldEntries.find((e: any) => e.id === newEntry.id);
-        if (oldE) {
-          const oldTime = new Date(oldE.updatedAt || 0).getTime();
+      const oldMap = new Map<string, any>((persistedState.costAnalysisEntries || []).map((e: any) => [e.id, e]));
+      const newMap = new Map();
+      data.costAnalysisEntries.forEach((newEntry: any) => {
+        const oldEntry = oldMap.get(newEntry.id);
+        if (oldEntry) {
+          const oldTime = new Date(oldEntry.updatedAt || 0).getTime();
           const newTime = new Date(newEntry.updatedAt || 0).getTime();
-          if (newTime < oldTime) return oldE;
+          newMap.set(newEntry.id, newTime >= oldTime ? newEntry : oldEntry);
+        } else {
+          newMap.set(newEntry.id, newEntry);
         }
-        return newEntry;
       });
+      oldMap.forEach((oldEntry, id) => {
+        if (!newMap.has(id)) newMap.set(id, oldEntry);
+      });
+      mergedData.costAnalysisEntries = Array.from(newMap.values());
     }
 
     mergedData.deletedEngineerIds = [...new Set([...(persistedState.deletedEngineerIds || []), ...(data.deletedEngineerIds || [])])];
@@ -827,9 +891,12 @@ export async function saveDb(data: any) {
         // C. Parallel upsert into engineers table
         if (sanitizedData.engineers && Array.isArray(sanitizedData.engineers)) {
           const uniqueEngineersMap = new Map();
-          sanitizedData.engineers.forEach((e: any) => {
-             // استخدم نفس ID من البيانات دائماً — لا تُنشئ ID عشوائي مختلف
-             const id = e.id || crypto.randomUUID();
+          for (const e of sanitizedData.engineers) {
+             const id = e.id;
+             if (!id) {
+                console.error('[DB WRITE FAILED] Engineer missing ID. Engineer data:', e);
+                throw new Error("Cannot save engineer without an ID.");
+             }
              if (!uniqueEngineersMap.has(id)) {
                 uniqueEngineersMap.set(id, {
                    id,
@@ -839,7 +906,7 @@ export async function saveDb(data: any) {
                    updated_at: e.updatedAt || new Date().toISOString()
                 });
              }
-          });
+          }
           const mappedEngineers = Array.from(uniqueEngineersMap.values());
           if (mappedEngineers.length > 0) {
             console.log('[DB WRITE] Target table: engineers, Rows:', mappedEngineers.length);
@@ -861,7 +928,7 @@ export async function saveDb(data: any) {
            }
            console.log('[DB WRITE OK] engineers (DELETE), rows removed:', data?.length ?? 0);
            // بعد نجاح الحذف، أفّرغ القائمة لمنع محاولة حذف صفوف غير موجودة في كل مرة
-           sanitizedData.deletedEngineerIds = [];
+           // sanitizedData.deletedEngineerIds = []; // Removed to prevent resurrected engineers
         }
 
         // D. Parallel upsert into petty_cash_box_days table
@@ -886,16 +953,19 @@ export async function saveDb(data: any) {
           }));
           
           const idSet = new Set();
+          const engDateSet = new Set();
           let hasDuplicates = false;
           mappedPettyCash.forEach(p => {
-             if (idSet.has(p.id)) {
-                 console.error("[CRITICAL ERROR] Duplicate conflict key found for upsert payload: " + p.id);
+             const engDateKey = `${p.engineer}_${p.date}`;
+             if (idSet.has(p.id) || engDateSet.has(engDateKey)) {
+                 console.error("[CRITICAL ERROR] Duplicate conflict key found for upsert payload: ID=" + p.id + ", EngDate=" + engDateKey);
                  hasDuplicates = true;
              }
              idSet.add(p.id);
+             engDateSet.add(engDateKey);
           });
           if (hasDuplicates) {
-             throw new Error("ABORT: duplicate conflict keys inside the same petty_cash_box_days UPSERT payload");
+             throw new Error("ABORT: duplicate conflict keys (engineer+date) inside the same petty_cash_box_days UPSERT payload. Root cause: Client payload or merge logic produced multiple objects for the same day.");
           }
 
           if (mappedPettyCash.length > 0) {

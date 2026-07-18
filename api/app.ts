@@ -552,6 +552,7 @@ async function checkForUpcomingDueDates() {
  * CORE SERVICE: Extract structured data from any Quote or PO document using Gemini API.
  */
 async function extractDataFromDocument(fileBuffer: Buffer, mimeType: string, filename: string, userInstructions?: string, selectedAIModel?: string, useAdvanced?: boolean): Promise<any> {
+  if (!process.env.GEMINI_API_KEY) throw new Error("مفتاح GEMINI_API_KEY غير مضبوط في السيرفر");
   
 
   let learnedSuppliers: string[] = [];
@@ -665,7 +666,7 @@ If any extracted term matches or strongly resembles a known term, use its EXACT 
     let response: any;
     const maxRetries = 4;
     let delayMs = 2000;
-    const modelsToTry = selectedAIModel && useAdvanced ? [selectedAIModel] : ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    const modelsToTry = selectedAIModel ? [selectedAIModel, "gemini-2.5-flash", "gemini-2.0-flash-lite"] : ["gemini-2.5-flash", "gemini-2.0-flash-lite"];
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const currentModel = modelsToTry[(attempt - 1) % modelsToTry.length];
@@ -819,6 +820,7 @@ If any extracted term matches or strongly resembles a known term, use its EXACT 
  * SPECIALIZED FINANCIAL DOCUMENT EXTRACTION HELPER
  */
 async function extractFinancialFile(fileBuffer: Buffer, mimeType: string, filename: string, type: 'labor' | 'petty_cash' | 'subcontractor', userInstructions?: string, selectedAIModel?: string, useAdvanced?: boolean): Promise<any> {
+  if (!process.env.GEMINI_API_KEY) throw new Error("مفتاح GEMINI_API_KEY غير مضبوط في السيرفر");
   
 
   const base64Data = fileBuffer.toString("base64");
@@ -954,7 +956,7 @@ Analyze this subcontractor contract, work statement, or measurement sheet (مس�
 
   let response: any;
   const maxRetries = 3;
-  const modelsToTry = selectedAIModel && useAdvanced ? [selectedAIModel] : ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+  const modelsToTry = selectedAIModel ? [selectedAIModel, "gemini-2.5-flash", "gemini-2.0-flash-lite"] : ["gemini-2.5-flash", "gemini-2.0-flash-lite"];
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const currentModel = modelsToTry[(attempt - 1) % modelsToTry.length];
@@ -3234,29 +3236,24 @@ ${prDetails ? `فيما يلي تفاصيل طلب الشراء الداخلي �
 
     parts.push({ text: promptText });
 
-    const selectedAIModel = req.body.selectedAIModel || "gpt-5.6-luna";
+    const selectedAIModel = req.body.selectedAIModel || "gemini-1.5-pro";
     const useAdvanced = req.body.useAdvanced === "true";
     let resultText = "{}";
 
     if (useAdvanced) {
       // For OpenAI, parts must be mapped to the message content array format
-      const openaiContent: any = parts.map(p => {
-        if (p.text) return { type: "text", text: p.text };
-        if (p.inlineData) return { type: "image_url", image_url: { url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}` } };
-        return { type: "text", text: "" };
+            const response = await ai.models.generateContent({
+        model: selectedAIModel || "gemini-2.5-flash",
+        contents: { parts },
+        config: {
+          responseMimeType: "application/json",
+          systemInstruction: "You are an elite procurement manager and financial analyst for a major construction company in the Middle East. Always reply in clean Arabic. Output strict JSON only."
+        }
       });
-      const openAiResponse = await aiClient.chat.completions.create({
-        model: selectedAIModel,
-        messages: [
-          { role: "system", content: "You are an elite procurement manager and financial analyst for a major construction company in the Middle East. Always reply in clean Arabic. Output strict JSON only." },
-          { role: "user", content: openaiContent }
-        ],
-        response_format: { type: "json_object" }
-      });
-      resultText = openAiResponse.choices[0].message.content || "{}";
+      resultText = response.text || "{}";
     } else {
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: { parts },
         config: {
           responseMimeType: "application/json",
@@ -3362,24 +3359,35 @@ app.post("/api/engineers/delete", async (req, res) => {
     const { id, name } = req.body;
     await fetchAndSyncDbFromSupabase(true);
     const db = getDb();
-
     
-    // 1. Delete engineer from engineers list
+    // 1. Cascade delete from Supabase directly FIRST
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        console.log('[DELETE] Cascade deleting engineer records from Supabase tables for', name);
+        await supabase.from('petty_cash_box_days').delete().eq('engineer', name);
+        await supabase.from('engineers').delete().eq('id', id);
+      } catch (err) {
+        console.error("[DELETE] Failed to delete from Supabase tables directly:", err);
+      }
+    }
+
+    // 2. Delete engineer from memory db
     if (db.engineers) {
       db.engineers = db.engineers.filter((eng: any) => eng.id !== id);
     }
     
-    // 2. Cascade delete: delete engineer's ledger
+    // 3. Cascade delete: delete engineer's ledger
     if (db.engineerLedgers) {
       delete db.engineerLedgers[String(name)];
     }
     
-    // 3. Cascade delete: delete engineer's transactions in pettyCashBoxDays
+    // 4. Cascade delete: delete engineer's transactions in pettyCashBoxDays
     if (db.pettyCashBoxDays) {
       db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => d.engineer !== name);
     }
 
-    // 4. Track deleted engineers to prevent stale client-side states from restoring them
+    // 5. Track deleted engineers to prevent stale client-side states from restoring them
     db.deletedEngineerIds = db.deletedEngineerIds || [];
     if (id && !db.deletedEngineerIds.includes(id)) {
       db.deletedEngineerIds.push(id);
@@ -3643,20 +3651,20 @@ app.post("/api/financial-data/update", async (req, res) => {
     db.deletedLaborTimesheetIds = db.deletedLaborTimesheetIds || [];
     db.deletedCostAnalysisIds = db.deletedCostAnalysisIds || [];
     
-    if (pettyCashBoxDays !== undefined && pettyCashBoxDays.length > 0) db.pettyCashBoxDays = pettyCashBoxDays;
-    if (subcontractorContracts !== undefined && subcontractorContracts.length > 0) {
+    if (pettyCashBoxDays !== undefined) db.pettyCashBoxDays = pettyCashBoxDays;
+    if (subcontractorContracts !== undefined) {
       db.subcontractorContracts = subcontractorContracts.filter((c: any) => !db.deletedSubcontractorIds.includes(c.id));
     }
-    if (laborTimesheets !== undefined && laborTimesheets.length > 0) {
+    if (laborTimesheets !== undefined) {
       db.laborTimesheets = laborTimesheets.filter((ts: any) => !db.deletedLaborTimesheetIds.includes(ts.id));
     }
-    if (costAnalysisEntries !== undefined && costAnalysisEntries.length > 0) {
+    if (costAnalysisEntries !== undefined) {
       db.costAnalysisEntries = costAnalysisEntries.filter((item: any) => !db.deletedCostAnalysisIds.includes(item.id));
     }
     if (costAnalysisCategories !== undefined && costAnalysisCategories.length > 0) db.costAnalysisCategories = costAnalysisCategories;
-    if (pendingTransactions !== undefined && pendingTransactions.length > 0) db.pendingTransactions = pendingTransactions;
-    if (archives !== undefined && archives.length > 0) db.archives = archives;
-    if (engineers !== undefined && engineers.length > 0) {
+    if (pendingTransactions !== undefined) db.pendingTransactions = pendingTransactions;
+    if (archives !== undefined) db.archives = archives;
+    if (engineers !== undefined) {
       db.engineers = engineers.filter((eng: any) => !db.deletedEngineerIds.includes(eng.id));
     }
     
@@ -3714,6 +3722,17 @@ app.post("/api/engineers/ledger", async (req, res) => {
     
     // Also merge these ledgerData back to db.pettyCashBoxDays so the general sync matches
     if (!db.pettyCashBoxDays) db.pettyCashBoxDays = [];
+    
+    // Explicitly delete old days from Supabase before we push the new ones
+    const supabase = getSupabaseAdminClient() || getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('petty_cash_box_days').delete().eq('engineer', engineerName);
+      } catch(err) {
+        console.error("Failed to clear Supabase days for ledger save:", err);
+      }
+    }
+    
     // Remove old boxDays for this engineer
     db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => d.engineer !== engineerName);
     // Add the new ones
@@ -3721,6 +3740,7 @@ app.post("/api/engineers/ledger", async (req, res) => {
       ledgerData.forEach((day: any) => {
         db.pettyCashBoxDays.push({
           ...day,
+          id: day.id || `${engineerName || "عام"}_${day.date}`,
           engineer: engineerName || "عام"
         });
       });
@@ -4077,6 +4097,16 @@ app.post("/api/engineers/ledger/reset", async (req, res) => {
       if (db.pettyCashBoxDays) {
         db.pettyCashBoxDays = db.pettyCashBoxDays.filter((d: any) => d.engineer !== engineerName);
       }
+      
+      const supabase = getSupabaseAdminClient() || getSupabaseClient();
+      if (supabase) {
+        try {
+          await supabase.from('petty_cash_box_days').delete().eq('engineer', engineerName);
+        } catch(e) {
+          console.error("Failed to delete days from Supabase during ledger reset:", e);
+        }
+      }
+      
       if (db.engineers) {
         db.engineers = db.engineers.map((eng: any) => {
           if (eng.name === engineerName) {
@@ -4206,12 +4236,18 @@ app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
     const db = getDb();
 
     
+    let dayToDeleteId: string | undefined;
+    
     if (db.pettyCashBoxDays) {
       db.pettyCashBoxDays = db.pettyCashBoxDays.map((d: any) => {
         if (d.date === date && (d.engineer || "عام") === (engineerName || "عام")) {
+          const newTransactions = (d.transactions || []).filter((t: any) => t.id !== txId);
+          if (newTransactions.length === 0 && d.startingBalanceOverride === undefined) {
+            dayToDeleteId = d.id;
+          }
           return {
             ...d,
-            transactions: (d.transactions || []).filter((t: any) => t.id !== txId),
+            transactions: newTransactions,
             updatedAt: new Date().toISOString()
           };
         }
@@ -4230,6 +4266,17 @@ app.post("/api/engineers/ledger/delete-tx", async (req, res) => {
         }
         return d;
       }).filter((d: any) => (d.transactions && d.transactions.length > 0) || d.startingBalanceOverride !== undefined);
+    }
+    
+    if (dayToDeleteId) {
+      const supabase = getSupabaseAdminClient() || getSupabaseClient();
+      if (supabase) {
+        try {
+          await supabase.from('petty_cash_box_days').delete().eq('id', dayToDeleteId);
+        } catch(e) {
+          console.error("Failed to delete empty day from Supabase:", e);
+        }
+      }
     }
     
     await saveDb(db);
@@ -4269,6 +4316,7 @@ app.post("/api/engineers/ledger/update-starting-balance", async (req, res) => {
       dayObj.updatedAt = nowStr;
     } else {
       db.pettyCashBoxDays.push({
+        id: `${engineerName || "عام"}_${date}`,
         date,
         engineer: engineerName || "عام",
         startingBalanceOverride: parseFloat(startingBalanceOverride),
@@ -4506,7 +4554,7 @@ ${JSON.stringify(engineerTransactions, null, 2)}
 Output the results strictly as a JSON object matching the requested schema.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: { parts: [{ text: textContent }] },
       config: {
         systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
@@ -4660,7 +4708,7 @@ ${JSON.stringify(rawRows.slice(0, 150), null, 2)}
 Output the results strictly as a JSON object matching the requested schema.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [{ text: textContent }],
       config: {
         systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
@@ -4720,16 +4768,11 @@ Output the results strictly as a JSON object matching the requested schema.`;
 
 app.get("/api/ai/verify", async (req, res) => {
   try {
-    const key = process.env.NARAROUTER_API_KEY;
-    console.log(key ? "Key Found" : "Key Missing");
-    
+    const key = process.env.GEMINI_API_KEY;
     if (!key) {
-      return res.status(500).json({ success: false, error: "Missing NARAROUTER_API_KEY in environment variables." });
+      return res.status(500).json({ success: false, error: "Missing GEMINI_API_KEY in environment variables." });
     }
-    
-    // Verify connection by fetching models
-    await aiClient.models.list();
-    return res.json({ status: "success", message: "NaraRouter API is connected!" });
+    return res.json({ status: "success", message: "Gemini API is connected!" });
   } catch (err: any) {
     console.error("NaraRouter Connection Error:", err.message);
     return res.status(500).json({ status: "error", error: err.message });
@@ -4738,8 +4781,7 @@ app.get("/api/ai/verify", async (req, res) => {
 app.get("/api/ai/models", async (req, res) => {
   try {
     
-    const models = await aiClient.models.list();
-    return res.json({ success: true, models: models.data });
+    return res.json({ success: true, models: [{id: "gemini-2.5-flash"}, {id: "gemini-1.5-pro"}] });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -4752,7 +4794,7 @@ app.post("/api/custody/analyze-multimodal", upload.single("file"), async (req, r
     }
 
     const engineerName = req.body.engineerName || "عام";
-    const selectedAIModel = req.body.selectedAIModel || "gpt-5.6-luna";
+    const selectedAIModel = req.body.selectedAIModel || "gemini-1.5-pro";
     const useMemory = req.body.useMemory === "true";
 
     
@@ -4851,15 +4893,15 @@ ${excelText}
 
 Output the results strictly as a JSON object matching the requested schema.`;
 
-      const openAiResponse = await aiClient.chat.completions.create({
-        model: selectedAIModel,
-        messages: [
-          { role: "system", content: systemInstruction },
-          { role: "user", content: textContent }
-        ],
-        response_format: { type: "json_object" }
+      const responseRes = await ai.models.generateContent({
+        model: selectedAIModel || "gemini-2.5-flash",
+        contents: { parts: [{ text: textContent }] },
+        config: {
+          responseMimeType: "application/json",
+          systemInstruction: systemInstruction,
+        }
       });
-      response = { text: openAiResponse.choices[0].message.content || "{}" };
+      response = { text: responseRes.text || "{}" };
     } else {
       const promptText = `Analyze this image / custody screenshot and extract all box movements (transactions) for the target month: ${selectedMonth}.
 Target Engineer/Person: ${engineerName}
@@ -4867,18 +4909,20 @@ Target Engineer/Person: ${engineerName}
 Analyze the image visually, perform OCR, map the descriptions and projects based on the authorized project list and the training templates provided in the system instruction.
 Return the structured transactions strictly in JSON format.`;
 
-      const openAiResponse = await aiClient.chat.completions.create({
-        model: selectedAIModel,
-        messages: [
-          { role: "system", content: systemInstruction },
-          { role: "user", content: [
-            { type: "text", text: promptText },
-            imagePart
-          ]}
-        ],
-        response_format: { type: "json_object" }
+      const responseRes = await ai.models.generateContent({
+        model: selectedAIModel || "gemini-2.5-flash",
+        contents: { parts: [{ text: promptText }, {
+            inlineData: {
+                mimeType: imagePart.image_url.url.split(';')[0].split(':')[1],
+                data: imagePart.image_url.url.split(',')[1]
+            }
+        }] },
+        config: {
+          responseMimeType: "application/json",
+          systemInstruction: systemInstruction,
+        }
       });
-      response = { text: openAiResponse.choices[0].message.content || "{}" };
+      response = { text: responseRes.text || "{}" };
     }
 
     const textResult = response?.text || "{}";
@@ -5182,7 +5226,7 @@ ${JSON.stringify(projectsList, null, 2)}
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: { parts: [imagePart, { text: promptText }] },
       config: {
         responseMimeType: "application/json",
@@ -5237,7 +5281,7 @@ ${JSON.stringify(projectsList, null, 2)}
         if (existingDay) {
           existingDay.transactions.push(cleanTx);
         } else {
-          db.pettyCashBoxDays.push({ date: targetDate, engineer: "عام", transactions: [cleanTx] });
+          db.pettyCashBoxDays.push({ id: `عام_${targetDate}`, date: targetDate, engineer: "عام", transactions: [cleanTx] });
         }
         autoProcessed.push({ ...cleanTx, date: targetDate });
       } else {
@@ -5396,7 +5440,7 @@ ${JSON.stringify(expenses, null, 2)}
 Output the results strictly as a JSON object matching the requested schema.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: { parts: [{ text: textContent }] },
       config: {
         systemInstruction: systemInstruction + "\n\nCRITICAL RULE: Do NOT hallucinate numbers. If unsure, output 0. Strictly match the JSON schema.",
